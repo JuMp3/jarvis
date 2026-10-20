@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Jarvis</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600&family=Literata:opsz,wght@7..72,400;7..72,500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="bar">
+    <h1 class="name">Jarvis</h1>
+    <div class="settings">
+      <label class="field">
+        <span>Modello</span>
+        <select id="provider" disabled></select>
+      </label>
+      <label class="toggle">
+        <input type="checkbox" id="speak">
+        <span>Rispondi a voce</span>
+      </label>
+    </div>
+  </header>
+
+  <main class="stage">
+    <section class="presence" aria-label="Stato di Jarvis">
+      <canvas id="orb" aria-hidden="true"></canvas>
+      <p id="status" class="status" role="status" aria-live="polite">Connessione in corso…</p>
+    </section>
+
+    <section class="conversation" aria-label="Conversazione">
+      <ol id="log" class="log"></ol>
+      <p id="empty" class="empty">Tieni premuto il microfono e parla, oppure scrivi qui sotto.</p>
+    </section>
+  </main>
+
+  <form id="composer" class="composer" autocomplete="off">
+    <label class="visually-hidden" for="input">Messaggio per Jarvis</label>
+    <input id="input" type="text" placeholder="Scrivi a Jarvis" disabled>
+    <button id="send" type="submit" class="send" disabled>Invia</button>
+    <button id="mic" type="button" class="mic" disabled aria-label="Tieni premuto per parlare">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3Zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-2.08A7 7 0 0 0 19 12h-2Z"/></svg>
+    </button>
+  </form>
+
+  <dialog id="approval" class="approval" aria-labelledby="approval-title">
+    <form method="dialog">
+      <h2 id="approval-title">Jarvis chiede il permesso</h2>
+      <p id="approval-text" class="approval-text"></p>
+      <div class="approval-actions">
+        <button value="deny" class="secondary">Nega</button>
+        <button value="allow" class="primary">Consenti</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>

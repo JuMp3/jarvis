@@ -1,0 +1,15 @@
+# Copy to jarvis-local.yml (git-ignored) in the directory you start Jarvis from.
+spring:
+  ai:
+    anthropic:
+      api-key: sk-ant-...
+    openai:
+      api-key: sk-...
+
+jarvis:
+  providers:
+    enabled: anthropic,openai,ollama
+    default-provider: anthropic
+  voice:
+    # Speech-to-text and text-to-speech currently use the OpenAI audio API
+    openai-api-key: sk-...

@@ -1,0 +1,7 @@
+target/
+jarvis-local.yml
+*.log
+.idea/
+*.iml
+.vscode/
+.DS_Store

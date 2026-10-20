@@ -1,0 +1,357 @@
+:root {
+  --ink: #0f1b2d;
+  --deep: #16263d;
+  --line: #24384f;
+  --lamp: #f0b44c;
+  --mist: #9fb8c8;
+  --paper: #ede7da;
+  --signal: #e07a6f;
+
+  --ui: "Figtree", system-ui, sans-serif;
+  --read: "Literata", Georgia, serif;
+
+  --step--1: 0.833rem;
+  --step-0: 1rem;
+  --step-1: 1.2rem;
+  --step-2: 1.728rem;
+
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  grid-template-columns: minmax(0, 1fr);
+  background: radial-gradient(120% 80% at 30% 20%, var(--deep), var(--ink) 60%);
+  color: var(--paper);
+  font: 400 var(--step-0) / 1.5 var(--ui);
+}
+
+button,
+input,
+select {
+  font: inherit;
+  color: inherit;
+}
+
+:focus-visible {
+  outline: 2px solid var(--lamp);
+  outline-offset: 3px;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* Top bar ---------------------------------------------------------------------------- */
+
+.bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem 1rem;
+  padding: 1rem clamp(1rem, 4vw, 2.5rem);
+}
+
+.name {
+  margin: 0;
+  font: 500 var(--step-1) / 1 var(--read);
+  letter-spacing: 0.01em;
+}
+
+.settings {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 0.5rem 1.25rem;
+  font-size: var(--step--1);
+  color: var(--mist);
+}
+
+.field {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+select {
+  background: var(--deep);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0.3rem 0.5rem;
+}
+
+.toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  cursor: pointer;
+}
+
+.toggle input {
+  accent-color: var(--lamp);
+}
+
+/* Stage: lamp on the left, conversation on the right ----------------------------------- */
+
+.stage {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(220px, 38vh) 1fr;
+  min-height: 0;
+}
+
+.presence {
+  position: relative;
+  display: grid;
+  place-items: center;
+}
+
+#orb {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.status {
+  position: absolute;
+  bottom: 0.75rem;
+  left: 1rem;
+  right: 1rem;
+  margin: 0;
+  text-align: center;
+  font-size: var(--step--1);
+  color: var(--mist);
+}
+
+.conversation {
+  min-height: 0;
+  overflow-y: auto;
+  padding: 1rem clamp(1rem, 4vw, 2.5rem) 2rem;
+}
+
+@media (min-width: 960px) {
+  .stage {
+    grid-template-columns: minmax(340px, 1fr) minmax(0, 680px);
+    grid-template-rows: minmax(0, 1fr);
+    padding-right: clamp(1rem, 4vw, 3rem);
+  }
+
+  .status {
+    bottom: 6%;
+  }
+
+  .conversation {
+    padding-top: 3rem;
+  }
+}
+
+.log {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  max-width: 68ch;
+}
+
+.empty {
+  max-width: 40ch;
+  color: var(--mist);
+}
+
+.log:not(:empty) + .empty {
+  display: none;
+}
+
+.turn-user {
+  align-self: flex-end;
+  max-width: 85%;
+  padding: 0.6rem 0.9rem;
+  border-radius: 14px 14px 4px 14px;
+  background: var(--deep);
+  border: 1px solid var(--line);
+}
+
+.turn-jarvis {
+  font: 400 var(--step-1) / 1.6 var(--read);
+  white-space: pre-wrap;
+}
+
+.turn-jarvis.streaming::after {
+  content: "";
+  display: inline-block;
+  width: 0.5em;
+  height: 0.5em;
+  margin-left: 0.2em;
+  border-radius: 50%;
+  background: var(--lamp);
+  vertical-align: middle;
+  animation: blink 1s ease-in-out infinite;
+}
+
+.turn-note {
+  font-size: var(--step--1);
+  color: var(--mist);
+}
+
+.turn-note.error {
+  color: var(--signal);
+}
+
+@keyframes blink {
+  50% {
+    opacity: 0.2;
+  }
+}
+
+/* Composer ---------------------------------------------------------------------------- */
+
+.composer {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.9rem clamp(1rem, 4vw, 2.5rem) 1.25rem;
+  border-top: 1px solid var(--line);
+  background: color-mix(in srgb, var(--ink) 85%, transparent);
+}
+
+.composer input {
+  flex: 1;
+  min-width: 0;
+  padding: 0.75rem 1rem;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--deep);
+}
+
+.composer input::placeholder {
+  color: var(--mist);
+  opacity: 0.8;
+}
+
+.send {
+  padding: 0.7rem 1.1rem;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: transparent;
+  cursor: pointer;
+}
+
+.mic {
+  width: 3.4rem;
+  height: 3.4rem;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border: none;
+  border-radius: 50%;
+  background: var(--lamp);
+  color: var(--ink);
+  cursor: pointer;
+  touch-action: none;
+  transition: transform 120ms ease, background-color 120ms ease;
+}
+
+.mic svg {
+  width: 1.5rem;
+  height: 1.5rem;
+  fill: currentColor;
+}
+
+.mic.recording {
+  transform: scale(1.12);
+  background: var(--mist);
+}
+
+button:disabled,
+input:disabled,
+select:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* Approval ---------------------------------------------------------------------------- */
+
+.approval {
+  width: min(28rem, calc(100% - 2rem));
+  padding: 1.5rem;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--deep);
+  color: var(--paper);
+}
+
+.approval::backdrop {
+  background: rgb(10 18 30 / 0.7);
+}
+
+.approval h2 {
+  margin: 0 0 0.75rem;
+  font: 500 var(--step-1) / 1.3 var(--read);
+}
+
+.approval-text {
+  margin: 0 0 1.5rem;
+  white-space: pre-wrap;
+  color: var(--mist);
+}
+
+.approval-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+}
+
+.approval-actions button {
+  padding: 0.6rem 1.2rem;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+.primary {
+  border: none;
+  background: var(--lamp);
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.secondary {
+  border: 1px solid var(--line);
+  background: transparent;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .turn-jarvis.streaming::after {
+    animation: none;
+  }
+
+  .mic {
+    transition: none;
+  }
+}
+
+@media (max-width: 560px) {
+  .field span {
+    display: none;
+  }
+}
