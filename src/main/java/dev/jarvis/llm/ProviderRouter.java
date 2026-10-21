@@ -24,6 +24,7 @@ import dev.jarvis.config.JarvisProperties;
 public class ProviderRouter {
 
     private final Map<ProviderId, ChatClient> clients;
+    private final Map<ProviderId, ChatModel> models = new EnumMap<>(ProviderId.class);
     private final ProviderId defaultProvider;
     private final Map<String, String> voiceModels;
 
@@ -38,10 +39,12 @@ public class ProviderRouter {
                     + beanClasses.keySet() + ")");
         }
 
+        String systemPrompt = properties.agent().systemPrompt() + specialistCatalog(properties);
         Map<ProviderId, ChatClient> built = new EnumMap<>(ProviderId.class);
-        selected.forEach((provider, beanName) -> built.put(provider,
-                ChatClient.builder(chatModels.get(beanName))
-                        .defaultSystem(properties.agent().systemPrompt())
+        selected.forEach((provider, beanName) -> models.put(provider, chatModels.get(beanName)));
+        models.forEach((provider, model) -> built.put(provider,
+                ChatClient.builder(model)
+                        .defaultSystem(systemPrompt)
                         // Inside the tool loop, so tool calls and results are remembered across turns
                         .defaultAdvisors(MessageChatMemoryAdvisor.builder(chatMemory)
                                 .order(ToolCallingAdvisor.DEFAULT_ORDER + 1)
@@ -53,6 +56,22 @@ public class ProviderRouter {
         this.defaultProvider = ProviderId.parse(properties.providers().defaultProvider())
                 .filter(clients::containsKey)
                 .orElse(selected.keySet().iterator().next());
+    }
+
+    /** The enabled model of a provider, for specialists that build their own client. */
+    public Optional<ChatModel> chatModel(ProviderId provider) {
+        return Optional.ofNullable(models.get(provider));
+    }
+
+    /** The orchestrator chooses specialists by reading their descriptions. */
+    private static String specialistCatalog(JarvisProperties properties) {
+        if (properties.agents() == null || properties.agents().isEmpty()) {
+            return "";
+        }
+        StringBuilder catalog = new StringBuilder("\nSpecialisti disponibili per startTask:\n");
+        properties.agents().forEach((id, spec) ->
+                catalog.append("- ").append(id).append(": ").append(spec.description().strip()).append('\n'));
+        return catalog.toString();
     }
 
     /** Client for the requested provider, falling back to the default one. */

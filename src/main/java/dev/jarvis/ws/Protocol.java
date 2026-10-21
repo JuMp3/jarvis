@@ -1,6 +1,10 @@
 package dev.jarvis.ws;
 
+import java.time.Instant;
 import java.util.List;
+import java.util.Locale;
+
+import dev.jarvis.task.AgentTask;
 
 /**
  * WebSocket messages. Keep in sync with static/app.js and the table in docs/ARCHITECTURE.md.
@@ -38,6 +42,29 @@ public final class Protocol {
     public record State(String type, String state) {
     }
 
+    /** A background task as shown in the activity panel; times are epoch milliseconds. */
+    public record TaskView(String id, String agent, String title, String instructions, String status,
+                           String result, String error, Integer inputTokens, Integer outputTokens,
+                           Long createdAt, Long startedAt, Long finishedAt) {
+
+        static TaskView of(AgentTask task) {
+            return new TaskView(task.id(), task.agent(), task.title(), task.instructions(),
+                    task.status().name().toLowerCase(Locale.ROOT), task.result(), task.error(),
+                    task.inputTokens(), task.outputTokens(), millis(task.createdAt()), millis(task.startedAt()),
+                    millis(task.finishedAt()));
+        }
+
+        private static Long millis(Instant instant) {
+            return instant == null ? null : instant.toEpochMilli();
+        }
+    }
+
+    public record TaskUpdate(String type, TaskView task) {
+    }
+
+    public record Tasks(String type, List<TaskView> tasks) {
+    }
+
     public record Transcript(String type, String text) {
     }
 
@@ -63,6 +90,14 @@ public final class Protocol {
 
     public static History history(List<HistoryEntry> messages) {
         return new History("history", messages);
+    }
+
+    public static TaskUpdate taskUpdate(AgentTask task) {
+        return new TaskUpdate("task-update", TaskView.of(task));
+    }
+
+    public static Tasks tasks(List<AgentTask> tasks) {
+        return new Tasks("tasks", tasks.stream().map(TaskView::of).toList());
     }
 
     public static State state(String state) {

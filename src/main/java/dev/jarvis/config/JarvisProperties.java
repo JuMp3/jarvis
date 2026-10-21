@@ -10,7 +10,29 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * Typed configuration under the {@code jarvis} prefix (see application.yml).
  */
 @ConfigurationProperties(prefix = "jarvis")
-public record JarvisProperties(Providers providers, Agent agent, Voice voice) {
+public record JarvisProperties(Providers providers, Agent agent, Voice voice, Tasks tasks,
+                               Map<String, Specialist> agents) {
+
+    /**
+     * Background tasks run by specialists.
+     *
+     * @param maxParallel tasks running at the same time; the others wait in the queue
+     * @param timeout     a task still running after this is stopped and marked failed
+     */
+    public record Tasks(int maxParallel, Duration timeout) {
+    }
+
+    /**
+     * A specialist Jarvis can delegate to (key = id used by the orchestrator).
+     *
+     * @param description  what it is good at: the orchestrator reads it to choose
+     * @param tools        tool groups: "time", "web-search" (Anthropic server-side search)
+     * @param maxSearches  web searches allowed per task (budget)
+     * @param maxTokens    output tokens per answer
+     */
+    public record Specialist(String description, String provider, String model, String systemPrompt,
+                             List<String> tools, Integer maxSearches, Integer maxTokens) {
+    }
 
     /**
      * @param enabled         provider ids offered to the user (anthropic, openai, ollama)

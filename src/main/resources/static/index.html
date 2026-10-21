@@ -12,6 +12,10 @@
 <body>
   <header class="bar">
     <h1 class="name">Jarvis</h1>
+    <button id="team-toggle" class="team-toggle" type="button" aria-controls="team" aria-expanded="false">
+      <span class="team-dots" aria-hidden="true"></span>
+      <span id="team-summary">Squadra a riposo</span>
+    </button>
     <div class="settings">
       <label class="field">
         <span>Modello</span>
@@ -34,7 +38,21 @@
       <ol id="log" class="log"></ol>
       <p id="empty" class="empty">Tieni premuto il microfono e parla, oppure scrivi qui sotto.</p>
     </section>
+
+    <aside id="team" class="team" aria-labelledby="team-title">
+      <header class="team-head">
+        <h2 id="team-title">Squadra</h2>
+        <button id="team-close" class="team-close" type="button" aria-label="Chiudi il pannello della squadra">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.4 5 5 6.4 10.6 12 5 17.6 6.4 19l5.6-5.6 5.6 5.6 1.4-1.4-5.6-5.6L19 6.4 17.6 5 12 10.6Z"/></svg>
+        </button>
+      </header>
+      <p class="team-intro">I lavori che Jarvis ha affidato agli specialisti. Girano in parallelo mentre continuate a parlare.</p>
+      <ol id="tasks" class="tasks"></ol>
+      <p class="team-empty">Nessun lavoro per ora. Chiedi a Jarvis una ricerca o un testo lungo: lo affiderà a uno specialista.</p>
+    </aside>
   </main>
+
+  <p id="team-announcer" class="visually-hidden" aria-live="polite"></p>
 
   <form id="composer" class="composer" autocomplete="off">
     <label class="visually-hidden" for="input">Messaggio per Jarvis</label>

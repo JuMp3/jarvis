@@ -13,3 +13,23 @@ CREATE TABLE IF NOT EXISTS chat_message (
     tool_responses  JSONB,
     PRIMARY KEY (conversation_id, seq)
 );
+
+-- Background tasks delegated to specialists (see TaskService)
+CREATE TABLE IF NOT EXISTS agent_task (
+    id              VARCHAR(36) PRIMARY KEY,
+    conversation_id VARCHAR(64) NOT NULL,
+    agent           VARCHAR(64) NOT NULL,
+    title           TEXT        NOT NULL,
+    instructions    TEXT        NOT NULL,
+    expected_output TEXT,
+    status          VARCHAR(16) NOT NULL,
+    result          TEXT,
+    error           TEXT,
+    input_tokens    INT,
+    output_tokens   INT,
+    created_at      TIMESTAMPTZ NOT NULL,
+    started_at      TIMESTAMPTZ,
+    finished_at     TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS agent_task_conversation_idx ON agent_task (conversation_id, created_at);

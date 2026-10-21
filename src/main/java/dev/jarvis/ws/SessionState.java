@@ -1,5 +1,7 @@
 package dev.jarvis.ws;
 
+import java.util.Queue;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicReference;
 
 import org.springframework.web.socket.WebSocketSession;
@@ -15,6 +17,9 @@ final class SessionState {
     private final String conversationId;
     private final AtomicReference<Turn> currentTurn = new AtomicReference<>();
     private volatile ProviderId provider;
+    private volatile boolean lastTurnSpoken;
+    /** Automatic messages for Jarvis (task results) waiting for the session to be idle. */
+    private final Queue<String> pendingNotices = new ConcurrentLinkedQueue<>();
 
     SessionState(WebSocketSession socket, String conversationId, ProviderId provider) {
         this.socket = socket;
@@ -40,6 +45,23 @@ final class SessionState {
 
     void provider(ProviderId provider) {
         this.provider = provider;
+    }
+
+    boolean lastTurnSpoken() {
+        return lastTurnSpoken;
+    }
+
+    void lastTurnSpoken(boolean spoken) {
+        this.lastTurnSpoken = spoken;
+    }
+
+    Queue<String> pendingNotices() {
+        return pendingNotices;
+    }
+
+    boolean idle() {
+        Turn turn = currentTurn.get();
+        return turn == null || turn.finished() || turn.cancelled();
     }
 
     /** Installs a new turn, cancelling the previous one (barge-in). */

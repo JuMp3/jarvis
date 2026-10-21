@@ -1,6 +1,7 @@
 package dev.jarvis.ws;
 
 import java.io.IOException;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
@@ -43,6 +44,13 @@ public class SessionRegistry implements ApprovalChannel {
 
     void unregister(String sessionId) {
         sessions.remove(sessionId);
+    }
+
+    /** Open sessions of a conversation (one per browser tab). */
+    List<SessionState> ofConversation(String conversationId) {
+        return sessions.values().stream()
+                .filter(state -> state.conversationId().equals(conversationId) && state.socket().isOpen())
+                .toList();
     }
 
     /** Sends a protocol message; silently drops it if the session is gone. */

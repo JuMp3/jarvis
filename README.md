@@ -41,6 +41,7 @@ Su reti aziendali che ispezionano il TLS (es. Netskope) Speaches non riesce a sc
 - Push-to-talk: trascrizione, risposta e sintesi vocale frase per frase.
 - Interruzione: premi il microfono mentre Jarvis parla e si ferma.
 - Ciclo agente con tool d'esempio; le azioni che modificano qualcosa chiedono la tua approvazione.
+- Squadra di agenti: Jarvis affida ricerche e testi lunghi a specialisti che lavorano in parallelo in background; li vedi orbitare intorno alla lampada e nel pannello Squadra, e Jarvis ti riferisce i risultati.
 - Ascolto solo su `127.0.0.1` e WebSocket accettati solo dalla stessa origine.
 
 Architettura, protocollo e roadmap: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).

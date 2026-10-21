@@ -13,6 +13,7 @@ import dev.jarvis.agent.tools.NoteTools;
 import dev.jarvis.agent.tools.SystemTools;
 import dev.jarvis.llm.ProviderId;
 import dev.jarvis.llm.ProviderRouter;
+import dev.jarvis.task.TaskTools;
 import reactor.core.publisher.Flux;
 
 /**
@@ -26,15 +27,17 @@ import reactor.core.publisher.Flux;
 public class AgentService {
 
     public static final String SESSION_ID_KEY = "jarvis.sessionId";
+    public static final String CONVERSATION_ID_KEY = "jarvis.conversationId";
 
     private final ProviderRouter router;
     private final ChatMemory memory;
     private final Object[] tools;
 
-    public AgentService(ProviderRouter router, ChatMemory memory, SystemTools systemTools, NoteTools noteTools) {
+    public AgentService(ProviderRouter router, ChatMemory memory, SystemTools systemTools, NoteTools noteTools,
+                        TaskTools taskTools) {
         this.router = router;
         this.memory = memory;
-        this.tools = new Object[] {systemTools, noteTools};
+        this.tools = new Object[] {systemTools, noteTools, taskTools};
     }
 
     /** @param spoken the answer will be read aloud: use the provider's voice model, if configured */
@@ -49,7 +52,7 @@ public class AgentService {
         return request
                 .user(userText)
                 .tools(tools)
-                .toolContext(Map.of(SESSION_ID_KEY, sessionId))
+                .toolContext(Map.of(SESSION_ID_KEY, sessionId, CONVERSATION_ID_KEY, conversationId))
                 .advisors(advisor -> advisor.param(ChatMemory.CONVERSATION_ID, conversationId))
                 .stream()
                 .content();

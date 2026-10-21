@@ -209,6 +209,22 @@ select {
   animation: blink 1s ease-in-out infinite;
 }
 
+.turn-jarvis a,
+.task-body a {
+  color: var(--mist);
+  text-decoration-color: color-mix(in srgb, var(--mist) 45%, transparent);
+  text-underline-offset: 0.18em;
+}
+
+.turn-jarvis strong {
+  font-weight: 500;
+  color: color-mix(in srgb, var(--paper) 80%, var(--lamp));
+}
+
+.task-body strong {
+  font-weight: 600;
+}
+
 .turn-note {
   font-size: var(--step--1);
   color: var(--mist);
@@ -221,6 +237,253 @@ select {
 @keyframes blink {
   50% {
     opacity: 0.2;
+  }
+}
+
+/* Team: specialists working in the background ------------------------------------------ */
+
+.team-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  margin-right: auto;
+  margin-left: 1.25rem;
+  padding: 0.3rem 0.8rem 0.3rem 0.6rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: transparent;
+  font-size: var(--step--1);
+  color: var(--mist);
+  cursor: pointer;
+}
+
+.team-toggle[data-busy="true"] {
+  color: var(--paper);
+  border-color: color-mix(in srgb, var(--lamp) 45%, var(--line));
+}
+
+/* One dot per active agent, in its colour */
+.team-dots {
+  display: inline-flex;
+  gap: 3px;
+}
+
+.team-dots:empty::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  border: 1px solid var(--mist);
+  opacity: 0.6;
+}
+
+.team-dots i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--agent);
+}
+
+.team-dots i.queued {
+  background: transparent;
+  border: 1px solid var(--agent);
+}
+
+.team {
+  position: fixed;
+  inset: 0 0 0 auto;
+  z-index: 10;
+  width: min(25rem, 92vw);
+  display: flex;
+  flex-direction: column;
+  padding: 1.25rem 1.25rem 1.5rem;
+  overflow-y: auto;
+  background: var(--deep);
+  border-left: 1px solid var(--line);
+  transform: translateX(100%);
+  visibility: hidden;
+  transition: transform 220ms ease, visibility 0s linear 220ms;
+}
+
+/* Receives focus when opened so screen readers land in it; a container needs no focus ring */
+.team:focus {
+  outline: none;
+}
+
+body.team-open .team {
+  transform: none;
+  visibility: visible;
+  transition: transform 220ms ease;
+}
+
+.team-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.team-head h2 {
+  margin: 0;
+  font: 500 var(--step-1) / 1.2 var(--read);
+}
+
+.team-close {
+  display: grid;
+  place-items: center;
+  width: 2.2rem;
+  height: 2.2rem;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  cursor: pointer;
+}
+
+.team-close svg {
+  width: 1.2rem;
+  height: 1.2rem;
+  fill: var(--mist);
+}
+
+.team-intro,
+.team-empty {
+  margin: 0.4rem 0 1.25rem;
+  font-size: var(--step--1);
+  color: var(--mist);
+  max-width: 42ch;
+}
+
+.tasks {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1.1rem;
+}
+
+.tasks:not(:empty) + .team-empty {
+  display: none;
+}
+
+/* A task: a thread in the agent's colour, the title, then its state in words */
+.task {
+  position: relative;
+  padding-left: 0.95rem;
+}
+
+.task::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0.2rem;
+  bottom: 0.2rem;
+  width: 3px;
+  border-radius: 3px;
+  background: var(--agent);
+  opacity: 0.35;
+}
+
+.task.running::before {
+  opacity: 1;
+  background: linear-gradient(var(--agent), color-mix(in srgb, var(--agent) 30%, transparent), var(--agent));
+  background-size: 100% 200%;
+  animation: thread 1.6s linear infinite;
+}
+
+.task.failed::before,
+.task.interrupted::before {
+  background: var(--signal);
+  opacity: 0.8;
+}
+
+.task-title {
+  margin: 0;
+  font-weight: 500;
+  line-height: 1.35;
+}
+
+.task-meta {
+  margin: 0.15rem 0 0;
+  font-size: var(--step--1);
+  color: var(--mist);
+}
+
+.task-agent {
+  color: var(--agent);
+}
+
+.task.failed .task-state,
+.task.interrupted .task-state {
+  color: var(--signal);
+}
+
+.task details {
+  margin-top: 0.35rem;
+  font-size: var(--step--1);
+}
+
+.task summary {
+  width: fit-content;
+  color: var(--mist);
+  cursor: pointer;
+}
+
+.task-body h3 {
+  margin: 0.75rem 0 0.2rem;
+  font-size: var(--step--1);
+  font-weight: 600;
+  color: var(--mist);
+}
+
+.task-body p {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.55;
+}
+
+.task-stop {
+  position: absolute;
+  top: -0.1rem;
+  right: 0;
+  padding: 0.15rem 0.65rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: transparent;
+  font-size: var(--step--1);
+  color: var(--mist);
+  cursor: pointer;
+}
+
+.task:has(.task-stop) .task-title {
+  padding-right: 4.5rem;
+}
+
+@keyframes thread {
+  to {
+    background-position: 0 -200%;
+  }
+}
+
+@media (min-width: 1200px) {
+  .stage {
+    grid-template-columns: minmax(300px, 1fr) minmax(0, 640px) minmax(280px, 24rem);
+    padding-right: 0;
+  }
+
+  .team {
+    position: static;
+    width: auto;
+    transform: none;
+    visibility: visible;
+    transition: none;
+    background: transparent;
+    padding-top: 3rem;
+    min-height: 0;
+  }
+
+  .team-close {
+    display: none;
   }
 }
 
@@ -341,8 +604,14 @@ select:disabled {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .turn-jarvis.streaming::after {
+  .turn-jarvis.streaming::after,
+  .task.running::before {
     animation: none;
+  }
+
+  .team,
+  body.team-open .team {
+    transition: none;
   }
 
   .mic {

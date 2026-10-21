@@ -15,6 +15,7 @@ final class Turn {
     private volatile Disposable subscription;
     private volatile boolean cancelled;
     private volatile boolean speechFailed;
+    private volatile boolean finished;
 
     Turn(ExecutorService speechQueue, Runnable onCancel) {
         this.speechQueue = speechQueue;
@@ -30,6 +31,15 @@ final class Turn {
 
     boolean cancelled() {
         return cancelled;
+    }
+
+    /** The client has received "done": the session is free for the next turn. */
+    boolean finished() {
+        return finished;
+    }
+
+    void markFinished() {
+        finished = true;
     }
 
     /** After the first synthesis error the turn goes on as text only, with a single error message. */

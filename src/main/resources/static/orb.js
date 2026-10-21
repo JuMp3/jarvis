@@ -1,6 +1,7 @@
 // Jarvis orb: a lamp whose lens rings react to state and to the audio level.
 // States: idle (slow breathing), listening (follows the microphone), thinking (rings turn),
 // speaking (pulses with Jarvis's voice).
+// Agents working in the background orbit the lamp as satellites in their own colour.
 
 const PALETTE = {
   lamp: [240, 180, 76],
@@ -21,6 +22,9 @@ const STATE_TUNING = {
   speaking: { spin: 1.0, glow: 1.0, color: 'lamp', levelGain: 1.2 },
 };
 
+const ORBIT = { radius: 2.55, flatten: 0.38, tilt: -0.32, speed: 0.55, trail: 7 };
+const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5));
+
 export class Orb {
   /**
    * @param {HTMLCanvasElement} canvas
@@ -38,6 +42,7 @@ export class Orb {
     this.angle = 0;
     this.last = performance.now();
     this.reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+    this.satellites = new Map();
 
     new ResizeObserver(() => this.resize()).observe(canvas);
     this.resize();
@@ -47,6 +52,28 @@ export class Orb {
   setState(state) {
     if (STATE_TUNING[state]) {
       this.state = state;
+    }
+  }
+
+  /**
+   * @param {{id: string, color: number[], status: 'queued'|'running'|'completed'|'failed'}[]} agents
+   *   tasks to show; a task that disappears from the list fades out
+   */
+  setAgents(agents) {
+    const ids = new Set(agents.map((agent) => agent.id));
+    for (const [id, satellite] of this.satellites) {
+      if (!ids.has(id)) satellite.leaving = true;
+    }
+    for (const agent of agents) {
+      let satellite = this.satellites.get(agent.id);
+      if (!satellite) {
+        satellite = { phase: this.satellites.size * GOLDEN_ANGLE, alpha: 0, flash: 0, trail: [] };
+        this.satellites.set(agent.id, satellite);
+      }
+      if (agent.status !== satellite.status && (agent.status === 'completed' || agent.status === 'failed')) {
+        satellite.flash = 1;
+      }
+      Object.assign(satellite, { color: agent.color, status: agent.status, leaving: false });
     }
   }
 
@@ -82,6 +109,82 @@ export class Orb {
 
     // Idle breathing so the lamp never looks switched off.
     this.breath = this.state === 'idle' ? (Math.sin(time * 1.3) + 1) * 0.06 * motion : 0;
+
+    for (const [id, satellite] of this.satellites) {
+      const target = satellite.leaving ? 0 : satellite.status === 'queued' ? 0.45 : 1;
+      satellite.alpha = ease(satellite.alpha, target, satellite.leaving ? 1.5 : 3);
+      satellite.flash = Math.max(0, satellite.flash - dt * 1.2);
+      if (satellite.status === 'running') {
+        satellite.phase += ORBIT.speed * dt * (this.reducedMotion.matches ? 0.15 : 1);
+      }
+      if (satellite.leaving && satellite.alpha < 0.02) this.satellites.delete(id);
+    }
+  }
+
+  /** Point on the tilted orbit; depth < 0 means behind the lamp. */
+  orbitPoint(cx, cy, radius, phase) {
+    const x = Math.cos(phase) * radius;
+    const y = Math.sin(phase) * radius * ORBIT.flatten;
+    const cos = Math.cos(ORBIT.tilt);
+    const sin = Math.sin(ORBIT.tilt);
+    return { x: cx + x * cos - y * sin, y: cy + x * sin + y * cos, depth: Math.sin(phase) };
+  }
+
+  drawSatellites(cx, cy, base) {
+    if (this.satellites.size === 0) return;
+    const { ctx } = this;
+    // On narrow screens the canvas is taller than wide: keep the orbit inside it
+    const radius = Math.min(base * ORBIT.radius, cx - base * 0.25);
+
+    // The orbit itself, faint, so parked agents read as waiting on the same track
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(ORBIT.tilt);
+    ctx.scale(1, ORBIT.flatten);
+    ctx.beginPath();
+    ctx.arc(0, 0, radius, 0, Math.PI * 2);
+    ctx.restore();
+    ctx.strokeStyle = 'rgba(159, 184, 200, 0.12)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    for (const satellite of this.satellites.values()) {
+      const [r, g, b] = satellite.color;
+      const point = this.orbitPoint(cx, cy, radius, satellite.phase);
+      const near = point.depth >= 0;
+      const size = base * (near ? 0.085 : 0.065) * (1 + satellite.flash * 0.9);
+      const alpha = satellite.alpha * (near ? 1 : 0.55);
+
+      if (satellite.status === 'running') {
+        satellite.trail.unshift(point);
+        satellite.trail.length = Math.min(satellite.trail.length, ORBIT.trail);
+        satellite.trail.forEach((p, i) => {
+          ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${alpha * 0.28 * (1 - i / ORBIT.trail)})`;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, size * (1 - i / (ORBIT.trail + 2)), 0, Math.PI * 2);
+          ctx.fill();
+        });
+      }
+
+      const glow = ctx.createRadialGradient(point.x, point.y, 0, point.x, point.y, size * 3.2);
+      glow.addColorStop(0, `rgba(${r}, ${g}, ${b}, ${alpha * (0.5 + satellite.flash * 0.5)})`);
+      glow.addColorStop(1, `rgba(${r}, ${g}, ${b}, 0)`);
+      ctx.fillStyle = glow;
+      ctx.beginPath();
+      ctx.arc(point.x, point.y, size * 3.2, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.beginPath();
+      ctx.arc(point.x, point.y, size, 0, Math.PI * 2);
+      if (satellite.status === 'queued') {
+        ctx.strokeStyle = `rgba(${r}, ${g}, ${b}, ${alpha})`;
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+      } else {
+        ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${alpha})`;
+        ctx.fill();
+      }
+    }
   }
 
   draw(time) {
@@ -130,5 +233,7 @@ export class Orb {
         ctx.stroke();
       }
     });
+
+    this.drawSatellites(cx, cy, base);
   }
 }

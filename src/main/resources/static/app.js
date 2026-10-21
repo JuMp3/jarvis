@@ -17,6 +17,13 @@ const el = {
   mic: document.getElementById('mic'),
   approval: document.getElementById('approval'),
   approvalText: document.getElementById('approval-text'),
+  teamToggle: document.getElementById('team-toggle'),
+  teamSummary: document.getElementById('team-summary'),
+  teamDots: document.querySelector('.team-dots'),
+  teamClose: document.getElementById('team-close'),
+  team: document.getElementById('team'),
+  tasks: document.getElementById('tasks'),
+  announcer: document.getElementById('team-announcer'),
 };
 
 // ---- audio ------------------------------------------------------------------------------
@@ -295,8 +302,30 @@ function appendToken(text) {
   el.conversation.scrollTop = el.conversation.scrollHeight;
 }
 
+/** Renders **bold** and http(s) links through the DOM, never innerHTML: model and agent output is untrusted. */
+function richText(node, text) {
+  node.replaceChildren();
+  let last = 0;
+  for (const match of text.matchAll(/\*\*(.+?)\*\*|(https?:\/\/[^\s)\]>"]+)/g)) {
+    node.append(text.slice(last, match.index));
+    if (match[1]) {
+      node.append(element('strong', null, match[1]));
+    } else {
+      const link = element('a', null, match[2]);
+      link.href = match[2];
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      node.append(link);
+    }
+    last = match.index + match[0].length;
+  }
+  node.append(text.slice(last));
+  return node;
+}
+
 function finishStreaming() {
   if (streamingItem) {
+    richText(streamingItem, streamingItem.textContent);
     streamingItem.classList.remove('streaming');
     streamingItem = null;
   }
@@ -328,6 +357,177 @@ function setState(state) {
   orb?.setState(state);
   el.status.textContent = ui.connected ? STATUS_TEXT[state] : 'Connessione persa. Riprovo…';
 }
+
+// ---- team: specialists working in the background --------------------------------------------
+
+const AGENTS = {
+  researcher: { label: 'Ricercatore', color: '#86c5c4' },
+  writer: { label: 'Scrittore', color: '#b9a7dc' },
+};
+const SPARE_COLORS = ['#a9c58b', '#d6a7a0', '#cdbb8a'];
+const LANDING_MS = 2500;
+
+const team = { tasks: new Map(), landing: new Set(), openDetails: new Set() };
+const wideLayout = window.matchMedia('(min-width: 1200px)');
+
+function agentInfo(id) {
+  if (AGENTS[id]) return AGENTS[id];
+  const hash = [...id].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7);
+  return { label: id, color: SPARE_COLORS[hash % SPARE_COLORS.length] };
+}
+
+const rgb = (hex) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+const active = (task) => task.status === 'running' || task.status === 'queued';
+
+function clock(ms) {
+  const seconds = Math.max(0, Math.round(ms / 1000));
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
+}
+
+function stateText(task) {
+  switch (task.status) {
+    case 'queued': return 'in coda';
+    case 'running': return `al lavoro da ${clock(Date.now() - task.startedAt)}`;
+    case 'completed': return `fatto in ${clock(task.finishedAt - task.startedAt)}`;
+    case 'failed': return 'non riuscito';
+    case 'cancelled': return 'fermato';
+    case 'interrupted': return 'interrotto dal riavvio';
+    default: return task.status;
+  }
+}
+
+function element(tag, className, text) {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  if (text != null) node.textContent = text; // agent output is untrusted: never innerHTML
+  return node;
+}
+
+function renderTask(task) {
+  const agent = agentInfo(task.agent);
+  const item = element('li', `task ${task.status}`);
+  item.style.setProperty('--agent', agent.color);
+  item.dataset.id = task.id;
+  item.append(element('p', 'task-title', task.title));
+  const meta = element('p', 'task-meta');
+  meta.append(element('span', 'task-agent', agent.label), ', ', element('span', 'task-state', stateText(task)));
+  item.append(meta);
+
+  if (active(task)) {
+    const stop = element('button', 'task-stop', 'Ferma');
+    stop.type = 'button';
+    stop.setAttribute('aria-label', `Ferma il lavoro: ${task.title}`);
+    stop.addEventListener('click', () => send({ type: 'cancel-task', id: task.id }));
+    item.append(stop);
+  }
+
+  const details = element('details');
+  details.open = team.openDetails.has(task.id);
+  details.addEventListener('toggle', () => {
+    if (details.open) team.openDetails.add(task.id);
+    else team.openDetails.delete(task.id);
+  });
+  details.append(element('summary', null, task.result ? 'Risultato e istruzioni' : 'Istruzioni'));
+  const body = element('div', 'task-body');
+  if (task.result) body.append(element('h3', null, 'Risultato'), richText(element('p'), task.result));
+  if (task.error) body.append(element('h3', null, 'Motivo'), element('p', null, task.error));
+  body.append(element('h3', null, 'Istruzioni'), element('p', null, task.instructions));
+  if (task.inputTokens != null) {
+    const tokens = `${task.inputTokens.toLocaleString('it-IT')} in ingresso, ${(task.outputTokens ?? 0).toLocaleString('it-IT')} in uscita`;
+    body.append(element('h3', null, 'Token'), element('p', null, tokens));
+  }
+  details.append(body);
+  item.append(details);
+  return item;
+}
+
+/** Working agents first (oldest first), then finished work (most recent first). */
+function sortedTasks() {
+  const all = [...team.tasks.values()];
+  const working = all.filter(active).sort((a, b) => (a.status === b.status ? a.createdAt - b.createdAt : a.status === 'running' ? -1 : 1));
+  const done = all.filter((t) => !active(t)).sort((a, b) => (b.finishedAt ?? 0) - (a.finishedAt ?? 0));
+  return [...working, ...done];
+}
+
+function renderTeam() {
+  el.tasks.replaceChildren(...sortedTasks().map(renderTask));
+
+  const working = [...team.tasks.values()].filter(active);
+  const running = working.filter((t) => t.status === 'running').length;
+  const queued = working.length - running;
+  const agents = (n) => (n === 1 ? '1 agente al lavoro' : `${n} agenti al lavoro`);
+  const waiting = (n) => (n === 1 ? '1 lavoro in coda' : `${n} lavori in coda`);
+  el.teamSummary.textContent = working.length === 0 ? 'Squadra a riposo'
+    : running === 0 ? waiting(queued)
+      : queued === 0 ? agents(running) : `${agents(running)}, ${queued} in coda`;
+  el.teamToggle.dataset.busy = String(working.length > 0);
+  el.teamDots.replaceChildren(...working.map((task) => {
+    const dot = element('i', task.status === 'queued' ? 'queued' : null);
+    dot.style.setProperty('--agent', agentInfo(task.agent).color);
+    return dot;
+  }));
+
+  orb?.setAgents([...team.tasks.values()]
+    .filter((task) => active(task) || team.landing.has(task.id))
+    .map((task) => ({ id: task.id, color: rgb(agentInfo(task.agent).color), status: task.status })));
+}
+
+function announce(task) {
+  const who = agentInfo(task.agent).label;
+  const text = {
+    running: `${who} al lavoro: ${task.title}`,
+    completed: `${who} ha finito: ${task.title}`,
+    failed: `${who} non è riuscito: ${task.title}`,
+  }[task.status];
+  if (text) el.announcer.textContent = text;
+}
+
+function updateTask(task) {
+  const previous = team.tasks.get(task.id);
+  team.tasks.set(task.id, task);
+  if (previous?.status !== task.status) {
+    announce(task);
+    if (task.status === 'completed' || task.status === 'failed') {
+      // The satellite flashes and fades out instead of vanishing
+      team.landing.add(task.id);
+      setTimeout(() => { team.landing.delete(task.id); renderTeam(); }, LANDING_MS);
+    }
+  }
+  renderTeam();
+}
+
+function setTeamOpen(open) {
+  document.body.classList.toggle('team-open', open);
+  el.teamToggle.setAttribute('aria-expanded', String(open || wideLayout.matches));
+  if (open) el.team.focus({ preventScroll: true });
+}
+
+el.team.tabIndex = -1;
+el.teamToggle.addEventListener('click', () => {
+  if (wideLayout.matches) {
+    el.team.focus();
+    el.team.scrollIntoView({ block: 'nearest' });
+    return;
+  }
+  setTeamOpen(!document.body.classList.contains('team-open'));
+});
+el.teamClose.addEventListener('click', () => { setTeamOpen(false); el.teamToggle.focus(); });
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape' && document.body.classList.contains('team-open')) {
+    setTeamOpen(false);
+    el.teamToggle.focus();
+  }
+});
+wideLayout.addEventListener('change', () => setTeamOpen(false));
+setTeamOpen(false);
+
+// Elapsed time of running tasks
+setInterval(() => {
+  for (const node of el.tasks.querySelectorAll('.task.running')) {
+    const task = team.tasks.get(node.dataset.id);
+    if (task) node.querySelector('.task-state').textContent = stateText(task);
+  }
+}, 1000);
 
 // ---- WebSocket --------------------------------------------------------------------------
 
@@ -397,10 +597,22 @@ function handle(msg) {
       break;
     case 'history':
       if (el.log.children.length === 0) {
-        for (const m of msg.messages) addItem(m.role === 'user' ? 'turn-user' : 'turn-jarvis', m.text);
+        for (const m of msg.messages) {
+          const item = addItem(m.role === 'user' ? 'turn-user' : 'turn-jarvis', m.text);
+          if (m.role !== 'user') richText(item, m.text);
+        }
       }
       break;
+    case 'tasks':
+      team.tasks = new Map(msg.tasks.map((task) => [task.id, task]));
+      renderTeam();
+      break;
+    case 'task-update':
+      updateTask(msg.task);
+      break;
     case 'state':
+      // Jarvis may start a turn by itself to report a finished task
+      if (msg.state === 'thinking') audio.turnDone = false;
       if (msg.state === 'thinking' || ui.state !== 'speaking') setState(msg.state);
       break;
     case 'transcript':

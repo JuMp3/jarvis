@@ -39,8 +39,28 @@ public class TurnService {
         this.approvals = approvals;
     }
 
+    /** Queues an automatic message for Jarvis (e.g. a task result) and runs it once the session is idle. */
+    void notify(SessionState session, String notice) {
+        session.pendingNotices().add(notice);
+        deliverPendingNotices(session);
+    }
+
+    private void deliverPendingNotices(SessionState session) {
+        synchronized (session) {
+            if (!session.idle() || session.pendingNotices().isEmpty()) {
+                return;
+            }
+            StringBuilder notices = new StringBuilder();
+            for (String notice; (notice = session.pendingNotices().poll()) != null; ) {
+                notices.append(notices.isEmpty() ? "" : "\n\n").append(notice);
+            }
+            start(session, notices.toString(), session.lastTurnSpoken());
+        }
+    }
+
     void start(SessionState session, String userText, boolean speak) {
         String sessionId = session.id();
+        session.lastTurnSpoken(speak);
         ProviderId provider = session.provider();
         Optional<TextToSpeech> tts = speak ? voice.textToSpeech() : Optional.empty();
         ExecutorService speechQueue = tts.isPresent()
@@ -80,7 +100,7 @@ public class TurnService {
                             if (speechQueue != null) {
                                 speak(turn, speechQueue, tts.get(), sessionId, message, seq);
                             }
-                            finish(turn, speechQueue, sessionId);
+                            finish(turn, speechQueue, session);
                         },
                         () -> {
                             if (speechQueue != null) {
@@ -93,7 +113,7 @@ public class TurnService {
                                     .addKeyValue("spoken", speak)
                                     .addKeyValue("durationMs", elapsedMs(startedAt))
                                     .log();
-                            finish(turn, speechQueue, sessionId);
+                            finish(turn, speechQueue, session);
                         }));
     }
 
@@ -122,16 +142,20 @@ public class TurnService {
     }
 
     /** "done" goes through the speech queue, so the client receives it after the last clip. */
-    private void finish(Turn turn, ExecutorService queue, String sessionId) {
+    private void finish(Turn turn, ExecutorService queue, SessionState session) {
+        Runnable done = () -> {
+            if (!turn.cancelled()) {
+                sessions.send(session.id(), Protocol.done());
+            }
+            turn.markFinished();
+            // On a fresh thread: the next turn cancels this one, which would interrupt the speech queue
+            Thread.ofVirtual().start(() -> deliverPendingNotices(session));
+        };
         if (queue == null) {
-            sessions.send(sessionId, Protocol.done());
+            done.run();
             return;
         }
-        submit(queue, () -> {
-            if (!turn.cancelled()) {
-                sessions.send(sessionId, Protocol.done());
-            }
-        });
+        submit(queue, done);
         queue.shutdown();
     }
 

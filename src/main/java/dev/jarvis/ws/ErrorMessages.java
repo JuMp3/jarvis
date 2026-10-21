@@ -17,7 +17,7 @@ import dev.jarvis.voice.VoiceException;
  * Turns failures into short Italian sentences that can be shown and spoken. Technical details stay in
  * the logs.
  */
-final class ErrorMessages {
+public final class ErrorMessages {
 
     static final int NO_STATUS = 0;
     private static final int MAX_CAUSE_DEPTH = 20;
@@ -25,7 +25,7 @@ final class ErrorMessages {
     private ErrorMessages() {
     }
 
-    static String forProvider(ProviderId provider, Throwable error) {
+    public static String forProvider(ProviderId provider, Throwable error) {
         if (isNetwork(error)) {
             return provider == ProviderId.OLLAMA
                     ? "Non riesco a raggiungere Ollama. Verifica che sia avviato."

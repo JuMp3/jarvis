@@ -4,7 +4,7 @@ Assistente AI personale: backend Java (Spring Boot 4.1, Spring AI 2.0), frontend
 
 ## Stato attuale — leggere per primo
 
-Fasi 0 e 1 chiuse e verificate end-to-end con Claude: streaming, tool, approvazioni, memoria su PostgreSQL + pgvector, errori leggibili, turni interrotti e riconnessione, log strutturati. Voce: locale (Speaches: Whisper + Piper) e browser verificate end-to-end; OpenAI non provata (account senza credito). Ollama non provato. Prossima: Fase 2.
+Fasi 0 e 1 chiuse e verificate end-to-end con Claude: streaming, tool, approvazioni, memoria su PostgreSQL + pgvector, errori leggibili, turni interrotti e riconnessione, log strutturati. Voce: locale (Speaches: Whisper + Piper) e browser verificate end-to-end; OpenAI non provata (account senza credito). Ollama non provato. Fase 2 (squadra di agenti) fatta e verificata con Claude; prossima: Fase 3.
 
 Cose verificate su Spring AI 2.0.1, da non rifare:
 
@@ -15,7 +15,7 @@ Cose verificate su Spring AI 2.0.1, da non rifare:
 - Rete aziendale con Netskope: Speaches scarica i modelli solo con `SPEACHES_CA_BUNDLE` (vedi README), e su Git Bash i path dei container vanno passati con `MSYS_NO_PATHCONV=1`.
 - Chiavi Anthropic con ambito "Organizzazione": serve `spring.ai.anthropic.custom-headers.anthropic-workspace-id`.
 
-L'evoluzione principale è l'orchestrazione degli agenti (Fase 2): Jarvis delega a specialisti e gestisce task in background. Il disegno è nella sezione "Orchestrazione degli agenti" di `docs/ARCHITECTURE.md`. Non anticiparlo prima che la Fase 1 sia chiusa, e non introdurre nel frattempo scelte che lo contraddicano (per esempio approvazioni legate per sempre alla sessione WebSocket).
+Jarvis orchestra una squadra di specialisti in background (sezione "Orchestrazione degli agenti" di `docs/ARCHITECTURE.md`). Prima di dare a uno specialista un tool che scrive, sposta le approvazioni dalla sessione WebSocket alla conversazione (vedi "Da fare" in quella sezione).
 
 ## Comandi
 
@@ -38,8 +38,10 @@ src/main/java/dev/jarvis/
                 NoteStore e SafePaths (logica pura del filesystem sandbox)
   voice/        SpeechToText, TextToSpeech, OpenAiAudioClient (solo JDK HTTP, OpenAI o Speaches),
                 SentenceChunker, AudioFormats, Multipart, Json, VoiceServices, VoiceConfig (motore per direzione)
+  task/         TaskService (coda, parallelismo, timeout, annullamento), TaskRepository, AgentTask,
+                Specialists (jarvis.agents.*), TaskTools (startTask, listTasks, cancelTask)
   ws/           WebSocketConfig, JarvisWebSocketHandler, SessionRegistry, SessionState,
-                TurnService, Turn, Protocol
+                TurnService, Turn, Protocol, TaskNotifier (aggiornamenti e annunci dei task), ErrorMessages
 src/main/resources/static/   index.html, style.css, app.js, orb.js (ES modules, nessun build step)
 src/main/resources/schema.sql  schema idempotente (estensione vector, chat_message)
 src/test/java/               test JUnit 5 della logica pura + integrazione su Postgres (Testcontainers)

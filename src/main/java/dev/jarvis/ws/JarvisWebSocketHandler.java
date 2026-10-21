@@ -22,6 +22,7 @@ import org.springframework.web.util.UriComponentsBuilder;
 
 import dev.jarvis.agent.ApprovalService;
 import dev.jarvis.llm.ProviderRouter;
+import dev.jarvis.task.TaskService;
 import dev.jarvis.voice.AudioFormats;
 import dev.jarvis.voice.SpeechToText;
 import dev.jarvis.voice.VoiceServices;
@@ -46,16 +47,19 @@ public class JarvisWebSocketHandler extends AbstractWebSocketHandler implements 
     private final ProviderRouter router;
     private final VoiceServices voice;
     private final ChatMemory memory;
+    private final TaskService tasks;
     private final JsonMapper json;
 
     public JarvisWebSocketHandler(SessionRegistry sessions, TurnService turns, ApprovalService approvals,
-                                  ProviderRouter router, VoiceServices voice, ChatMemory memory, JsonMapper json) {
+                                  ProviderRouter router, VoiceServices voice, ChatMemory memory,
+                                  TaskService tasks, JsonMapper json) {
         this.sessions = sessions;
         this.turns = turns;
         this.approvals = approvals;
         this.router = router;
         this.voice = voice;
         this.memory = memory;
+        this.tasks = tasks;
         this.json = json;
     }
 
@@ -66,12 +70,14 @@ public class JarvisWebSocketHandler extends AbstractWebSocketHandler implements 
         sessions.send(state.id(), Protocol.hello(router.availableIds(), router.defaultProvider().id(),
                 voice.sttMode(), voice.ttsMode(), voice.language()));
         sessions.send(state.id(), Protocol.history(historyOf(state.conversationId())));
+        sessions.send(state.id(), Protocol.tasks(tasks.recent(state.conversationId())));
     }
 
     /** What the user saw in the conversation: their messages and Jarvis' text answers, no tool traffic. */
     private List<Protocol.HistoryEntry> historyOf(String conversationId) {
         return memory.get(conversationId).stream()
                 .filter(message -> message.getText() != null && !message.getText().isBlank())
+                .filter(message -> !message.getText().startsWith(TaskNotifier.NOTICE_PREFIX))
                 .filter(message -> message.getMessageType() == MessageType.USER
                         || message.getMessageType() == MessageType.ASSISTANT)
                 .map(message -> new Protocol.HistoryEntry(
@@ -111,6 +117,7 @@ public class JarvisWebSocketHandler extends AbstractWebSocketHandler implements 
                 sessions.send(state.id(), Protocol.state("idle"));
             }
             case "approval" -> approvals.resolve(state.id(), msg.id(), Boolean.TRUE.equals(msg.approved()));
+            case "cancel-task" -> tasks.cancel(state.conversationId(), msg.id());
             default -> sessions.send(state.id(), Protocol.error("Tipo di messaggio sconosciuto: " + type));
         }
     }

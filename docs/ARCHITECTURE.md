@@ -15,7 +15,7 @@ Assistente AI personale con backend Java (Spring Boot 4.1 + Spring AI 2.0), più
 ┌───────────────────────────────▼───────────────── Backend (Spring Boot) ────────────────┐
 │  ws/      JarvisWebSocketHandler · SessionRegistry · TurnService (un turno)            │
 │  agent/   AgentService (ChatClient + memoria + tool) · ApprovalService · tools/        │
-│  task/    TaskService · AgentRegistry · specialisti            (previsto, Fase 2)      │
+│  task/    TaskService · Specialists · TaskTools (squadra di agenti in background)      │
 │  llm/     ProviderRouter → un ChatClient per provider (Anthropic · OpenAI · Ollama)    │
 │  voice/   SpeechToText · TextToSpeech (API audio OpenAI o Speaches locale) · Chunker   │
 │  config/  JarvisProperties (prefisso "jarvis")                                         │
@@ -85,82 +85,60 @@ Server → client
 - Contenuti esterni (email, pagine web, file) sono **dati, non istruzioni**: quando arriveranno i tool che li leggono, il system prompt e l'approvazione obbligatoria restano la difesa contro la prompt injection.
 - Shell e comandi di sistema arriveranno solo con allowlist esplicita, ed eventualmente in container.
 
-## Orchestrazione degli agenti (progetto, Fase 2)
+## Orchestrazione degli agenti (Fase 2)
 
-Non ancora implementata: oggi c'è un solo agente (`AgentService`). Questa sezione fissa il disegno, così le fasi successive non lo contraddicono.
+Jarvis è il capo di una squadra di specialisti. Per ogni richiesta decide se rispondere da solo, usare un tool o affidare il lavoro a uno o più specialisti in background, in parallelo. La conversazione resta libera: quando un lavoro finisce, Jarvis lo riferisce, anche a voce.
 
-### Ruoli
+### Componenti
 
-- **Orchestratore.** È Jarvis, cioè l'agente della conversazione. Per ogni richiesta decide se rispondere da solo, usare un tool, delegare a uno specialista o avviare un task in background. Poi verifica i risultati e ti riferisce.
-- **Specialisti.** Ognuno è definito in configurazione da: id, descrizione (è quella che legge l'orchestratore per scegliere), system prompt, provider e modello, tool consentiti, permessi e budget. Primi candidati:
-
-  | Specialista | Compito | Tool | Scrittura |
-  |---|---|---|---|
-  | `researcher` | Cerca e confronta informazioni sul web | ricerca, lettura pagine | No |
-  | `documents` | Legge e riassume documenti locali | file sandbox, RAG | No |
-  | `organizer` | Calendario ed email | MCP calendario, IMAP/SMTP | Con approvazione |
-  | `coder` | Lavora su un repository locale | git, file, build; in alternativa Claude Code come processo esterno | Con approvazione |
-
-- **Agenti esterni.** Agenti remoti via protocollo A2A, o tool CLI come Claude Code, presentati con la stessa interfaccia degli specialisti interni.
+| Componente | Responsabilità |
+|---|---|
+| `Specialists` | Costruisce uno specialista per ogni voce di `jarvis.agents.*`: un `ChatClient` con il proprio provider, modello, system prompt, tool e limiti. Aggiungere uno specialista è solo configurazione. Valida la configurazione all'avvio (tool sconosciuti, provider non abilitato, `web-search` fuori da Anthropic). |
+| `TaskService` | Coda e esecuzione su thread virtuali, al massimo `jarvis.tasks.max-parallel` task insieme; timeout (`jarvis.tasks.timeout`), annullamento, consumo di token. Ogni cambio di stato è salvato su `agent_task` e pubblicato come evento `TaskUpdated`. All'avvio i task rimasti a metà diventano `interrupted`. |
+| `TaskTools` | Gli strumenti del solo orchestratore: `startTask(agent, title, instructions, expectedOutput)`, `listTasks`, `cancelTask(id \| all)`. Gli specialisti non li ricevono, quindi non possono delegare. |
+| `TaskNotifier` | Inoltra ogni aggiornamento alle schede aperte della conversazione (`task-update`) e, a task finito, consegna l'esito a Jarvis come messaggio automatico. Se Jarvis sta parlando, il messaggio aspetta la fine del turno; più esiti pronti insieme partono in un solo turno. |
 
 ### Delegare significa chiamare un tool
 
-Per l'orchestratore ogni specialista è un tool (`delegate_researcher`, `delegate_documents`…) con due parametri: `task` (istruzioni complete e autosufficienti) ed `expectedOutput` (cosa restituire). In questo modo il ciclo agente di Spring AI resta lo stesso, e la scelta dello specialista la fa il modello leggendo le descrizioni.
+Un unico tool `startTask` con l'id dello specialista: il modello sceglie leggendo le descrizioni che `ProviderRouter` aggiunge al system prompt. Per lavori indipendenti lo chiama più volte nella stessa risposta, e i task girano in parallelo. Risponde subito con una frase ("ci lavoro") senza aspettare.
 
-Lo specialista parte con un **contesto pulito**: riceve solo il compito, non la conversazione. Costa meno token, non si confonde con discorsi precedenti e non vede dati che non gli servono. Restituisce un risultato sintetico (esito, risultato, fonti o file prodotti, consumo), non la trascrizione del suo lavoro.
+Lo specialista parte con un **contesto pulito**: riceve solo istruzioni e risultato atteso, non la conversazione. Costa meno token, non si confonde con discorsi precedenti e non vede dati che non gli servono. Il suo risultato torna a Jarvis in un messaggio automatico marcato (`[Aggiornamento automatico sui task…]`), che resta in memoria ma non compare come messaggio dell'utente.
 
-```java
-public interface Agent {
-    AgentSpec spec();
-    AgentResult run(AgentTask task, TaskContext context);   // bloccante, su thread virtuale
-}
+Specialisti configurati:
 
-record AgentSpec(String id, String description, ProviderId provider, String model,
-                 Set<String> tools, boolean canWrite, Budget budget) {}
-record AgentTask(String taskId, String parentTaskId, String instructions, String expectedOutput) {}
-record AgentResult(Outcome outcome, String summary, List<Artifact> artifacts, Usage usage) {}
-// TaskContext: conversationId (per le approvazioni), annullamento, contatore del budget, canale eventi
-```
+| Specialista | Compito | Tool | Scrittura |
+|---|---|---|---|
+| `researcher` | Cerca sul web, confronta fonti, restituisce sintesi e link | `time`, `web-search` (ricerca lato Anthropic, `max-searches` come budget) | No |
+| `writer` | Scrive testi completi da istruzioni dettagliate | `time` | No |
 
-### Sincrono o in background
-
-- **Richieste brevi** (una domanda, un tool veloce): restano nel turno vocale come oggi.
-- **Lavori lunghi:** l'orchestratore chiama `start_task(title, plan)`, che crea un task e restituisce subito un id. Jarvis risponde "ci lavoro" e la conversazione resta libera. `TaskService` esegue il task in background e pubblica eventi di avanzamento. Alla fine il risultato entra nella conversazione e Jarvis lo annuncia, anche a voce se attiva.
-- **Parallelismo:** un task può avviare più sotto-task, per esempio tre ricerche su fonti diverse, eseguiti in parallelo con un limite di concorrenza.
-- **Ciclo di vita:** `queued → running ⇄ waiting-approval → completed | failed | cancelled`.
-- **Persistenza:** i task si salvano su database (dopo la Fase 1), così lo storico sopravvive ai riavvii. Un task in corso durante uno spegnimento viene segnato come interrotto.
+Previsti per la Fase 3: `documents` (documenti locali, RAG), `organizer` (calendario ed email, con approvazione), `coder` (repository locale, con approvazione); agenti esterni via A2A o Claude Code come processo esterno.
 
 ### Sicurezza e controllo
 
-- **Permessi per specialista:** ognuno vede solo i propri tool. Il `researcher` non può inviare email.
-- **Lettura separata dall'azione:** chi legge contenuti non fidati (web, email in arrivo) non ha tool di scrittura. Le azioni le decide l'orchestratore, sulla base del riassunto, e passano comunque dall'approvazione: un riassunto può ancora contenere istruzioni iniettate.
-- **Approvazioni legate alla conversazione:** un task può durare più di una connessione WebSocket, quindi le richieste di approvazione vanno instradate per `conversationId` e non per sessione. Vengono ripresentate quando ti riconnetti e hanno un timeout più lungo dei turni vocali. La richiesta dice quale specialista la fa e per quale task.
-- **Una sola profondità di delega:** gli specialisti non delegano a loro volta. Evita cicli e costi fuori controllo; si potrà rivedere più avanti.
-- **Budget:** limite di passi (chiamate ai tool), token e durata per task e per specialista. Superato il limite, lo specialista si ferma e restituisce un risultato parziale. Per far rispettare budget e annullamento a ogni passo, il ciclo dei tool degli specialisti va guidato a mano (Spring AI 2.0 permette di disattivare quello automatico).
-- **Annullamento:** "Jarvis, ferma tutto" o il pulsante nel pannello attività cancellano il task e i suoi sotto-task.
-- **Tracciabilità:** ogni task registra passi, tool chiamati, token e costo stimato. Li vedi nel pannello attività e nei log.
+- **Permessi per specialista:** ognuno vede solo i propri tool, scelti da un insieme che oggi non contiene nulla che scrive, invia o cancella.
+- **Lettura separata dall'azione:** chi legge contenuti non fidati (il web) non ha tool di scrittura. Le azioni le decide l'orchestratore, sulla base del riassunto, e passano comunque dall'approvazione: un riassunto può ancora contenere istruzioni iniettate.
+- **Una sola profondità di delega:** gli specialisti non delegano a loro volta.
+- **Budget:** ricerche web per task (`max-searches`), token di uscita (`max-tokens`), durata (`jarvis.tasks.timeout`), parallelismo (`max-parallel`). Il modello può lanciare le ricerche da codice in un ciclo, e ogni query conta.
+- **Annullamento:** pulsante "Ferma" nel pannello Squadra, `cancel-task` dal client, oppure "Jarvis, ferma tutto" (`cancelTask("all")`).
+- **Tracciabilità:** ogni task registra stato, tempi e token; li vedi nel pannello Squadra e nel log JSON (`Task ended`).
+- **Da fare con i primi specialisti che scrivono (Fase 3):** approvazioni instradate per `conversationId` invece che per sessione, ripresentate alla riconnessione, con il nome dello specialista e del task nella richiesta.
 
-### Quando non delegare
+### Interfaccia
 
-Il system prompt dell'orchestratore dice di rispondere direttamente quando può. Delega solo se il lavoro è lungo, si può parallelizzare, richiede un modello o permessi diversi, oppure deve leggere molti contenuti esterni. Più agenti costano molti più token e sono più difficili da capire quando sbagliano.
+- **Orb:** ogni task attivo è un satellite nel colore del suo agente, su un'orbita inclinata intorno alla lampada. In coda resta fermo e tenue; al lavoro orbita con una scia; quando finisce dà un lampo e si dissolve.
+- **Header:** lo stato della squadra in parole ("2 agenti al lavoro, 1 in coda") con un punto per agente.
+- **Pannello Squadra:** colonna fissa sopra i 1200 px, pannello a scomparsa sotto. Per ogni lavoro: agente, titolo, stato e tempo in diretta, "Ferma", e nel dettaglio risultato, motivo, istruzioni e token. Gli annunci per gli screen reader passano da una regione `aria-live` separata.
+- Grassetto e link nei testi di Jarvis e degli agenti sono resi costruendo il DOM, mai con `innerHTML`, e i link accettano solo `http(s)`.
 
-### Protocollo previsto
+### Protocollo
 
 | Direzione | Tipo | Campi |
 |---|---|---|
-| server → client | `task-started` | `id`, `title`, `agent` |
-| server → client | `task-progress` | `id`, `message` |
-| server → client | `task-completed` | `id`, `summary` |
-| server → client | `task-failed` | `id`, `message` |
+| server → client | `tasks` | `tasks`: elenco recente della conversazione, inviato dopo `history` |
+| server → client | `task-update` | `task`: `id`, `agent`, `title`, `instructions`, `status` (`queued` · `running` · `completed` · `failed` · `cancelled` · `interrupted`), `result`, `error`, `inputTokens`, `outputTokens`, `createdAt`, `startedAt`, `finishedAt` (epoch ms) |
 | client → server | `cancel-task` | `id` |
 
-`approval-request` acquisisce i campi `agent` e `taskId`.
-
-### Implementazione in Spring AI
-
-- Ogni specialista è un `ChatClient` creato da `ProviderRouter` con il proprio system prompt e i propri tool, senza la memoria della conversazione (ha una memoria per task).
-- I tool di delega si creano a runtime, uno per specialista in configurazione (`jarvis.agents.*`), come `ToolCallback` programmatici: aggiungere uno specialista non richiede codice. L'API esatta va verificata su Spring AI 2.0.
-- `AgentRegistry` carica le specifiche e costruisce gli specialisti; `TaskService` gestisce coda, esecuzione, eventi e annullamento.
+Un messaggio di stato completo, invece di eventi separati per inizio, avanzamento e fine, rende banale il client (sostituisce per `id`) e la riconnessione (basta `tasks`).
 
 ## Persistenza
 
@@ -182,7 +160,7 @@ Il system prompt dell'orchestratore dice di rispondere direttamente quando può.
 3. **STT/TTS con HTTP diretto** invece delle API audio di Spring AI. Il modulo OpenAI è stato riscritto nella 2.0; tenere l'audio dietro interfacce nostre con il solo JDK riduce le dipendenze. I motori locali passano da Speaches, che espone l'API audio OpenAI: stesso client, cambia solo l'indirizzo.
 4. **Approvazione dentro i tool.** Funziona con il ciclo automatico di Spring AI e mette la regola di sicurezza accanto al codice che la richiede.
 5. **TTS sequenziale per turno.** Ordine garantito senza complessità; la parallelizzazione con riordino lato client è un'ottimizzazione successiva (il campo `seq` è già previsto).
-6. **Orchestrazione: delega come tool.** Gli specialisti si presentano all'orchestratore come tool, partono con un contesto pulito, delegano su un solo livello, e chi legge contenuti non fidati non può scrivere. I lavori lunghi girano come task in background, così la conversazione vocale non si blocca.
+6. **Orchestrazione: delega come tool.** Un solo tool `startTask` con l'id dello specialista, invece di un tool per specialista: stesso effetto, nessun `ToolCallback` generato a runtime. Gli specialisti partono con un contesto pulito, delegano su un solo livello, e chi legge contenuti non fidati non può scrivere. Tutti i lavori delegati girano in background, così la conversazione vocale non si blocca mai.
 7. **PostgreSQL + pgvector da subito.** Un solo database per conversazioni, task (Fase 2) e vettori (Fase 5), invece di un database su file da migrare più avanti.
 8. **Voce locale di default: Whisper `base` + Piper Paola**, misurati su CPU da portatile (Core Ultra 7 165U, senza GPU dedicata). Su una frase di 2,5 s: Whisper `base` circa 2 s, `small` circa 5,5 s; Piper circa 0,2 s per frase, Kokoro circa 5 volte più lento. Con una GPU conviene `small` o `large-v3-turbo` e l'immagine `latest-cuda`.
 9. **Haiku per i turni parlati** (`jarvis.providers.voice-models`). Misurato: circa 2 s al primo audio contro 4–20 s di Sonnet, che resta il modello dei turni scritti. Vale anche quando la voce la produce il browser.
@@ -191,7 +169,7 @@ Il system prompt dell'orchestratore dice di rispondere direttamente quando può.
 
 - **Fase 0 — questo scheletro.** Chat multi-provider in streaming, push-to-talk, TTS per frase, orb animato, tool d'esempio con approvazione.
 - **Fase 1 — base solida (fatta).** Build verde, Maven wrapper, test, gestione errori e riconnessione, persistenza su PostgreSQL + pgvector (i task arriveranno con la Fase 2), log strutturati (file JSON ECS in `~/.jarvis/logs/`).
-- **Fase 2 — task e orchestrazione.** `TaskService` con task in background, eventi e pannello attività nell'interfaccia; approvazioni per conversazione; `AgentRegistry` e delega come tool; primo specialista in sola lettura (`researcher`); budget e annullamento.
+- **Fase 2 — task e orchestrazione (fatta).** Task in background in parallelo, eventi, pannello Squadra e satelliti nell'orb; delega come tool; specialisti `researcher` e `writer` in sola lettura; budget, timeout e annullamento. Le approvazioni per conversazione passano alla Fase 3, con i primi specialisti che scrivono.
 - **Fase 3 — tool reali e nuovi specialisti.** Client MCP (filesystem, calendario, GitHub) con allowlist per specialista; specialisti `documents`, `organizer` e `coder`; azioni desktop (aprire app e URL).
 - **Fase 4 — voce naturale.** VAD nel browser e barge-in automatico, wake word, STT in streaming, valutazione di un'API realtime speech-to-speech. STT/TTS locali e Web Speech API sono già disponibili.
 - **Fase 5 — app desktop.** Shell Tauri con il backend come sidecar, tray, avvio automatico; memoria a lungo termine e RAG sui documenti (pgvector).
