@@ -6,6 +6,10 @@ server:
 spring:
   application:
     name: jarvis
+  docker:
+    compose:
+      # Keep the containers running across the restarts that apply new settings
+      lifecycle-management: start-only
   config:
     # Local secrets and overrides, never committed (see jarvis-local.yml.example); .env holds KEY=value lines
     import: optional:file:./jarvis-local.yml,optional:file:./.env[.properties]
@@ -24,6 +28,8 @@ spring:
     mcp:
       client:
         name: jarvis
+        # The first start of an npx server downloads it: give it time
+        request-timeout: 60s
         # Jarvis initializes the servers itself, so one that is down or has no token does not stop the startup
         initialized: false
         # Tools are exposed by McpTools, filtered per server (jarvis.mcp.servers), never all at once

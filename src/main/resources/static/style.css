@@ -579,6 +579,209 @@ select:disabled {
   cursor: not-allowed;
 }
 
+/* Settings and first-start wizard ---------------------------------------------------- */
+
+.icon-button {
+  display: grid;
+  place-items: center;
+  width: 2.1rem;
+  height: 2.1rem;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: transparent;
+  cursor: pointer;
+}
+
+.icon-button svg {
+  width: 1.15rem;
+  height: 1.15rem;
+  fill: var(--mist);
+}
+
+.settings-dialog {
+  width: min(44rem, calc(100% - 2rem));
+  max-height: calc(100vh - 2rem);
+  padding: 1.5rem;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--deep);
+  color: var(--paper);
+}
+
+.settings-dialog::backdrop {
+  background: rgb(10 18 30 / 0.7);
+}
+
+.settings-dialog h2 {
+  margin: 0;
+  font: 500 var(--step-2) / 1.2 var(--read);
+}
+
+.settings-intro {
+  margin: 0.3rem 0 1rem;
+  color: var(--mist);
+  font-size: var(--step--1);
+}
+
+.settings-body {
+  max-height: 60vh;
+  overflow-y: auto;
+  padding-right: 0.5rem;
+}
+
+.settings-group h3 {
+  margin: 1rem 0 0.75rem;
+  font: 500 var(--step-1) / 1.3 var(--read);
+}
+
+.setting {
+  margin-bottom: 1.1rem;
+}
+
+.setting-label {
+  display: block;
+  margin-bottom: 0.3rem;
+  font-weight: 500;
+}
+
+.setting input[type="text"],
+.setting input[type="password"],
+.setting textarea {
+  width: 100%;
+  padding: 0.5rem 0.7rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--ink);
+}
+
+.setting textarea {
+  resize: vertical;
+  font: 400 var(--step--1) / 1.5 ui-monospace, Consolas, monospace;
+}
+
+.setting-row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.secret-field {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+
+.secret-field input {
+  padding-right: 2.6rem !important;
+}
+
+.eye {
+  position: absolute;
+  top: 50%;
+  right: 0.35rem;
+  display: grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  transform: translateY(-50%);
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  cursor: pointer;
+}
+
+.eye svg {
+  width: 1.15rem;
+  height: 1.15rem;
+  fill: var(--mist);
+}
+
+.eye[aria-pressed="true"] svg {
+  fill: var(--lamp);
+}
+
+.setting-help,
+.setting-result {
+  margin: 0.3rem 0 0;
+  font-size: var(--step--1);
+  color: var(--mist);
+}
+
+.setting-result:empty {
+  display: none;
+}
+
+.setting-choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 1.1rem;
+}
+
+.setting-choice,
+.setting-remove {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  cursor: pointer;
+  white-space: nowrap;
+  font-size: var(--step--1);
+}
+
+.setting-choice input,
+.setting-remove input {
+  accent-color: var(--lamp);
+}
+
+.account {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.6rem;
+}
+
+.account:empty {
+  display: none;
+}
+
+.account-message {
+  flex-basis: 100%;
+  white-space: pre-wrap;
+}
+
+.account-message a {
+  color: var(--lamp);
+}
+
+.small {
+  padding: 0.35rem 0.8rem;
+  border-radius: 999px;
+  font-size: var(--step--1);
+  cursor: pointer;
+}
+
+.settings-status {
+  min-height: 1.2em;
+  margin: 0.75rem 0 0;
+  font-size: var(--step--1);
+}
+
+.settings-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin-top: 0.5rem;
+}
+
+.settings-actions .spacer {
+  flex: 1;
+}
+
+.settings-actions button {
+  padding: 0.55rem 1.1rem;
+  border-radius: 999px;
+  cursor: pointer;
+}
+
 /* Approval ---------------------------------------------------------------------------- */
 
 .approval {

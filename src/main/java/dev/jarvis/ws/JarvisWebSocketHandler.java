@@ -2,6 +2,7 @@ package dev.jarvis.ws;
 
 import java.nio.ByteBuffer;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.regex.Pattern;
@@ -22,6 +23,9 @@ import org.springframework.web.util.UriComponentsBuilder;
 
 import dev.jarvis.agent.ApprovalService;
 import dev.jarvis.llm.ProviderRouter;
+import dev.jarvis.JarvisApplication;
+import dev.jarvis.mcp.McpTools;
+import dev.jarvis.settings.SettingsService;
 import dev.jarvis.task.TaskService;
 import dev.jarvis.voice.AudioFormats;
 import dev.jarvis.voice.SpeechToText;
@@ -48,11 +52,13 @@ public class JarvisWebSocketHandler extends AbstractWebSocketHandler implements 
     private final VoiceServices voice;
     private final ChatMemory memory;
     private final TaskService tasks;
+    private final SettingsService settings;
+    private final McpTools mcp;
     private final JsonMapper json;
 
     public JarvisWebSocketHandler(SessionRegistry sessions, TurnService turns, ApprovalService approvals,
                                   ProviderRouter router, VoiceServices voice, ChatMemory memory,
-                                  TaskService tasks, JsonMapper json) {
+                                  TaskService tasks, SettingsService settings, McpTools mcp, JsonMapper json) {
         this.sessions = sessions;
         this.turns = turns;
         this.approvals = approvals;
@@ -60,6 +66,8 @@ public class JarvisWebSocketHandler extends AbstractWebSocketHandler implements 
         this.voice = voice;
         this.memory = memory;
         this.tasks = tasks;
+        this.settings = settings;
+        this.mcp = mcp;
         this.json = json;
     }
 
@@ -68,7 +76,7 @@ public class JarvisWebSocketHandler extends AbstractWebSocketHandler implements 
         WebSocketSession socket = new ConcurrentWebSocketSessionDecorator(session, SEND_TIME_LIMIT_MS, SEND_BUFFER_LIMIT);
         SessionState state = sessions.register(socket, conversationIdOf(session), router.defaultProvider());
         sessions.send(state.id(), Protocol.hello(router.availableIds(), router.defaultProvider().id(),
-                voice.sttMode(), voice.ttsMode(), voice.language()));
+                voice.sttMode(), voice.ttsMode(), voice.language(), settings.setupRequired()));
         sessions.send(state.id(), Protocol.history(historyOf(state.conversationId())));
         sessions.send(state.id(), Protocol.tasks(tasks.recent(state.conversationId())));
         // Tasks may have asked for approval while no tab was open
@@ -121,8 +129,39 @@ public class JarvisWebSocketHandler extends AbstractWebSocketHandler implements 
             }
             case "approval" -> approvals.resolve(state.conversationId(), msg.id(), Boolean.TRUE.equals(msg.approved()));
             case "cancel-task" -> tasks.cancel(state.conversationId(), msg.id());
+            case "settings-get" -> sessions.send(state.id(), Protocol.settings(settings.view(), settings.setupRequired()));
+            case "settings-save" -> workers.submit(() -> saveSettings(state, msg));
+            case "settings-reveal" -> {
+                try {
+                    sessions.send(state.id(), Protocol.settingsSecret(msg.name(), settings.reveal(msg.name())));
+                } catch (IllegalArgumentException e) {
+                    sessions.send(state.id(), Protocol.settingsError(e.getMessage()));
+                }
+            }
+            case "settings-test" -> workers.submit(() -> sessions.send(state.id(),
+                    Protocol.settingsTestResult(msg.name(), settings.test(msg.name(), msg.value()))));
+            case "account-login" -> workers.submit(() -> sessions.send(state.id(),
+                    Protocol.accountResult(msg.server(), mcp.adminCall(msg.server(), "login"))));
+            case "account-verify" -> workers.submit(() -> sessions.send(state.id(),
+                    Protocol.accountResult(msg.server(), mcp.adminCall(msg.server(), "verify-login"))));
             default -> sessions.send(state.id(), Protocol.error("Tipo di messaggio sconosciuto: " + type));
         }
+    }
+
+    /** Saved settings take effect with a restart of the application; the pages reconnect by themselves. */
+    private void saveSettings(SessionState state, Protocol.ClientMessage msg) {
+        try {
+            settings.save(msg.values() == null ? Map.of() : msg.values(), msg.cleared() == null ? List.of() : msg.cleared());
+        } catch (IllegalArgumentException e) {
+            sessions.send(state.id(), Protocol.settingsError(e.getMessage()));
+            return;
+        } catch (RuntimeException e) {
+            log.warn("Cannot save settings", e);
+            sessions.send(state.id(), Protocol.settingsError("Non riesco a salvare le impostazioni: " + e.getMessage()));
+            return;
+        }
+        sessions.send(state.id(), Protocol.settingsSaved(true));
+        JarvisApplication.restart();
     }
 
     @Override

@@ -6,6 +6,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -38,6 +39,7 @@ public class McpTools {
 
     private final Map<String, List<ToolCallback>> readTools = new LinkedHashMap<>();
     private final List<ToolCallback> writeTools = new ArrayList<>();
+    private final Map<String, McpSyncClient> connected = new LinkedHashMap<>();
     private final Set<String> configured;
 
     public McpTools(JarvisProperties properties, ObjectProvider<List<McpSyncClient>> clients,
@@ -94,6 +96,7 @@ public class McpTools {
             }
         }
         readTools.put(name, List.copyOf(serverReads));
+        connected.put(name, client);
         List<String> offered = tools.stream().map(McpSchema.Tool::name).toList();
         List<String> missing = new ArrayList<>(reads);
         missing.addAll(writes);
@@ -103,6 +106,27 @@ public class McpTools {
         }
         log.info("MCP server {}: {} read tools, {} write tools", name, serverReads.size(),
                 tools.stream().filter(tool -> writes.contains(tool.name())).count());
+    }
+
+    /**
+     * Calls a tool that is never exposed to the model, for the Settings section (e.g. the sign-in of an account).
+     *
+     * @return the text the server answered, or why the call was not possible
+     */
+    public String adminCall(String server, String tool) {
+        McpSyncClient client = connected.get(server);
+        if (client == null) {
+            return "Il collegamento " + server + " non è attivo: salva le impostazioni e attendi il riavvio.";
+        }
+        try {
+            McpSchema.CallToolResult result = client.callTool(new McpSchema.CallToolRequest(tool, Map.of()));
+            return result.content().stream()
+                    .filter(McpSchema.TextContent.class::isInstance)
+                    .map(content -> ((McpSchema.TextContent) content).text())
+                    .collect(Collectors.joining("\n"));
+        } catch (RuntimeException e) {
+            return "Il server " + server + " non ha risposto: " + e.getMessage();
+        }
     }
 
     private static List<McpSchema.Tool> listAll(McpSyncClient client) {

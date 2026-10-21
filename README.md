@@ -11,7 +11,9 @@ cp jarvis-local.yml.example jarvis-local.yml   # inserisci le tue chiavi (oppure
 ./mvnw spring-boot:run                          # avvia anche Postgres da compose.yaml
 ```
 
-Apri http://localhost:8080, tieni premuto il microfono (o la barra spaziatrice) e parla.
+Apri http://localhost:8080: al primo avvio un wizard chiede chiavi, voce, cartelle e account, e li salva nel database (i segreti cifrati, con la chiave in `~/.jarvis/master.key`). Puoi cambiarli quando vuoi dall'icona Impostazioni. Poi tieni premuto il microfono (o la barra spaziatrice) e parla.
+
+`.env` e `jarvis-local.yml` restano comodi in sviluppo; le impostazioni salvate hanno la precedenza su di loro, le variabili d'ambiente su tutto.
 
 In alternativa alle chiavi in `jarvis-local.yml`:
 

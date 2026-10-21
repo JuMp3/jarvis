@@ -62,12 +62,17 @@ Client → server
 | `set-provider` | `provider` | Provider per i turni successivi |
 | `cancel` | — | Interrompe il turno in corso |
 | `approval` | `id`, `approved` | Risposta a una richiesta di approvazione |
+| `settings-get` | — | Chiede le impostazioni |
+| `settings-save` | `values`, `cleared` | Salva (i segreti vuoti restano come sono) e riavvia |
+| `settings-test` | `name`, `value?` | Verifica una chiave senza salvarla |
+| `settings-reveal` | `name` | Mostra in chiaro una chiave |
+| `account-login` · `account-verify` | `server` | Login dell'account di posta |
 
 Server → client
 
 | Tipo | Campi |
 |---|---|
-| `hello` | `providers`, `defaultProvider`, `stt`, `tts` (`server` · `browser` · `off`), `language` |
+| `hello` | `providers`, `defaultProvider`, `stt`, `tts` (`server` · `browser` · `off`), `language`, `setupRequired` |
 | `history` | `messages` (`role`: `user` · `assistant`, `text`): ultimi scambi della conversazione, inviati dopo `hello`. Il client li mostra solo se il log è vuoto (pagina ricaricata) |
 | `state` | `state` (`idle` · `thinking` · `speaking`) |
 | `transcript` | `text` |
@@ -75,6 +80,12 @@ Server → client
 | `audio` | `seq`, `mime`, `data` (base64) |
 | `approval-request` | `id`, `description`, `agent`, `taskTitle` (null se chiede Jarvis) |
 | `approval-closed` | `id`: la richiesta è stata risolta, è scaduta o è stata ritirata |
+| `settings` | `settings` (nome, gruppo, etichetta, aiuto, tipo, scelte, valore, `set`, `origin`; mai i segreti), `setupRequired` |
+| `settings-saved` | `restarting` |
+| `settings-error` | `message` |
+| `settings-test-result` | `name`, `ok`, `message` |
+| `settings-secret` | `name`, `value`: solo in risposta a `settings-reveal` |
+| `account-result` | `server`, `message` (login con codice, verifica) |
 | `done` | — |
 | `error` | `message` |
 
@@ -172,6 +183,17 @@ Un messaggio di stato completo, invece di eventi separati per inizio, avanzament
 - L'estensione `vector` è già attiva: servirà alla memoria a lungo termine e al RAG (Fase 5), con un modello di embedding OpenAI o Ollama, perché Anthropic non ne offre.
 - I test d'integrazione usano Testcontainers con la stessa immagine.
 
+## Impostazioni (Fase 3b)
+
+Jarvis va installato su un PC, dove un file `.env` non è una soluzione: le impostazioni stanno nel database, scelte dal wizard del primo avvio e modificabili dalla sezione Impostazioni (icona nell'header).
+
+- **Tabella `setting`** (`name`, `kind` text · secret · list, `value`). I nomi sono le stesse chiavi della configurazione (`jarvis.voice.stt`) o i segnaposto di `application.yml` (`ANTHROPIC_API_KEY`, `GITHUB_TOKEN`).
+- **Segreti cifrati** con AES-256-GCM (`SecretBox`); il nome dell'impostazione è dato autenticato, quindi un valore copiato sotto un altro nome non si decifra. La chiave master non sta nel database: `~/.jarvis/master.key`, generata al primo avvio (o `JARVIS_MASTER_KEY`). Protegge un dump o un backup del DB, non da chi può accedere con l'utente del PC.
+- **Lettura all'avvio:** `SettingsEnvironmentPostProcessor` aggiunge `DatabaseSettingsSource` subito dopo le variabili d'ambiente: le impostazioni vincono su `application.yml` e `.env`, una variabile d'ambiente o un argomento da riga di comando vincono ancora. La sorgente si carica al primo uso con JDBC semplice (il DataSource non esiste ancora) e, se il database sta ancora partendo, riprova al massimo una volta al secondo; una tabella che non esiste ancora vale come "nessuna impostazione". Le liste salvate sostituiscono per intero quelle dello YAML.
+- **Applicazione:** dopo il salvataggio Jarvis si riavvia nello stesso processo (`JarvisApplication.restart`), le pagine si riconnettono da sole; i container di sviluppo restano accesi (`lifecycle-management: start-only`).
+- **Sicurezza:** tutto passa dal WebSocket, che accetta solo pagine della stessa origine. L'elenco delle impostazioni non contiene mai i segreti: la pagina sa solo se sono impostati e da dove (impostazioni, variabile d'ambiente, file). Il valore in chiaro arriva solo premendo l'occhio accanto al campo, una chiave alla volta (`settings-reveal`). "Verifica" prova la chiave contro il servizio senza salvarla.
+- **Posta e calendario:** scegliere `outlook` scrive un modello (`MailTemplates`): la connessione MCP a `@softeria/ms-365-mcp-server` (versione fissata, tenant `consumers` per gli account personali), i tool esposti (lettura all'Organizer, invii e modifiche a Jarvis con approvazione, nessuna cancellazione) e lo specialista `organizer`. L'accesso è un login Microsoft con codice (pulsanti "Collega l'account" e "Ho fatto l'accesso"); i token li conserva il server MCP, cifrati, con la chiave nel Credential Manager di Windows. Al primo avvio `npx` deve scaricare il pacchetto: se non fa in tempo (20 s), al riavvio successivo è pronto.
+
 ## Configurazione e segreti
 
 - `application.yml` contiene solo valori di default e riferimenti a variabili d'ambiente.
@@ -196,7 +218,7 @@ Un messaggio di stato completo, invece di eventi separati per inizio, avanzament
 - **Fase 1 — base solida (fatta).** Build verde, Maven wrapper, test, gestione errori e riconnessione, persistenza su PostgreSQL + pgvector (i task arriveranno con la Fase 2), log strutturati (file JSON ECS in `~/.jarvis/logs/`).
 - **Fase 2 — task e orchestrazione (fatta).** Task in background in parallelo, eventi, pannello Squadra e satelliti nell'orb; delega come tool; specialisti `researcher` e `writer` in sola lettura; budget, timeout e annullamento. Le approvazioni per conversazione passano alla Fase 3, con i primi specialisti che scrivono.
 - **Fase 3 — tool reali e nuovi specialisti (fatta).** Approvazioni per conversazione; Programmatore (`coder`) con Claude Code e push su autorizzazione; client MCP con tool filtrati per server (lettura agli specialisti, scrittura a Jarvis con approvazione), GitHub collegato; specialisti `documents`, `github` e `organizer` (quest'ultimo da collegare al server MCP del proprio fornitore di posta e calendario); azioni desktop su catalogo.
-- **Fase 3b — installazione e impostazioni.** Wizard iniziale che chiede cartelle, account e chiavi, e una sezione Impostazioni per cambiarli; i valori passano da `application.yml` a una tabella su DB (segreti esclusi, che restano nel portachiavi del sistema o in variabili d'ambiente).
+- **Fase 3b — installazione e impostazioni (fatta).** Wizard del primo avvio e sezione Impostazioni; valori su DB, segreti cifrati con AES-256-GCM e chiave master fuori dal DB; riavvio interno per applicarli; Organizer collegato a Outlook.com/Hotmail.
 - **Fase 4 — voce naturale.** VAD nel browser e barge-in automatico, wake word, STT in streaming, valutazione di un'API realtime speech-to-speech. STT/TTS locali e Web Speech API sono già disponibili.
 - **Fase 5 — app desktop.** Shell Tauri con il backend come sidecar, tray, avvio automatico; memoria a lungo termine e RAG sui documenti (pgvector).
 - **Fase 6 — autonomia controllata.** Routine pianificate (briefing del mattino), agenti esterni via A2A, specialista valutatore che verifica i risultati, eventuale delega su più livelli.

@@ -39,3 +39,12 @@ CREATE INDEX IF NOT EXISTS agent_task_conversation_idx ON agent_task (conversati
 ALTER TABLE agent_task ADD COLUMN IF NOT EXISTS workspace TEXT;
 ALTER TABLE agent_task ADD COLUMN IF NOT EXISTS progress  TEXT;
 ALTER TABLE agent_task ADD COLUMN IF NOT EXISTS cost_usd  DOUBLE PRECISION;
+
+-- Phase 3b: settings saved by the wizard and the Settings section; secrets encrypted (AES-256-GCM, key outside
+-- the database). Read at startup by SettingsEnvironmentPostProcessor, before application.yml and .env.
+CREATE TABLE IF NOT EXISTS setting (
+    name       VARCHAR(200) PRIMARY KEY,
+    kind       VARCHAR(8)   NOT NULL CHECK (kind IN ('text', 'secret', 'list')),
+    value      TEXT         NOT NULL,
+    updated_at TIMESTAMPTZ  NOT NULL DEFAULT now()
+);

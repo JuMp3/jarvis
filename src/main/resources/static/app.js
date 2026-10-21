@@ -1,4 +1,5 @@
 import { Orb } from './orb.js';
+import { createSettings } from './settings.js';
 
 // Message types must match dev.jarvis.ws.Protocol and docs/ARCHITECTURE.md.
 
@@ -592,8 +593,10 @@ function send(message) {
 }
 
 function handle(msg) {
+  if (settingsPanel.handle(msg)) return;
   switch (msg.type) {
     case 'hello':
+      if (settingsPanel.onHello(msg)) note('Impostazioni applicate.');
       ui.language = msg.language || 'it';
       ui.stt = msg.stt === 'browser' && !Recognition ? 'off' : msg.stt;
       ui.tts = msg.tts === 'browser' && !('speechSynthesis' in window) ? 'off' : msg.tts;
@@ -765,6 +768,9 @@ document.addEventListener('keyup', (event) => {
     stopRecording();
   }
 });
+
+const settingsPanel = createSettings({ send });
+document.getElementById('settings-open').addEventListener('click', () => settingsPanel.open(false));
 
 orb = new Orb(document.getElementById('orb'), currentLevel);
 connect();
