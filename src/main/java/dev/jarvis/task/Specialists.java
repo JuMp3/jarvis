@@ -16,6 +16,7 @@ import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Component;
 
 import dev.jarvis.agent.tools.DocumentTools;
+import dev.jarvis.agent.tools.MailTools;
 import dev.jarvis.agent.tools.SystemTools;
 import dev.jarvis.config.JarvisProperties;
 import dev.jarvis.config.JarvisProperties.Specialist;
@@ -44,7 +45,7 @@ public class Specialists {
     private final Map<String, Duration> timeouts;
 
     public Specialists(JarvisProperties properties, ProviderRouter router, SystemTools systemTools,
-                       DocumentTools documentTools, McpTools mcpTools, Environment environment,
+                       DocumentTools documentTools, McpTools mcpTools, MailTools mailTools, Environment environment,
                        JsonMapper json) {
         Map<String, Specialist> specs = properties.agents() == null ? Map.of() : properties.agents();
         Map<String, SpecialistRunner> built = new LinkedHashMap<>();
@@ -52,7 +53,7 @@ public class Specialists {
         specs.forEach((id, spec) -> {
             built.put(id, "claude-code".equals(spec.type())
                     ? new ClaudeCodeSpecialist(id, spec, claudeCodeEnvironment(environment), json)
-                    : new ChatSpecialist(id, spec, router, systemTools, documentTools, mcpTools));
+                    : new ChatSpecialist(id, spec, router, systemTools, documentTools, mcpTools, mailTools));
             if (spec.timeout() != null) {
                 limits.put(id, spec.timeout());
             }

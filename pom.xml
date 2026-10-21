@@ -75,6 +75,11 @@
             <groupId>org.springframework.ai</groupId>
             <artifactId>spring-ai-starter-mcp-client</artifactId>
         </dependency>
+        <!-- IMAP/SMTP mailboxes (Gmail, iCloud, Yahoo, Libero...) for the organizer -->
+        <dependency>
+            <groupId>org.eclipse.angus</groupId>
+            <artifactId>angus-mail</artifactId>
+        </dependency>
         <!-- Text of PDF documents for the documents specialist -->
         <dependency>
             <groupId>org.apache.pdfbox</groupId>
@@ -104,6 +109,13 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-testcontainers</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- Real IMAP and SMTP servers inside the tests -->
+        <dependency>
+            <groupId>com.icegreen</groupId>
+            <artifactId>greenmail-junit5</artifactId>
+            <version>2.1.5</version>
             <scope>test</scope>
         </dependency>
         <dependency>

@@ -6,6 +6,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.stream.Collectors;
 
 import org.slf4j.Logger;
@@ -37,9 +39,13 @@ public class McpTools {
 
     private static final Logger log = LoggerFactory.getLogger(McpTools.class);
 
-    private final Map<String, List<ToolCallback>> readTools = new LinkedHashMap<>();
-    private final List<ToolCallback> writeTools = new ArrayList<>();
-    private final Map<String, McpSyncClient> connected = new LinkedHashMap<>();
+    private static final int RETRIES = 8;
+    private static final long RETRY_SECONDS = 15;
+
+    // Filled at startup, or later by the retry of a slow server: read at use time, so new tools appear live
+    private final Map<String, List<ToolCallback>> readTools = new ConcurrentHashMap<>();
+    private final List<ToolCallback> writeTools = new CopyOnWriteArrayList<>();
+    private final Map<String, McpSyncClient> connected = new ConcurrentHashMap<>();
     private final Set<String> configured;
 
     public McpTools(JarvisProperties properties, ObjectProvider<List<McpSyncClient>> clients,
@@ -48,7 +54,11 @@ public class McpTools {
                 ? Map.of() : properties.mcp().servers();
         this.configured = Collections.unmodifiableSet(servers.keySet());
         List<McpSyncClient> available = clients.getIfAvailable(List::of);
-        servers.forEach((name, server) -> connect(name, server, available, approvals));
+        servers.forEach((name, server) -> {
+            if (!connect(name, server, available, approvals)) {
+                retryInBackground(name, server, available, approvals);
+            }
+        });
     }
 
     /** Whether {@code jarvis.mcp.servers} defines the server (it may still be unreachable). */
@@ -66,13 +76,34 @@ public class McpTools {
         return writeTools;
     }
 
-    private void connect(String name, McpServer server, List<McpSyncClient> clients, ApprovalService approvals) {
+    /**
+     * A server that does not answer at startup (an npx package still downloading, a slow machine) is tried
+     * again for a couple of minutes: Jarvis does not wait for it, and its tools appear once it is ready.
+     */
+    private void retryInBackground(String name, McpServer server, List<McpSyncClient> clients, ApprovalService approvals) {
+        Thread.ofVirtual().name("mcp-retry-" + name).start(() -> {
+            for (int attempt = 1; attempt <= RETRIES; attempt++) {
+                try {
+                    Thread.sleep(RETRY_SECONDS * 1000);
+                } catch (InterruptedException e) {
+                    return; // application closing
+                }
+                if (connect(name, server, clients, approvals)) {
+                    return;
+                }
+            }
+            log.warn("MCP server {} still unavailable after {} retries: restart Jarvis to try again", name, RETRIES);
+        });
+    }
+
+    /** @return false if the server could not be reached and is worth trying again */
+    private boolean connect(String name, McpServer server, List<McpSyncClient> clients, ApprovalService approvals) {
         McpSyncClient client = clients.stream()
                 .filter(candidate -> name.equals(candidate.getClientInfo().title()))
                 .findFirst().orElse(null);
         if (client == null) {
             log.warn("jarvis.mcp.servers.{} has no connection under spring.ai.mcp.client: skipped", name);
-            return;
+            return true;
         }
         List<McpSchema.Tool> tools;
         try {
@@ -81,8 +112,8 @@ public class McpTools {
             }
             tools = listAll(client);
         } catch (RuntimeException e) {
-            log.warn("MCP server {} unavailable, its tools are disabled: {}", name, e.getMessage());
-            return;
+            log.warn("MCP server {} not available yet, retrying in background: {}", name, e.getMessage());
+            return false;
         }
         List<String> reads = server.readTools() == null ? List.of() : server.readTools();
         List<String> writes = server.writeTools() == null ? List.of() : server.writeTools();
@@ -106,6 +137,7 @@ public class McpTools {
         }
         log.info("MCP server {}: {} read tools, {} write tools", name, serverReads.size(),
                 tools.stream().filter(tool -> writes.contains(tool.name())).count());
+        return true;
     }
 
     /**

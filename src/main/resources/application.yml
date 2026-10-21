@@ -113,6 +113,13 @@ jarvis:
       #   label: Calendario
       #   read-tools: [list_events]
       #   write-tools: [create_event, update_event]
+  mail:
+    # IMAP/SMTP mailbox, set from Settings → Account (imap); servers derived from the address for known providers
+    enabled: false
+    address: ""
+    password: ${MAIL_PASSWORD:}
+    imap-server: ""
+    smtp-server: ""
   documents:
     # Folders the documents specialist may read (text, PDF, Word); created if missing
     folders:

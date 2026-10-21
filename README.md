@@ -44,6 +44,7 @@ Su reti aziendali che ispezionano il TLS (es. Netskope) Speaches non riesce a sc
 - Interruzione: premi il microfono mentre Jarvis parla e si ferma.
 - Ciclo agente con tool d'esempio; le azioni che modificano qualcosa chiedono la tua approvazione.
 - Programmatore: su un repository delle cartelle consentite Jarvis fa lavorare Claude Code. Prima ti propone un piano, poi, se approvi, modifica il codice su un branch nuovo, lancia build e test e fa commit; il push lo fa solo se glielo autorizzi alla fine. Ha un tetto di spesa per task.
+- Posta e calendario: Outlook.com/Hotmail e Microsoft 365 (accesso Microsoft con un codice), oppure qualsiasi casella IMAP come Gmail, iCloud, Yahoo o Libero (con una password per le app). L'Organizer legge e riassume; gli invii li fa Jarvis dopo la tua conferma.
 - Documenti: uno specialista legge, cerca e riassume i file (testo, PDF, Word) delle cartelle che indichi in configurazione.
 - GitHub e altri servizi via MCP: si collegano in configurazione; la lettura la fanno gli specialisti, ogni azione (issue, PR, email) la fa Jarvis dopo la tua conferma.
 - Desktop: Jarvis apre link, cartelle e i programmi del catalogo, sempre dopo la tua conferma.

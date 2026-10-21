@@ -98,6 +98,21 @@ class SettingsServiceTest extends BaseTest {
     }
 
     @Test
+    void microsoft365UsesTheOrganizationalAuthorityAndImapNeedsNoMcpServer() {
+        settings.save(Map.of(SettingsCatalog.MAIL, "microsoft365"), List.of());
+        assertThat(nextStart().getProperty("spring.ai.mcp.client.stdio.connections.mail.env.MS365_MCP_TENANT_ID"))
+                .isEqualTo("organizations");
+
+        settings.save(Map.of(SettingsCatalog.MAIL, "imap", "jarvis.mail.address", "me@gmail.com",
+                "MAIL_PASSWORD", "abcd efgh ijkl mnop"), List.of());
+        DatabaseSettingsSource next = nextStart();
+        assertThat(next.getProperty("jarvis.mail.enabled")).isEqualTo("true");
+        assertThat(next.getProperty("jarvis.agents.organizer.tools[1]")).isEqualTo("mail");
+        assertThat(next.getProperty("MAIL_PASSWORD")).isEqualTo("abcd efgh ijkl mnop");
+        assertThat(next.getProperty("spring.ai.mcp.client.stdio.connections.mail.command")).isNull();
+    }
+
+    @Test
     void anotherMasterKeyCannotReadTheSecrets() {
         settings.save(Map.of("OPENAI_API_KEY", "sk-segreta"), List.of());
         environment.setProperty("jarvis.settings.key-file", tmp.resolve("other.key").toString());

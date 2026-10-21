@@ -43,7 +43,7 @@ class DesktopToolsTest {
         JarvisProperties properties = new JarvisProperties(null, null, null, null, null, null,
                 new JarvisProperties.Desktop(Map.of(
                         "ide", new DesktopApp("Un IDE", List.of("ide.exe", "{target}")),
-                        "mail", new DesktopApp("La posta", List.of("mail.exe")))), null);
+                        "mail", new DesktopApp("La posta", List.of("mail.exe")))), null, null);
         return new DesktopTools(approvals, properties);
     }
 

@@ -16,6 +16,7 @@ import org.springframework.ai.chat.prompt.ChatOptions;
 import org.springframework.ai.tool.ToolCallback;
 
 import dev.jarvis.agent.tools.DocumentTools;
+import dev.jarvis.agent.tools.MailTools;
 import dev.jarvis.agent.tools.SystemTools;
 import dev.jarvis.config.JarvisProperties.Specialist;
 import dev.jarvis.llm.ProviderId;
@@ -26,17 +27,18 @@ import dev.jarvis.mcp.McpTools;
 final class ChatSpecialist implements SpecialistRunner {
 
     /** Tool groups a chat specialist may use. None of them writes, sends or deletes. */
-    static final Set<String> TOOL_GROUPS = Set.of("time", "web-search", "documents");
+    static final Set<String> TOOL_GROUPS = Set.of("time", "web-search", "documents", "mail");
     private static final int DEFAULT_MAX_SEARCHES = 5;
     private static final String MCP = "mcp:";
 
     private final ProviderId provider;
     private final ChatClient client;
     private final Object[] tools;
-    private final List<ToolCallback> mcpCallbacks;
+    private final List<String> mcpServers;
+    private final McpTools mcpTools;
 
     ChatSpecialist(String id, Specialist spec, ProviderRouter router, SystemTools systemTools,
-                   DocumentTools documentTools, McpTools mcpTools) {
+                   DocumentTools documentTools, McpTools mcpTools, MailTools mailTools) {
         String property = "jarvis.agents." + id;
         List<String> toolGroups = spec.tools() == null ? List.of() : spec.tools();
         List<String> unknown = toolGroups.stream()
@@ -80,12 +82,13 @@ final class ChatSpecialist implements SpecialistRunner {
         if (toolGroups.contains("documents")) {
             granted.add(documentTools);
         }
+        if (toolGroups.contains("mail")) {
+            granted.add(mailTools.reader()); // reading only: sending is Jarvis', after approval
+        }
         this.tools = granted.toArray();
-        // Read-only tools of MCP servers, resolved at startup (empty if the server is unreachable)
-        this.mcpCallbacks = toolGroups.stream()
-                .filter(tool -> tool.startsWith(MCP))
-                .flatMap(tool -> mcpTools.readTools(tool.substring(MCP.length())).stream())
-                .toList();
+        this.mcpServers = toolGroups.stream().filter(tool -> tool.startsWith(MCP))
+                .map(tool -> tool.substring(MCP.length())).toList();
+        this.mcpTools = mcpTools;
     }
 
     @Override
@@ -98,6 +101,8 @@ final class ChatSpecialist implements SpecialistRunner {
         if (tools.length > 0) {
             request.tools(tools);
         }
+        // Read-only tools of MCP servers, looked up now: a server that was slow at startup may be ready since
+        List<ToolCallback> mcpCallbacks = mcpServers.stream().flatMap(server -> mcpTools.readTools(server).stream()).toList();
         if (!mcpCallbacks.isEmpty()) {
             request.toolCallbacks(mcpCallbacks);
         }

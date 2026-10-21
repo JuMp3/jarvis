@@ -49,8 +49,20 @@ public final class SettingsCatalog {
                     "Fine-grained token: Contents in lettura, Issues e Pull requests in lettura e scrittura.",
                     Kind.SECRET, List.of(), "github"),
             new Definition(MAIL, MAIL, "Account", "Posta e calendario",
-                    "outlook: un account Outlook.com, Hotmail o Microsoft 365, collegato con un accesso Microsoft.",
-                    Kind.CHOICE, List.of("off", "outlook"), null));
+                    "outlook: Outlook.com o Hotmail personale. microsoft365: account di lavoro o scuola (potrebbe servire "
+                            + "il consenso dell'amministratore). Per entrambi accesso Microsoft con un codice. imap: qualsiasi "
+                            + "altra casella (Gmail, iCloud, Yahoo, Libero...) con una password per le app, solo posta.",
+                    Kind.CHOICE, List.of("off", "outlook", "microsoft365", "imap"), null),
+            new Definition("jarvis.mail.address", "jarvis.mail.address", "Account", "Indirizzo email (imap)",
+                    "Solo per imap.", Kind.TEXT, List.of(), null),
+            new Definition("MAIL_PASSWORD", "MAIL_PASSWORD", "Account", "Password per le app (imap)",
+                    "Non la password dell'account: una password per le app generata nelle impostazioni di sicurezza del "
+                            + "provider (Gmail e iCloud richiedono la verifica in due passaggi).", Kind.SECRET, List.of(), "imap"),
+            new Definition("jarvis.mail.imap-server", "jarvis.mail.imap-server", "Account", "Server IMAP (imap)",
+                    "Vuoto per Gmail, iCloud, Yahoo, Libero, Fastmail e GMX; altrimenti host oppure host:porta.",
+                    Kind.TEXT, List.of(), null),
+            new Definition("jarvis.mail.smtp-server", "jarvis.mail.smtp-server", "Account", "Server SMTP (imap)",
+                    "Come sopra: vuoto per i provider noti, altrimenti host oppure host:porta.", Kind.TEXT, List.of(), null));
 
     private SettingsCatalog() {
     }

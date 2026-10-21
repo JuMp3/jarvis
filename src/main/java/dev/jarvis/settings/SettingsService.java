@@ -24,6 +24,8 @@ import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import dev.jarvis.mail.MailClient;
+import dev.jarvis.mail.MailServers;
 import dev.jarvis.settings.SettingsCatalog.Definition;
 import dev.jarvis.settings.SettingsCatalog.Kind;
 
@@ -176,10 +178,14 @@ public class SettingsService {
         MailTemplates.PREFIXES.forEach(prefix ->
                 jdbc.sql("DELETE FROM setting WHERE name LIKE ?").param(prefix + "%").update());
         upsert(SettingsCatalog.MAIL, SettingsRows.TEXT, provider);
-        if (provider.equals("outlook")) {
-            MailTemplates.outlook(WINDOWS, environment.getProperty("NODE_EXTRA_CA_CERTS"))
-                    .forEach((name, row) -> upsert(name, row.kind(), row.value()));
-        }
+        String caCerts = environment.getProperty("NODE_EXTRA_CA_CERTS");
+        Map<String, MailTemplates.Row> rows = switch (provider) {
+            case "outlook" -> MailTemplates.outlook(WINDOWS, caCerts);
+            case "microsoft365" -> MailTemplates.microsoft365(WINDOWS, caCerts);
+            case "imap" -> MailTemplates.imap();
+            default -> Map.of();
+        };
+        rows.forEach((name, row) -> upsert(name, row.kind(), row.value()));
     }
 
     /**
@@ -213,6 +219,14 @@ public class SettingsService {
                 }
                 case "openai" -> check(HttpRequest.newBuilder(URI.create("https://api.openai.com/v1/models"))
                         .header("Authorization", "Bearer " + secret), "OpenAI");
+                case "imap" -> {
+                    String address = environment.getProperty("jarvis.mail.address", "");
+                    MailClient mailbox = new MailClient(address, secret,
+                            MailServers.imap(address, environment.getProperty("jarvis.mail.imap-server")),
+                            MailServers.smtp(address, environment.getProperty("jarvis.mail.smtp-server")));
+                    mailbox.check();
+                    yield new TestResult(true, "Accesso riuscito alla posta di " + address + " (IMAP e SMTP).");
+                }
                 case "github" -> check(HttpRequest.newBuilder(URI.create("https://api.github.com/user"))
                         .header("Authorization", "Bearer " + secret)
                         .header("Accept", "application/vnd.github+json"), "GitHub");

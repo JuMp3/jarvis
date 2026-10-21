@@ -42,6 +42,7 @@ src/main/java/dev/jarvis/
   mcp/          McpTools (tool MCP filtrati per server), ApprovalToolCallback, McpConfig (header per server)
   settings/     SettingsService, SettingsCatalog, MailTemplates, SecretBox (AES-GCM), MasterKey,
                 DatabaseSettingsSource + SettingsEnvironmentPostProcessor (impostazioni su DB all'avvio)
+  mail/         MailClient (IMAP/SMTP, Jakarta Mail), MailServers (server dal dominio dell'indirizzo)
   voice/        SpeechToText, TextToSpeech, OpenAiAudioClient (solo JDK HTTP, OpenAI o Speaches),
                 SentenceChunker, AudioFormats, Multipart, Json, VoiceServices, VoiceConfig (motore per direzione)
   task/         TaskService (coda, parallelismo, timeout, annullamento, approvazioni), TaskRepository,

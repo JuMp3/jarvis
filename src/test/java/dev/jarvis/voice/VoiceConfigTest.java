@@ -15,7 +15,7 @@ class VoiceConfigTest {
         AudioEndpoint openai = new AudioEndpoint("https://api.openai.com/v1/", openAiKey, "stt", "tts", "onyx", "");
         AudioEndpoint local = new AudioEndpoint("http://localhost:8000/v1/", "", "whisper", "piper", "paola", "");
         Voice voice = new Voice(stt, tts, "it", openai, local);
-        return new VoiceConfig().voiceServices(new JarvisProperties(null, null, voice, null, null, null, null, null));
+        return new VoiceConfig().voiceServices(new JarvisProperties(null, null, voice, null, null, null, null, null, null));
     }
 
     @Test

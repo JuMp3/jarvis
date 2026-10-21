@@ -11,7 +11,17 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  */
 @ConfigurationProperties(prefix = "jarvis")
 public record JarvisProperties(Providers providers, Agent agent, Voice voice, Tasks tasks,
-                               Map<String, Specialist> agents, Documents documents, Desktop desktop, Mcp mcp) {
+                               Map<String, Specialist> agents, Documents documents, Desktop desktop, Mcp mcp,
+                               Mail mail) {
+
+    /**
+     * An IMAP/SMTP mailbox (Gmail, iCloud, Yahoo, Libero... with an app password).
+     *
+     * @param imapServer "host" or "host:port"; empty to derive it from the address for well-known providers
+     * @param smtpServer "host" or "host:port"; same
+     */
+    public record Mail(boolean enabled, String address, String password, String imapServer, String smtpServer) {
+    }
 
     /** @param servers MCP servers Jarvis uses, by connection name of spring.ai.mcp.client */
     public record Mcp(Map<String, McpServer> servers) {
