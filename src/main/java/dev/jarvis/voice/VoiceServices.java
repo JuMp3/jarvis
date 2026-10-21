@@ -9,7 +9,7 @@ import java.util.Optional;
  * @param ttsMode "server", "browser" or "off", as sent to the client
  */
 public record VoiceServices(Optional<SpeechToText> speechToText, Optional<TextToSpeech> textToSpeech,
-                            String sttMode, String ttsMode, String language) {
+                            String sttMode, String ttsMode, String language, String wakeWord) {
 
     public static final String SERVER = "server";
     public static final String BROWSER = "browser";

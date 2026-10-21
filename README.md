@@ -41,6 +41,7 @@ Su reti aziendali che ispezionano il TLS (es. Netskope) Speaches non riesce a sc
 
 - Chat in streaming con più provider, selezionabili dall'interfaccia, con memoria condivisa salvata su PostgreSQL (sopravvive ai riavvii).
 - Push-to-talk: trascrizione, risposta e sintesi vocale frase per frase.
+- Mani libere: Jarvis capisce da solo quando inizi e finisci di parlare, e si interrompe se parli mentre risponde. Con "Solo se dico «Jarvis»" ascolta solo le frasi rivolte a lui. Con le casse funziona meglio a volume moderato; con le cuffie sempre.
 - Interruzione: premi il microfono mentre Jarvis parla e si ferma.
 - Ciclo agente con tool d'esempio; le azioni che modificano qualcosa chiedono la tua approvazione.
 - Programmatore: su un repository delle cartelle consentite Jarvis fa lavorare Claude Code. Prima ti propone un piano, poi, se approvi, modifica il codice su un branch nuovo, lancia build e test e fa commit; il push lo fa solo se glielo autorizzi alla fine. Ha un tetto di spesa per task.

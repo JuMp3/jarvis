@@ -15,8 +15,9 @@ import java.time.Duration;
 public class OpenAiAudioClient implements SpeechToText, TextToSpeech {
 
     /** Settings for the audio endpoints. {@code apiKey} and {@code ttsInstructions} may be blank. */
+    /** @param sttPrompt words the transcription should expect, e.g. the wake word "Jarvis"; may be blank */
     public record Settings(String apiKey, String language, String sttModel, String ttsModel,
-                           String ttsVoice, String ttsInstructions) {
+                           String ttsVoice, String ttsInstructions, String sttPrompt) {
     }
 
     private static final Duration TIMEOUT = Duration.ofSeconds(60);
@@ -40,6 +41,10 @@ public class OpenAiAudioClient implements SpeechToText, TextToSpeech {
                 .field("response_format", "text");
         if (settings.language() != null && !settings.language().isBlank()) {
             form.field("language", settings.language());
+        }
+        // A proper name is hard for small models ("Jarvis" heard as "darvi"): name it in the prompt
+        if (settings.sttPrompt() != null && !settings.sttPrompt().isBlank()) {
+            form.field("prompt", settings.sttPrompt());
         }
         HttpRequest request = baseRequest("audio/transcriptions")
                 .header("Content-Type", form.contentType())

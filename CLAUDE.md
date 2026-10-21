@@ -4,7 +4,7 @@ Assistente AI personale: backend Java (Spring Boot 4.1, Spring AI 2.0), frontend
 
 ## Stato attuale — leggere per primo
 
-Fasi 0 e 1 chiuse e verificate end-to-end con Claude: streaming, tool, approvazioni, memoria su PostgreSQL + pgvector, errori leggibili, turni interrotti e riconnessione, log strutturati. Voce: locale (Speaches: Whisper + Piper) e browser verificate end-to-end; OpenAI non provata (account senza credito). Ollama non provato. Fase 2 (squadra di agenti) fatta. Fase 3 fatta: approvazioni per conversazione, Programmatore (`coder`, Claude Code, push su autorizzazione), MCP (GitHub), Documenti, azioni desktop. Fase 3b fatta: wizard e Impostazioni su DB (segreti cifrati), riavvio interno, Organizer su Outlook.com verificato. Prossima: Fase 4.
+Fasi 0 e 1 chiuse e verificate end-to-end con Claude: streaming, tool, approvazioni, memoria su PostgreSQL + pgvector, errori leggibili, turni interrotti e riconnessione, log strutturati. Voce: locale (Speaches: Whisper + Piper) e browser verificate end-to-end; OpenAI non provata (account senza credito). Ollama non provato. Fase 2 (squadra di agenti) fatta. Fase 3 fatta: approvazioni per conversazione, Programmatore (`coder`, Claude Code, push su autorizzazione), MCP (GitHub), Documenti, azioni desktop. Fase 3b fatta: wizard e Impostazioni su DB (segreti cifrati), riavvio interno, Organizer su Outlook.com verificato. Fase 4 fatta: mani libere (VAD nel browser), interruzione automatica, wake word. Prossima: Fase 5 (app desktop).
 
 Cose verificate su Spring AI 2.0.1, da non rifare:
 
@@ -24,6 +24,7 @@ Jarvis orchestra una squadra di specialisti in background (sezione "Orchestrazio
 ```bash
 ./mvnw verify                    # build + test (Testcontainers: serve Docker)
 ./mvnw spring-boot:run           # avvio su http://localhost:8080, avvia anche Postgres da compose.yaml
+node --test src/test/js/vad.test.mjs   # test del rilevamento della voce (logica pura del browser)
 ```
 
 Configurazione locale: `.env` (righe `CHIAVE=valore`) o `jarvis-local.yml` (da `jarvis-local.yml.example`), entrambi ignorati da git, oppure le variabili d'ambiente `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `JARVIS_PROVIDERS`.
@@ -50,7 +51,7 @@ src/main/java/dev/jarvis/
                 ClaudeCodeSpecialist (+ ClaudeCodeEvents, WorkspacePolicy), TaskTools
   ws/           WebSocketConfig, JarvisWebSocketHandler, SessionRegistry, SessionState,
                 TurnService, Turn, Protocol, TaskNotifier (aggiornamenti e annunci dei task), ErrorMessages
-src/main/resources/static/   index.html, style.css, app.js, orb.js (ES modules, nessun build step)
+src/main/resources/static/   index.html, style.css, app.js, orb.js, settings.js, vad.js (ES modules, nessun build step)
 src/main/resources/schema.sql  schema idempotente (estensione vector, chat_message)
 src/test/java/               test JUnit 5 della logica pura + integrazione su Postgres (Testcontainers)
 ```

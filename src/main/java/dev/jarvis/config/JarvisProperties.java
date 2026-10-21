@@ -111,7 +111,8 @@ public record JarvisProperties(Providers providers, Agent agent, Voice voice, Ta
      * @param openai   OpenAI audio API
      * @param local    OpenAI-compatible server on this machine (Speaches, see compose.yaml)
      */
-    public record Voice(Engine stt, Engine tts, String language, AudioEndpoint openai, AudioEndpoint local) {
+    public record Voice(Engine stt, Engine tts, String language, AudioEndpoint openai, AudioEndpoint local,
+                        String wakeWord) {
 
         public enum Engine {
             /** OpenAI audio API, needs an API key with credit. */

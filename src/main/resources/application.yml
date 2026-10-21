@@ -251,6 +251,8 @@ jarvis:
     stt: ${JARVIS_VOICE_STT:local}
     tts: ${JARVIS_VOICE_TTS:local}
     language: it
+    # Hands-free with wake word: only phrases that start with it reach the model
+    wake-word: jarvis
     local:
       base-url: ${JARVIS_SPEACHES_URL:http://localhost:8000/v1/}
       # Measured on a laptop CPU for a 2.5 s phrase: base ~2 s, small ~5.5 s but more accurate (names, rare words).

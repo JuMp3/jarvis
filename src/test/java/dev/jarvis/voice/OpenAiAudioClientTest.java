@@ -18,7 +18,7 @@ import com.sun.net.httpserver.HttpServer;
 class OpenAiAudioClientTest {
 
     private static final OpenAiAudioClient.Settings SETTINGS = new OpenAiAudioClient.Settings(
-            "test-key", "it", "stt-model", "tts-model", "onyx", "Voce \"calma\"");
+            "test-key", "it", "stt-model", "tts-model", "onyx", "Voce \"calma\"", "Jarvis");
 
     private record Captured(String path, String auth, String contentType, String body) {
     }

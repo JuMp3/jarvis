@@ -49,6 +49,18 @@ Il frontend gestisce tutto ciò che è audio e grafica; il backend coordina tutt
 7. Il client accoda e riproduce l'audio in ordine; l'orb va in `speaking` seguendo il livello dell'audio in uscita.
 8. Se l'utente riprende a parlare mentre Jarvis risponde, il client ferma l'audio e invia `cancel`: il backend annulla lo stream e il TTS in corso, e chiude il turno in memoria (`InterruptedTurns`). Lo stesso succede se la connessione cade: alla riconnessione il client riceve `history` se la pagina è stata ricaricata.
 
+### Mani libere (Fase 4)
+
+- **Rilevamento della voce** (`static/vad.js`, logica pura con test in `src/test/js`): il livello del microfono, campionato ogni 30 ms, confrontato con un rumore di fondo che si adatta alla stanza e impara solo dai momenti di silenzio. La frase inizia dopo 150 ms sopra soglia e finisce dopo 0,9 s di pausa (massimo 30 s). Al posto del tasto premuto, avvia e ferma la stessa registrazione.
+- **Interruzione automatica:** se inizi a parlare mentre Jarvis pensa o risponde, la registrazione parte e il turno in corso viene annullato, come con il tasto. Contro l'eco delle casse: cancellazione d'eco, soppressione del rumore e guadagno automatico del browser, più una soglia 2,5 volte più alta finché Jarvis parla. Con le cuffie il problema non esiste.
+- **Wake word** (`jarvis.voice.wake-word`, "Jarvis"): con "Solo se dico «Jarvis»" attivo, il client lo comunica (`voice-mode`) e il server passa al modello solo le frasi che hanno il nome tra le prime tre parole (`WakeWord`, tollerante alle grafie della trascrizione: "Giarvis", "Jervis"); le altre tornano come `transcript-ignored` e restano sul PC se la trascrizione è locale. Il nome viene anche suggerito a Whisper (`prompt`): senza, il modello `base` lo trascrive spesso male. Con la trascrizione del browser lo stesso controllo lo fa il client.
+- **Latenza misurata** su questo portatile, dalla fine della frase al primo audio: circa 0,9 s di pausa + 2 s di Whisper `base` + 2 s di Haiku ≈ 5 s.
+
+### Valutazione: trascrizione in streaming e modelli speech-to-speech
+
+- **STT in streaming.** Oggi l'audio parte a frase finita. Trascrivere mentre parli sovrappone i circa 2 s di Whisper alla frase stessa: è il guadagno più grande disponibile senza cambiare modello. Speaches offre trascrizione in streaming e una Realtime API; servirebbe inviare l'audio a pezzi durante la registrazione (PCM via WebSocket) invece di un file a fine frase. È il prossimo passo consigliato.
+- **Speech-to-speech realtime** (per esempio la Realtime API di OpenAI). Pro: latenza sotto il secondo, prosodia naturale, interruzioni gestite dal modello. Contro: un solo fornitore e un solo modello per tutto, cioè niente Claude come orchestratore, e la squadra, i tool e le approvazioni andrebbero riportati su un'altra API; l'audio va sempre in cloud; costo al minuto di audio più alto di STT + testo + TTS. Conclusione: la pipeline attuale resta la base; un modello realtime ha senso come "voce veloce" opzionale per le risposte brevi, che passa la mano a Jarvis quando servono strumenti o specialisti. Da rivalutare dopo lo streaming STT.
+
 Latenza percepita ≈ trascrizione + primo token + TTS della prima frase. Le leve principali sono un modello più veloce per la voce, frasi iniziali brevi e, più avanti, STT in streaming.
 
 ## Protocollo WebSocket
@@ -60,6 +72,7 @@ Client → server
 | `chat` | `text`, `provider?`, `speak` | Messaggio scritto |
 | *(binario)* | — | Audio registrato; risposta sempre parlata |
 | `set-provider` | `provider` | Provider per i turni successivi |
+| `voice-mode` | `wake` | Mani libere con wake word: le frasi registrate non rivolte a Jarvis vengono scartate |
 | `cancel` | — | Interrompe il turno in corso |
 | `approval` | `id`, `approved` | Risposta a una richiesta di approvazione |
 | `settings-get` | — | Chiede le impostazioni |
@@ -72,10 +85,11 @@ Server → client
 
 | Tipo | Campi |
 |---|---|
-| `hello` | `providers`, `defaultProvider`, `stt`, `tts` (`server` · `browser` · `off`), `language`, `setupRequired` |
+| `hello` | `providers`, `defaultProvider`, `stt`, `tts` (`server` · `browser` · `off`), `language`, `wakeWord`, `setupRequired` |
 | `history` | `messages` (`role`: `user` · `assistant`, `text`): ultimi scambi della conversazione, inviati dopo `hello`. Il client li mostra solo se il log è vuoto (pagina ricaricata) |
 | `state` | `state` (`idle` · `thinking` · `speaking`) |
 | `transcript` | `text` |
+| `transcript-ignored` | `text`: frase in mani libere non rivolta a Jarvis, non inviata al modello |
 | `token` | `text` |
 | `audio` | `seq`, `mime`, `data` (base64) |
 | `approval-request` | `id`, `description`, `agent`, `taskTitle` (null se chiede Jarvis) |
@@ -220,6 +234,6 @@ Jarvis va installato su un PC, dove un file `.env` non è una soluzione: le impo
 - **Fase 2 — task e orchestrazione (fatta).** Task in background in parallelo, eventi, pannello Squadra e satelliti nell'orb; delega come tool; specialisti `researcher` e `writer` in sola lettura; budget, timeout e annullamento. Le approvazioni per conversazione passano alla Fase 3, con i primi specialisti che scrivono.
 - **Fase 3 — tool reali e nuovi specialisti (fatta).** Approvazioni per conversazione; Programmatore (`coder`) con Claude Code e push su autorizzazione; client MCP con tool filtrati per server (lettura agli specialisti, scrittura a Jarvis con approvazione), GitHub collegato; specialisti `documents`, `github` e `organizer` (quest'ultimo da collegare al server MCP del proprio fornitore di posta e calendario); azioni desktop su catalogo.
 - **Fase 3b — installazione e impostazioni (fatta).** Wizard del primo avvio e sezione Impostazioni; valori su DB, segreti cifrati con AES-256-GCM e chiave master fuori dal DB; riavvio interno per applicarli; Organizer collegato a Outlook.com/Hotmail.
-- **Fase 4 — voce naturale.** VAD nel browser e barge-in automatico, wake word, STT in streaming, valutazione di un'API realtime speech-to-speech. STT/TTS locali e Web Speech API sono già disponibili.
+- **Fase 4 — voce naturale (fatta).** Mani libere con rilevamento della voce nel browser, interruzione automatica, wake word "Jarvis" sulla trascrizione (suggerita anche a Whisper), valutazione di STT in streaming e modelli speech-to-speech. Prossimo passo vocale: trascrizione in streaming durante la frase.
 - **Fase 5 — app desktop.** Shell Tauri con il backend come sidecar, tray, avvio automatico; memoria a lungo termine e RAG sui documenti (pgvector).
 - **Fase 6 — autonomia controllata.** Routine pianificate (briefing del mattino), agenti esterni via A2A, specialista valutatore che verifica i risultati, eventuale delega su più livelli.

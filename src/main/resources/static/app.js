@@ -1,5 +1,6 @@
 import { Orb } from './orb.js';
 import { createSettings } from './settings.js';
+import { VoiceDetector } from './vad.js';
 
 // Message types must match dev.jarvis.ws.Protocol and docs/ARCHITECTURE.md.
 
@@ -9,6 +10,9 @@ const MIN_RECORDING_MS = 350;
 const el = {
   provider: document.getElementById('provider'),
   speak: document.getElementById('speak'),
+  handsfree: document.getElementById('handsfree'),
+  wake: document.getElementById('wake'),
+  wakeToggle: document.getElementById('wake-toggle'),
   status: document.getElementById('status'),
   log: document.getElementById('log'),
   conversation: document.querySelector('.conversation'),
@@ -188,19 +192,86 @@ function sendChat(text, spoken) {
 
 // ---- microphone -------------------------------------------------------------------------
 
+/** The microphone stays open once allowed; its level feeds the orb and the hands-free detector. */
+async function openMicrophone() {
+  const ctx = audioContext();
+  if (!audio.stream) {
+    // Echo cancellation keeps Jarvis' own voice out of the microphone as much as the browser can
+    audio.stream = await navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+    });
+    audio.micAnalyser = ctx.createAnalyser();
+    audio.micAnalyser.fftSize = 512;
+    ctx.createMediaStreamSource(audio.stream).connect(audio.micAnalyser);
+  }
+}
+
+// ---- hands-free: the voice detector starts and stops the recording ------------------------------
+
+const handsFree = { detector: null, timer: null };
+const ECHO_SENSITIVITY = 2.5; // while Jarvis speaks, only a clearly louder voice interrupts him
+
+async function startHandsFree() {
+  try {
+    await openMicrophone();
+  } catch {
+    el.handsfree.checked = false;
+    note('Microfono non disponibile: consenti l\'accesso al microfono nelle impostazioni del browser.', true);
+    return;
+  }
+  handsFree.detector = new VoiceDetector();
+  handsFree.timer = setInterval(() => {
+    if (!ui.connected || el.mic.disabled || el.approval.open) return;
+    const sensitivity = ui.state === 'speaking' ? ECHO_SENSITIVITY : 1;
+    const event = handsFree.detector.update(levelOf(audio.micAnalyser), performance.now(), sensitivity);
+    if (event === 'start' && !ui.recording) startRecording(); // interrupts Jarvis if he is answering
+    if (event === 'end' && ui.recording) stopRecording();
+  }, 30);
+  setState(ui.state);
+}
+
+function stopHandsFree() {
+  clearInterval(handsFree.timer);
+  handsFree.timer = null;
+  if (ui.recording) stopRecording();
+  setState(ui.state);
+}
+
+const wakeRequired = () => el.handsfree.checked && el.wake.checked;
+
+function sendVoiceMode() {
+  send({ type: 'voice-mode', wake: wakeRequired() });
+}
+
+/** Same rule as the server (WakeWord), for the browser's own speech recognition. */
+function stripWakeWord(text) {
+  const plain = (word) => word.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase().replace(/[^a-z]/g, '');
+  const target = plain(ui.wakeWord);
+  const words = text.trim().split(/\s+/);
+  const near = (heard) => {
+    const variants = [heard, heard.replace('gi', 'j').replace('ge', 'je')];
+    return heard && variants.some((v) => v === target || (Math.abs(v.length - target.length) <= 1
+      && [...target].filter((c, i) => v[i] === c).length >= target.length - 1));
+  };
+  const at = words.slice(0, 3).findIndex((word) => near(plain(word)));
+  return at < 0 ? null : words.slice(at + 1).join(' ').replace(/^[\p{P}\s]+/u, '').trim() || text;
+}
+
+el.handsfree.addEventListener('change', () => {
+  el.wakeToggle.hidden = !el.handsfree.checked;
+  if (el.handsfree.checked) startHandsFree();
+  else stopHandsFree();
+  sendVoiceMode();
+});
+el.wake.addEventListener('change', () => { sendVoiceMode(); setState(ui.state); });
+
 async function startRecording() {
   if (ui.recording || el.mic.disabled) return;
   ui.recording = true;
   el.mic.classList.add('recording');
   beginTurn();
   try {
-    const ctx = audioContext();
-    if (!audio.stream) {
-      audio.stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      audio.micAnalyser = ctx.createAnalyser();
-      audio.micAnalyser.fftSize = 512;
-      ctx.createMediaStreamSource(audio.stream).connect(audio.micAnalyser);
-    }
+    await openMicrophone();
     if (!ui.recording) return; // released while the permission prompt was open
     if (ui.stt === 'browser') {
       startRecognition();
@@ -241,11 +312,20 @@ function startRecognition() {
   };
   recognition.onend = () => {
     audio.recognition = null;
-    const text = transcript.trim();
+    let text = transcript.trim();
     if (!text) {
-      note('Non ho sentito nulla. Riprova parlando più vicino al microfono.');
+      if (!el.handsfree.checked) note('Non ho sentito nulla. Riprova parlando più vicino al microfono.');
       setState('idle');
       return;
+    }
+    if (wakeRequired()) {
+      const request = stripWakeWord(text);
+      if (request === null) {
+        ignored(text);
+        setState('idle');
+        return;
+      }
+      text = request;
     }
     addItem('turn-user', text);
     sendChat(text, true);
@@ -340,6 +420,7 @@ const ui = {
   state: 'idle', recording: false, connected: false,
   stt: 'off', tts: 'off', language: 'it', // from the server's hello: "server", "browser" or "off"
   spokenTurn: false,
+  wakeWord: 'jarvis',
 };
 
 const touchOnly = window.matchMedia('(pointer: coarse)').matches;
@@ -358,7 +439,16 @@ let orb;
 function setState(state) {
   ui.state = state;
   orb?.setState(state);
-  el.status.textContent = ui.connected ? STATUS_TEXT[state] : 'Connessione persa. Riprovo…';
+  let text = STATUS_TEXT[state];
+  if (state === 'idle' && handsFree.timer) {
+    text = wakeRequired() ? `Mani libere: di' «${ui.wakeWord}» e poi la tua richiesta` : 'Mani libere: parla quando vuoi';
+  }
+  el.status.textContent = ui.connected ? text : 'Connessione persa. Riprovo…';
+}
+
+/** A hands-free phrase not addressed to Jarvis: shown faintly, so it is clear why he did not answer. */
+function ignored(text) {
+  addItem('turn-note ignored', `Non era per me: «${text}»`);
 }
 
 // ---- team: specialists working in the background --------------------------------------------
@@ -596,6 +686,9 @@ function handle(msg) {
   if (settingsPanel.handle(msg)) return;
   switch (msg.type) {
     case 'hello':
+      ui.wakeWord = msg.wakeWord || 'jarvis';
+      el.wake.nextElementSibling.textContent = `Solo se dico «${ui.wakeWord.charAt(0).toUpperCase() + ui.wakeWord.slice(1)}»`;
+      if (el.handsfree.checked) sendVoiceMode(); // a new connection starts without it
       if (settingsPanel.onHello(msg)) note('Impostazioni applicate.');
       ui.language = msg.language || 'it';
       ui.stt = msg.stt === 'browser' && !Recognition ? 'off' : msg.stt;
@@ -627,6 +720,9 @@ function handle(msg) {
       // Jarvis may start a turn by itself to report a finished task
       if (msg.state === 'thinking') audio.turnDone = false;
       if (msg.state === 'thinking' || ui.state !== 'speaking') setState(msg.state);
+      break;
+    case 'transcript-ignored':
+      ignored(msg.text);
       break;
     case 'transcript':
       if (msg.text) addItem('turn-user', msg.text);

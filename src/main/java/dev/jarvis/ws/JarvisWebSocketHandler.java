@@ -30,6 +30,7 @@ import dev.jarvis.task.TaskService;
 import dev.jarvis.voice.AudioFormats;
 import dev.jarvis.voice.SpeechToText;
 import dev.jarvis.voice.VoiceServices;
+import dev.jarvis.voice.WakeWord;
 import tools.jackson.databind.json.JsonMapper;
 
 /**
@@ -76,7 +77,7 @@ public class JarvisWebSocketHandler extends AbstractWebSocketHandler implements 
         WebSocketSession socket = new ConcurrentWebSocketSessionDecorator(session, SEND_TIME_LIMIT_MS, SEND_BUFFER_LIMIT);
         SessionState state = sessions.register(socket, conversationIdOf(session), router.defaultProvider());
         sessions.send(state.id(), Protocol.hello(router.availableIds(), router.defaultProvider().id(),
-                voice.sttMode(), voice.ttsMode(), voice.language(), settings.setupRequired()));
+                voice.sttMode(), voice.ttsMode(), voice.language(), voice.wakeWord(), settings.setupRequired()));
         sessions.send(state.id(), Protocol.history(historyOf(state.conversationId())));
         sessions.send(state.id(), Protocol.tasks(tasks.recent(state.conversationId())));
         // Tasks may have asked for approval while no tab was open
@@ -123,6 +124,7 @@ public class JarvisWebSocketHandler extends AbstractWebSocketHandler implements 
                 workers.submit(() -> turns.start(state, msg.text().trim(), speak));
             }
             case "set-provider" -> state.provider(router.resolve(msg.provider()));
+            case "voice-mode" -> state.wakeWordRequired(Boolean.TRUE.equals(msg.wake()));
             case "cancel" -> {
                 state.cancelCurrentTurn();
                 sessions.send(state.id(), Protocol.state("idle"));
@@ -181,6 +183,15 @@ public class JarvisWebSocketHandler extends AbstractWebSocketHandler implements 
             sessions.send(state.id(), Protocol.state("thinking"));
             try {
                 String text = stt.transcribe(audio, AudioFormats.detectMime(audio));
+                if (state.wakeWordRequired() && !text.isBlank()) {
+                    var request = WakeWord.strip(text, voice.wakeWord());
+                    if (request.isEmpty()) {
+                        sessions.send(state.id(), Protocol.transcriptIgnored(text));
+                        sessions.send(state.id(), Protocol.done());
+                        return;
+                    }
+                    text = request.get().isBlank() ? text : request.get(); // "Jarvis?" alone: let it answer
+                }
                 sessions.send(state.id(), Protocol.transcript(text));
                 if (text.isBlank()) {
                     sessions.send(state.id(), Protocol.done());

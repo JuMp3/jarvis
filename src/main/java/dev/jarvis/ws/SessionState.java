@@ -18,6 +18,8 @@ final class SessionState {
     private final AtomicReference<Turn> currentTurn = new AtomicReference<>();
     private volatile ProviderId provider;
     private volatile boolean lastTurnSpoken;
+    /** Hands-free with wake word: recorded phrases not addressed to Jarvis are dropped. */
+    private volatile boolean wakeWordRequired;
     /** Automatic messages for Jarvis (task results) waiting for the session to be idle. */
     private final Queue<String> pendingNotices = new ConcurrentLinkedQueue<>();
 
@@ -45,6 +47,14 @@ final class SessionState {
 
     void provider(ProviderId provider) {
         this.provider = provider;
+    }
+
+    boolean wakeWordRequired() {
+        return wakeWordRequired;
+    }
+
+    void wakeWordRequired(boolean required) {
+        this.wakeWordRequired = required;
     }
 
     boolean lastTurnSpoken() {

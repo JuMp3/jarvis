@@ -230,6 +230,11 @@ select {
   color: var(--mist);
 }
 
+.turn-note.ignored {
+  opacity: 0.55;
+  font-style: italic;
+}
+
 .turn-note.error {
   color: var(--signal);
 }

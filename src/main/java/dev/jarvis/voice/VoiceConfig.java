@@ -3,6 +3,7 @@ package dev.jarvis.voice;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.time.Duration;
+import java.util.Locale;
 import java.util.Optional;
 
 import org.slf4j.Logger;
@@ -29,7 +30,8 @@ public class VoiceConfig {
         Optional<OpenAiAudioClient> stt = serverClient(voice, voice.stt(), "jarvis.voice.stt", http);
         Optional<OpenAiAudioClient> tts = serverClient(voice, voice.tts(), "jarvis.voice.tts", http);
         return new VoiceServices(stt.map(SpeechToText.class::cast), tts.map(TextToSpeech.class::cast),
-                mode(voice.stt(), stt), mode(voice.tts(), tts), voice.language());
+                mode(voice.stt(), stt), mode(voice.tts(), tts), voice.language(),
+                wakeWord(voice));
     }
 
     /** Client for an engine that runs behind the server; empty for browser, off, or OpenAI without key. */
@@ -48,7 +50,13 @@ public class VoiceConfig {
         }
         return Optional.of(new OpenAiAudioClient(http, URI.create(endpoint.baseUrl()),
                 new OpenAiAudioClient.Settings(endpoint.apiKey(), voice.language(), endpoint.sttModel(),
-                        endpoint.ttsModel(), endpoint.ttsVoice(), endpoint.ttsInstructions())));
+                        endpoint.ttsModel(), endpoint.ttsVoice(), endpoint.ttsInstructions(), wakeWord(voice))));
+    }
+
+    /** "Jarvis": also the hint that helps speech-to-text spell the name. */
+    private static String wakeWord(Voice voice) {
+        String word = voice.wakeWord() == null || voice.wakeWord().isBlank() ? "jarvis" : voice.wakeWord().strip();
+        return word.substring(0, 1).toUpperCase(Locale.ROOT) + word.substring(1);
     }
 
     private static String mode(Engine engine, Optional<?> serverClient) {

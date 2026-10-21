@@ -25,10 +25,11 @@ public final class Protocol {
      * @param cleared settings-save: secrets to remove
      * @param name    settings-test: setting to check; value: the key typed, or empty for the one in use
      * @param server  account-login / account-verify: MCP server of the account
+     * @param wake    voice-mode: true when hands-free requires the wake word
      */
     public record ClientMessage(String type, String text, String provider, Boolean speak,
                                 String id, Boolean approved, Map<String, Object> values, List<String> cleared,
-                                String name, String value, String server) {
+                                String name, String value, String server, Boolean wake) {
     }
 
     // ---- server -> client -------------------------------------------------------------------
@@ -40,7 +41,7 @@ public final class Protocol {
      */
     /** @param setupRequired true until the wizard has been completed once */
     public record Hello(String type, List<String> providers, String defaultProvider, String stt, String tts,
-                        String language, boolean setupRequired) {
+                        String language, String wakeWord, boolean setupRequired) {
     }
 
     public record Settings(String type, List<SettingsService.View> settings, boolean setupRequired) {
@@ -98,6 +99,10 @@ public final class Protocol {
     public record Transcript(String type, String text) {
     }
 
+    /** A hands-free phrase not addressed to Jarvis: shown faintly, never sent to the model. */
+    public record TranscriptIgnored(String type, String text) {
+    }
+
     public record Token(String type, String text) {
     }
 
@@ -118,8 +123,8 @@ public final class Protocol {
     }
 
     public static Hello hello(List<String> providers, String defaultProvider, String stt, String tts,
-                              String language, boolean setupRequired) {
-        return new Hello("hello", providers, defaultProvider, stt, tts, language, setupRequired);
+                              String language, String wakeWord, boolean setupRequired) {
+        return new Hello("hello", providers, defaultProvider, stt, tts, language, wakeWord, setupRequired);
     }
 
     public static Settings settings(List<SettingsService.View> settings, boolean setupRequired) {
@@ -160,6 +165,10 @@ public final class Protocol {
 
     public static State state(String state) {
         return new State("state", state);
+    }
+
+    public static TranscriptIgnored transcriptIgnored(String text) {
+        return new TranscriptIgnored("transcript-ignored", text);
     }
 
     public static Transcript transcript(String text) {
