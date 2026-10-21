@@ -19,6 +19,21 @@ Cose verificate su Spring AI 2.0.1, da non rifare:
 
 Jarvis orchestra una squadra di specialisti in background (sezione "Orchestrazione degli agenti" di `docs/ARCHITECTURE.md`). Uno specialista che scrive chiede sempre l'approvazione con `TaskContext.requestApproval` prima di agire.
 
+## Prossima sessione (aggiornato il 22/10/2026)
+
+Da verificare con l'utente:
+- Mani libere con il microfono vero: tarare in `static/vad.js` `minLevel`, `ratio`, `endMs` e, in `app.js`, `ECHO_SENSITIVITY` (eco delle casse durante le risposte).
+- Organizer: un invio email e un evento di calendario reali su Hotmail (richiesta di approvazione con i dati esatti).
+- Posta `imap` con un provider reale (Gmail o altro, password per le app): finora provata solo con GreenMail.
+- Ripresa in background dei server MCP lenti all'avvio: mai vista in azione dal vivo.
+
+Valutazioni aperte (dettagli in `docs/ARCHITECTURE.md`, sezione "Valutazione: trascrizione in streaming e modelli speech-to-speech"):
+- Trascrizione in streaming durante la frase (Speaches): il prossimo guadagno di latenza, circa 2 s su 5.
+- Modello realtime speech-to-speech solo come "voce veloce" opzionale, non al posto di Claude come orchestratore.
+- Calendario per le caselle `imap` (CalDAV); Google con OAuth completo solo quando Jarvis avrà una propria app Google verificata.
+
+Prossima fase: **Fase 5, app desktop** (Tauri con il backend come sidecar, tray, avvio automatico; poi memoria a lungo termine e RAG su pgvector, che richiede un modello di embedding OpenAI o Ollama). Per l'installazione su PC vanno decisi: come distribuire Postgres e Speaches senza Docker per l'utente finale, e lo scaricamento del server MCP Microsoft durante il wizard.
+
 ## Comandi
 
 ```bash
