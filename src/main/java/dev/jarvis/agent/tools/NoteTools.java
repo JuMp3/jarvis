@@ -35,10 +35,11 @@ public class NoteTools {
                            @ToolParam(description = "Contenuto della nota in markdown") String content,
                            ToolContext toolContext) {
         String sessionId = (String) toolContext.getContext().get(AgentService.SESSION_ID_KEY);
+        String conversationId = (String) toolContext.getContext().get(AgentService.CONVERSATION_ID_KEY);
         Path target = store.pathFor(title);
         String description = "Salvare la nota \"" + target.getFileName() + "\":\n" + preview(content);
 
-        if (!approvals.requestApproval(sessionId, description)) {
+        if (!approvals.requestApproval(conversationId, sessionId, description)) {
             return "L'utente non ha approvato. Nessuna nota salvata.";
         }
         store.save(title, content);

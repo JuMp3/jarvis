@@ -1,20 +1,18 @@
 package dev.jarvis.task;
 
+import java.nio.file.Path;
+import java.time.Duration;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-import org.springframework.ai.anthropic.AnthropicChatOptions;
-import org.springframework.ai.anthropic.AnthropicWebSearchTool;
-import org.springframework.ai.chat.client.ChatClient;
-import org.springframework.ai.chat.metadata.Usage;
-import org.springframework.ai.chat.model.ChatModel;
-import org.springframework.ai.chat.model.ChatResponse;
-import org.springframework.ai.chat.prompt.ChatOptions;
+import org.springframework.boot.context.properties.bind.Bindable;
+import org.springframework.boot.context.properties.bind.Binder;
+import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Component;
 
 import dev.jarvis.agent.tools.SystemTools;
@@ -22,34 +20,42 @@ import dev.jarvis.config.JarvisProperties;
 import dev.jarvis.config.JarvisProperties.Specialist;
 import dev.jarvis.llm.ProviderId;
 import dev.jarvis.llm.ProviderRouter;
+import tools.jackson.databind.json.JsonMapper;
 
 /**
- * The specialists defined under {@code jarvis.agents}, each with its own model, system prompt and tools.
+ * The specialists defined under {@code jarvis.agents}, each with its own model, prompt, tools and limits.
  *
- * <p>A specialist starts from a clean context: it sees only the task, never the conversation. It gets no
- * task tools, so it cannot delegate in turn, and no tool that writes: the researcher reads untrusted web
- * content, and anything it suggests doing goes back through Jarvis and the user's approval.
+ * <p>Two kinds: {@code chat} (default) is one model call with read-only tools; {@code claude-code} drives
+ * Claude Code on an allowed repository, after the user approves its plan.
+ *
+ * <p>A specialist starts from a clean context: it sees only the task, never the conversation, and gets no
+ * task tools, so it cannot delegate in turn.
  */
 @Component
 public class Specialists {
 
-    /** Tool groups a specialist may use. None of them writes, sends or deletes. */
-    static final Set<String> TOOL_GROUPS = Set.of("time", "web-search");
-    private static final int DEFAULT_MAX_SEARCHES = 5;
-
-    public record Result(String text, Integer inputTokens, Integer outputTokens) {
+    /** @param costUsd null when the specialist does not report it */
+    public record Result(String text, Integer inputTokens, Integer outputTokens, Double costUsd) {
     }
 
-    private record Runner(ProviderId provider, ChatClient client, Object[] tools) {
-    }
+    private final Map<String, SpecialistRunner> runners;
+    private final Map<String, Duration> timeouts;
 
-    private final Map<String, Runner> runners;
-
-    public Specialists(JarvisProperties properties, ProviderRouter router, SystemTools systemTools) {
+    public Specialists(JarvisProperties properties, ProviderRouter router, SystemTools systemTools,
+                       Environment environment, JsonMapper json) {
         Map<String, Specialist> specs = properties.agents() == null ? Map.of() : properties.agents();
-        Map<String, Runner> built = new LinkedHashMap<>();
-        specs.forEach((id, spec) -> built.put(id, build(id, spec, router, systemTools)));
+        Map<String, SpecialistRunner> built = new LinkedHashMap<>();
+        Map<String, Duration> limits = new LinkedHashMap<>();
+        specs.forEach((id, spec) -> {
+            built.put(id, "claude-code".equals(spec.type())
+                    ? new ClaudeCodeSpecialist(id, spec, claudeCodeEnvironment(environment), json)
+                    : new ChatSpecialist(id, spec, router, systemTools));
+            if (spec.timeout() != null) {
+                limits.put(id, spec.timeout());
+            }
+        });
         this.runners = Collections.unmodifiableMap(built);
+        this.timeouts = Collections.unmodifiableMap(limits);
     }
 
     public boolean exists(String agent) {
@@ -60,72 +66,55 @@ public class Specialists {
         return runners.keySet();
     }
 
+    /** @throws IllegalArgumentException if the specialist does not exist or the workspace is not allowed */
+    void validate(String agent, String workspace) {
+        if (!exists(agent)) {
+            throw new IllegalArgumentException("Specialista sconosciuto: " + agent + ". Disponibili: " + ids());
+        }
+        runners.get(agent).validate(workspace);
+    }
+
+    public Specialists.Result run(AgentTask task, TaskContext context) {
+        SpecialistRunner runner = runners.get(task.agent());
+        if (runner == null) {
+            throw new IllegalArgumentException("Unknown specialist " + task.agent());
+        }
+        return runner.run(task, context);
+    }
+
     ProviderId provider(String agent) {
         return runners.get(agent).provider();
     }
 
-    /** Runs the task to the end on the calling thread (a virtual thread of the task executor). */
-    public Result run(AgentTask task) {
-        Runner runner = runners.get(task.agent());
-        if (runner == null) {
-            throw new IllegalArgumentException("Unknown specialist " + task.agent());
-        }
-        String prompt = "Compito:\n" + task.instructions();
-        if (task.expectedOutput() != null && !task.expectedOutput().isBlank()) {
-            prompt += "\n\nRisultato atteso:\n" + task.expectedOutput();
-        }
-        ChatClient.ChatClientRequestSpec request = runner.client().prompt().user(prompt);
-        if (runner.tools().length > 0) {
-            request.tools(runner.tools());
-        }
-        ChatResponse response = request.call().chatResponse();
-        if (response == null) {
-            throw new IllegalStateException("Empty response from specialist " + task.agent());
-        }
-        // With server-side web search the answer comes in several text blocks
-        String text = response.getResults().stream()
-                .map(generation -> generation.getOutput().getText())
-                .filter(Objects::nonNull)
-                .collect(Collectors.joining("\n"))
-                .strip();
-        Usage usage = response.getMetadata().getUsage();
-        return new Result(text, usage == null ? null : usage.getPromptTokens(),
-                usage == null ? null : usage.getCompletionTokens());
+    /** The specialist's own time limit, if it has one. */
+    Optional<Duration> timeout(String agent) {
+        return Optional.ofNullable(timeouts.get(agent));
     }
 
-    private static Runner build(String id, Specialist spec, ProviderRouter router, SystemTools systemTools) {
-        String property = "jarvis.agents." + id;
-        List<String> tools = spec.tools() == null ? List.of() : spec.tools();
-        List<String> unknown = tools.stream().filter(tool -> !TOOL_GROUPS.contains(tool)).toList();
-        if (!unknown.isEmpty()) {
-            throw new IllegalStateException(property + ".tools: unknown " + unknown + ", allowed " + TOOL_GROUPS);
-        }
-        ProviderId provider = ProviderId.parse(spec.provider())
-                .orElseThrow(() -> new IllegalStateException(property + ".provider: unknown " + spec.provider()));
-        ChatModel model = router.chatModel(provider).orElseThrow(() -> new IllegalStateException(
-                property + ".provider: " + provider.id() + " is not in jarvis.providers.enabled"));
+    /** Repositories the coding specialists may work on. */
+    public List<Path> repositories() {
+        return runners.values().stream()
+                .filter(ClaudeCodeSpecialist.class::isInstance)
+                .flatMap(runner -> ((ClaudeCodeSpecialist) runner).repositories().stream())
+                .distinct()
+                .toList();
+    }
 
-        ChatOptions.Builder<?> options;
-        if (tools.contains("web-search")) {
-            if (provider != ProviderId.ANTHROPIC) {
-                throw new IllegalStateException(property + ": web-search needs provider anthropic");
-            }
-            options = AnthropicChatOptions.builder().webSearchTool(AnthropicWebSearchTool.builder()
-                    .maxUses(spec.maxSearches() == null ? DEFAULT_MAX_SEARCHES : spec.maxSearches())
-                    .build());
-        } else {
-            options = ChatOptions.builder();
+    /** Claude Code bills the same Anthropic key and workspace as Jarvis, never the login of the PC. */
+    private static Map<String, String> claudeCodeEnvironment(Environment environment) {
+        Map<String, String> variables = new LinkedHashMap<>();
+        String apiKey = environment.getProperty("spring.ai.anthropic.api-key");
+        if (apiKey != null && !apiKey.isBlank()) {
+            variables.put("ANTHROPIC_API_KEY", apiKey);
         }
-        if (spec.model() != null && !spec.model().isBlank()) {
-            options.model(spec.model());
+        Map<String, String> headers = Binder.get(environment)
+                .bind("spring.ai.anthropic.custom-headers", Bindable.mapOf(String.class, String.class))
+                .orElse(Map.of());
+        if (!headers.isEmpty()) {
+            variables.put("ANTHROPIC_CUSTOM_HEADERS", headers.entrySet().stream()
+                    .map(header -> header.getKey() + ": " + header.getValue())
+                    .collect(Collectors.joining("\n")));
         }
-        if (spec.maxTokens() != null) {
-            options.maxTokens(spec.maxTokens());
-        }
-        ChatClient client = ChatClient.builder(model)
-                .defaultSystem(spec.systemPrompt())
-                .defaultOptions(options)
-                .build();
-        return new Runner(provider, client, tools.contains("time") ? new Object[] {systemTools} : new Object[0]);
+        return variables;
     }
 }

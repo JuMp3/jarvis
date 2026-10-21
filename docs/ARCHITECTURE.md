@@ -73,7 +73,8 @@ Server → client
 | `transcript` | `text` |
 | `token` | `text` |
 | `audio` | `seq`, `mime`, `data` (base64) |
-| `approval-request` | `id`, `description` |
+| `approval-request` | `id`, `description`, `agent`, `taskTitle` (null se chiede Jarvis) |
+| `approval-closed` | `id`: la richiesta è stata risolta, è scaduta o è stata ritirata |
 | `done` | — |
 | `error` | `message` |
 
@@ -93,9 +94,10 @@ Jarvis è il capo di una squadra di specialisti. Per ogni richiesta decide se ri
 
 | Componente | Responsabilità |
 |---|---|
-| `Specialists` | Costruisce uno specialista per ogni voce di `jarvis.agents.*`: un `ChatClient` con il proprio provider, modello, system prompt, tool e limiti. Aggiungere uno specialista è solo configurazione. Valida la configurazione all'avvio (tool sconosciuti, provider non abilitato, `web-search` fuori da Anthropic). |
+| `Specialists` | Costruisce uno specialista per ogni voce di `jarvis.agents.*`, di due tipi: `chat` (`ChatSpecialist`: un `ChatClient` con provider, modello, system prompt, tool di sola lettura e limiti) e `claude-code` (`ClaudeCodeSpecialist`, il Programmatore). Aggiungere uno specialista è solo configurazione. Valida la configurazione all'avvio. |
 | `TaskService` | Coda e esecuzione su thread virtuali, al massimo `jarvis.tasks.max-parallel` task insieme; timeout (`jarvis.tasks.timeout`), annullamento, consumo di token. Ogni cambio di stato è salvato su `agent_task` e pubblicato come evento `TaskUpdated`. All'avvio i task rimasti a metà diventano `interrupted`. |
-| `TaskTools` | Gli strumenti del solo orchestratore: `startTask(agent, title, instructions, expectedOutput)`, `listTasks`, `cancelTask(id \| all)`. Gli specialisti non li ricevono, quindi non possono delegare. |
+| `TaskTools` | Gli strumenti del solo orchestratore: `startTask(agent, title, instructions, expectedOutput, workspace)`, `listTasks`, `listRepositories`, `cancelTask(id \| all)`. Gli specialisti non li ricevono, quindi non possono delegare. |
+| `TaskContext` | Quello che uno specialista può fare oltre a rispondere: riportare l'avanzamento (mostrato in diretta) e chiedere un'approvazione. Durante l'attesa il task è `waiting_approval` e il suo timeout è in pausa. |
 | `TaskNotifier` | Inoltra ogni aggiornamento alle schede aperte della conversazione (`task-update`) e, a task finito, consegna l'esito a Jarvis come messaggio automatico. Se Jarvis sta parlando, il messaggio aspetta la fine del turno; più esiti pronti insieme partono in un solo turno. |
 
 ### Delegare significa chiamare un tool
@@ -110,8 +112,21 @@ Specialisti configurati:
 |---|---|---|---|
 | `researcher` | Cerca sul web, confronta fonti, restituisce sintesi e link | `time`, `web-search` (ricerca lato Anthropic, `max-searches` come budget) | No |
 | `writer` | Scrive testi completi da istruzioni dettagliate | `time` | No |
+| `coder` | Lavora su un repository git locale con Claude Code | file, git locale, build e test consentiti | Solo dopo l'approvazione del piano, su un branch nuovo, mai push |
 
-Previsti per la Fase 3: `documents` (documenti locali, RAG), `organizer` (calendario ed email, con approvazione), `coder` (repository locale, con approvazione); agenti esterni via A2A o Claude Code come processo esterno.
+Previsti: `documents` (documenti locali, RAG), `organizer` (calendario ed email, con approvazione); agenti esterni via A2A.
+
+### Il Programmatore (`coder`)
+
+Claude Code lanciato come processo esterno (`claude -p`, eventi `stream-json`), sul repository indicato in `startTask`:
+
+1. **Controlli:** il repository deve stare sotto `workspaces` (percorso risolto per intero: `..` e link non escono) ed essere un repo git senza modifiche in sospeso.
+2. **Piano:** `--permission-mode plan`, quindi sola lettura. Ogni chiamata ai tool diventa avanzamento leggibile ("Legge greet.py", "Esegue ./mvnw verify").
+3. **Approvazione:** il piano ti arriva come richiesta del task; se lo rifiuti il task è annullato e il repository non viene toccato.
+4. **Lavoro:** Jarvis crea `jarvis/<titolo>-<id>`, poi la stessa sessione riprende (`--resume`) con `acceptEdits` e i soli comandi di `allowed-commands`; `git push` e `git remote` sono sempre vietati.
+5. **Resoconto:** branch, commit, file modificati, eventuali modifiche rimaste senza commit, costo.
+
+Isolamento: `--bare` salta hook e plugin dell'utente e si autentica **solo** con la chiave Anthropic di Jarvis (stesso workspace, mai il login del PC); `--restricted` ignora ogni file di impostazioni e confina i tool sui file alla cartella del repository. Il `CLAUDE.md` del progetto, che `--bare` non legge da solo, viene passato esplicitamente. Budget: `max-budget-usd` per task, piano compreso; il tempo massimo (`timeout`) esclude l'attesa della tua approvazione.
 
 ### Sicurezza e controllo
 
@@ -121,7 +136,7 @@ Previsti per la Fase 3: `documents` (documenti locali, RAG), `organizer` (calend
 - **Budget:** ricerche web per task (`max-searches`), token di uscita (`max-tokens`), durata (`jarvis.tasks.timeout`), parallelismo (`max-parallel`). Il modello può lanciare le ricerche da codice in un ciclo, e ogni query conta.
 - **Annullamento:** pulsante "Ferma" nel pannello Squadra, `cancel-task` dal client, oppure "Jarvis, ferma tutto" (`cancelTask("all")`).
 - **Tracciabilità:** ogni task registra stato, tempi e token; li vedi nel pannello Squadra e nel log JSON (`Task ended`).
-- **Da fare con i primi specialisti che scrivono (Fase 3):** approvazioni instradate per `conversationId` invece che per sessione, ripresentate alla riconnessione, con il nome dello specialista e del task nella richiesta.
+- **Approvazioni legate alla conversazione:** qualsiasi scheda della conversazione può rispondere; quelle di Jarvis valgono finché dura il suo turno, quelle dei task sopravvivono alle disconnessioni (`jarvis.tasks.approval-timeout`, 30 minuti) e vengono ripresentate quando ti riconnetti. Quando una richiesta si chiude (risposta, scadenza, task fermato) le altre schede la tolgono (`approval-closed`).
 
 ### Interfaccia
 
@@ -135,7 +150,7 @@ Previsti per la Fase 3: `documents` (documenti locali, RAG), `organizer` (calend
 | Direzione | Tipo | Campi |
 |---|---|---|
 | server → client | `tasks` | `tasks`: elenco recente della conversazione, inviato dopo `history` |
-| server → client | `task-update` | `task`: `id`, `agent`, `title`, `instructions`, `status` (`queued` · `running` · `completed` · `failed` · `cancelled` · `interrupted`), `result`, `error`, `inputTokens`, `outputTokens`, `createdAt`, `startedAt`, `finishedAt` (epoch ms) |
+| server → client | `task-update` | `task`: `id`, `agent`, `title`, `instructions`, `workspace`, `status` (`queued` · `running` · `waiting_approval` · `completed` · `failed` · `cancelled` · `interrupted`), `progress`, `result`, `error`, `inputTokens`, `outputTokens`, `costUsd`, `createdAt`, `startedAt`, `finishedAt` (epoch ms) |
 | client → server | `cancel-task` | `id` |
 
 Un messaggio di stato completo, invece di eventi separati per inizio, avanzamento e fine, rende banale il client (sostituisce per `id`) e la riconnessione (basta `tasks`).
@@ -170,7 +185,7 @@ Un messaggio di stato completo, invece di eventi separati per inizio, avanzament
 - **Fase 0 — questo scheletro.** Chat multi-provider in streaming, push-to-talk, TTS per frase, orb animato, tool d'esempio con approvazione.
 - **Fase 1 — base solida (fatta).** Build verde, Maven wrapper, test, gestione errori e riconnessione, persistenza su PostgreSQL + pgvector (i task arriveranno con la Fase 2), log strutturati (file JSON ECS in `~/.jarvis/logs/`).
 - **Fase 2 — task e orchestrazione (fatta).** Task in background in parallelo, eventi, pannello Squadra e satelliti nell'orb; delega come tool; specialisti `researcher` e `writer` in sola lettura; budget, timeout e annullamento. Le approvazioni per conversazione passano alla Fase 3, con i primi specialisti che scrivono.
-- **Fase 3 — tool reali e nuovi specialisti.** Client MCP (filesystem, calendario, GitHub) con allowlist per specialista; specialisti `documents`, `organizer` e `coder`; azioni desktop (aprire app e URL).
+- **Fase 3 — tool reali e nuovi specialisti (in corso).** Fatti: approvazioni per conversazione, Programmatore (`coder`) con Claude Code. Restano: client MCP (filesystem, calendario, GitHub) con allowlist per specialista; specialisti `documents` e `organizer`; azioni desktop (aprire app e URL).
 - **Fase 4 — voce naturale.** VAD nel browser e barge-in automatico, wake word, STT in streaming, valutazione di un'API realtime speech-to-speech. STT/TTS locali e Web Speech API sono già disponibili.
 - **Fase 5 — app desktop.** Shell Tauri con il backend come sidecar, tray, avvio automatico; memoria a lungo termine e RAG sui documenti (pgvector).
 - **Fase 6 — autonomia controllata.** Routine pianificate (briefing del mattino), agenti esterni via A2A, specialista valutatore che verifica i risultati, eventuale delega su più livelli.

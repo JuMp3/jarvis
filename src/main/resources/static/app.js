@@ -17,6 +17,8 @@ const el = {
   mic: document.getElementById('mic'),
   approval: document.getElementById('approval'),
   approvalText: document.getElementById('approval-text'),
+  approvalTitle: document.getElementById('approval-title'),
+  approvalTask: document.getElementById('approval-task'),
   teamToggle: document.getElementById('team-toggle'),
   teamSummary: document.getElementById('team-summary'),
   teamDots: document.querySelector('.team-dots'),
@@ -363,8 +365,9 @@ function setState(state) {
 const AGENTS = {
   researcher: { label: 'Ricercatore', color: '#86c5c4' },
   writer: { label: 'Scrittore', color: '#b9a7dc' },
+  coder: { label: 'Programmatore', color: '#a9c58b' },
 };
-const SPARE_COLORS = ['#a9c58b', '#d6a7a0', '#cdbb8a'];
+const SPARE_COLORS = ['#d6a7a0', '#cdbb8a', '#8fb3d9'];
 const LANDING_MS = 2500;
 
 const team = { tasks: new Map(), landing: new Set(), openDetails: new Set() };
@@ -377,7 +380,7 @@ function agentInfo(id) {
 }
 
 const rgb = (hex) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
-const active = (task) => task.status === 'running' || task.status === 'queued';
+const active = (task) => ['running', 'queued', 'waiting_approval'].includes(task.status);
 
 function clock(ms) {
   const seconds = Math.max(0, Math.round(ms / 1000));
@@ -388,6 +391,7 @@ function stateText(task) {
   switch (task.status) {
     case 'queued': return 'in coda';
     case 'running': return `al lavoro da ${clock(Date.now() - task.startedAt)}`;
+    case 'waiting_approval': return 'aspetta la tua approvazione';
     case 'completed': return `fatto in ${clock(task.finishedAt - task.startedAt)}`;
     case 'failed': return 'non riuscito';
     case 'cancelled': return 'fermato';
@@ -412,6 +416,7 @@ function renderTask(task) {
   const meta = element('p', 'task-meta');
   meta.append(element('span', 'task-agent', agent.label), ', ', element('span', 'task-state', stateText(task)));
   item.append(meta);
+  if (task.status === 'running' && task.progress) item.append(element('p', 'task-progress', task.progress));
 
   if (active(task)) {
     const stop = element('button', 'task-stop', 'Ferma');
@@ -432,6 +437,10 @@ function renderTask(task) {
   if (task.result) body.append(element('h3', null, 'Risultato'), richText(element('p'), task.result));
   if (task.error) body.append(element('h3', null, 'Motivo'), element('p', null, task.error));
   body.append(element('h3', null, 'Istruzioni'), element('p', null, task.instructions));
+  if (task.workspace) body.append(element('h3', null, 'Repository'), element('p', null, task.workspace));
+  if (task.costUsd != null) {
+    body.append(element('h3', null, 'Costo'), element('p', null, `${task.costUsd.toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} $`));
+  }
   if (task.inputTokens != null) {
     const tokens = `${task.inputTokens.toLocaleString('it-IT')} in ingresso, ${(task.outputTokens ?? 0).toLocaleString('it-IT')} in uscita`;
     body.append(element('h3', null, 'Token'), element('p', null, tokens));
@@ -444,7 +453,8 @@ function renderTask(task) {
 /** Working agents first (oldest first), then finished work (most recent first). */
 function sortedTasks() {
   const all = [...team.tasks.values()];
-  const working = all.filter(active).sort((a, b) => (a.status === b.status ? a.createdAt - b.createdAt : a.status === 'running' ? -1 : 1));
+  const rank = { waiting_approval: 0, running: 1, queued: 2 };
+  const working = all.filter(active).sort((a, b) => rank[a.status] - rank[b.status] || a.createdAt - b.createdAt);
   const done = all.filter((t) => !active(t)).sort((a, b) => (b.finishedAt ?? 0) - (a.finishedAt ?? 0));
   return [...working, ...done];
 }
@@ -453,16 +463,16 @@ function renderTeam() {
   el.tasks.replaceChildren(...sortedTasks().map(renderTask));
 
   const working = [...team.tasks.values()].filter(active);
-  const running = working.filter((t) => t.status === 'running').length;
-  const queued = working.length - running;
-  const agents = (n) => (n === 1 ? '1 agente al lavoro' : `${n} agenti al lavoro`);
-  const waiting = (n) => (n === 1 ? '1 lavoro in coda' : `${n} lavori in coda`);
-  el.teamSummary.textContent = working.length === 0 ? 'Squadra a riposo'
-    : running === 0 ? waiting(queued)
-      : queued === 0 ? agents(running) : `${agents(running)}, ${queued} in coda`;
+  const count = (status) => working.filter((t) => t.status === status).length;
+  const parts = [];
+  if (count('waiting_approval')) parts.push(count('waiting_approval') === 1 ? '1 aspetta la tua approvazione' : `${count('waiting_approval')} aspettano la tua approvazione`);
+  if (count('running')) parts.push(count('running') === 1 ? '1 agente al lavoro' : `${count('running')} agenti al lavoro`);
+  if (count('queued')) parts.push(`${count('queued')} in coda`);
+  const summary = parts.join(', ');
+  el.teamSummary.textContent = summary ? summary.charAt(0).toUpperCase() + summary.slice(1) : 'Squadra a riposo';
   el.teamToggle.dataset.busy = String(working.length > 0);
   el.teamDots.replaceChildren(...working.map((task) => {
-    const dot = element('i', task.status === 'queued' ? 'queued' : null);
+    const dot = element('i', task.status === 'running' ? null : task.status);
     dot.style.setProperty('--agent', agentInfo(task.agent).color);
     return dot;
   }));
@@ -627,7 +637,10 @@ function handle(msg) {
       enqueueClip(msg.seq, msg.data);
       break;
     case 'approval-request':
-      askApproval(msg.id, msg.description);
+      askApproval(msg);
+      break;
+    case 'approval-closed':
+      closeApproval(msg.id);
       break;
     case 'done':
       finishStreaming();
@@ -661,16 +674,56 @@ function setControlsEnabled(enabled) {
   el.mic.disabled = !enabled || ui.stt === 'off';
 }
 
-function askApproval(id, description) {
-  el.approvalText.textContent = description;
-  el.approval.returnValue = '';
-  el.approval.onclose = () => {
-    send({ type: 'approval', id, approved: el.approval.returnValue === 'allow' });
-  };
-  el.approval.showModal();
+// Approvals: Jarvis and several agents may ask at the same time, and requests of agents come back after a
+// reconnection, so they wait in a queue and are shown one at a time.
+const approvals = [];
+let shownApproval = null;
+
+function askApproval(request) {
+  if (approvals.some((r) => r.id === request.id)) return;
+  approvals.push(request);
+  showNextApproval();
 }
 
+function showNextApproval() {
+  if (shownApproval || approvals.length === 0) return;
+  const request = approvals[0];
+  shownApproval = request.id;
+  const who = request.agent ? agentInfo(request.agent).label : 'Jarvis';
+  el.approvalTitle.textContent = `${who} chiede il permesso`;
+  el.approvalTask.hidden = !request.taskTitle;
+  el.approvalTask.textContent = request.taskTitle ?? '';
+  richText(el.approvalText, request.description);
+  el.approvalText.scrollTop = 0;
+  el.approval.returnValue = '';
+  el.approval.onclose = () => {
+    send({ type: 'approval', id: request.id, approved: el.approval.returnValue === 'allow' });
+    approvals.shift();
+    shownApproval = null;
+    showNextApproval();
+  };
+  el.approval.showModal();
+  // Opening moves focus inside the dialog, which can scroll a long plan: start reading from the top
+  requestAnimationFrame(() => { el.approvalText.scrollTop = 0; });
+}
+
+/** Answered in another tab, expired or withdrawn by the server. */
+function closeApproval(id) {
+  const index = approvals.findIndex((r) => r.id === id);
+  if (index < 0) return;
+  approvals.splice(index, 1);
+  if (shownApproval === id) {
+    el.approval.onclose = null;
+    el.approval.close();
+    shownApproval = null;
+    showNextApproval();
+  }
+}
+
+/** The connection dropped: the server denied Jarvis' own requests and will show the agents' ones again. */
 function dismissApproval() {
+  approvals.length = 0;
+  shownApproval = null;
   if (!el.approval.open) return;
   el.approval.onclose = null;
   el.approval.close();

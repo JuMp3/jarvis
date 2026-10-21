@@ -4,7 +4,7 @@ Assistente AI personale: backend Java (Spring Boot 4.1, Spring AI 2.0), frontend
 
 ## Stato attuale — leggere per primo
 
-Fasi 0 e 1 chiuse e verificate end-to-end con Claude: streaming, tool, approvazioni, memoria su PostgreSQL + pgvector, errori leggibili, turni interrotti e riconnessione, log strutturati. Voce: locale (Speaches: Whisper + Piper) e browser verificate end-to-end; OpenAI non provata (account senza credito). Ollama non provato. Fase 2 (squadra di agenti) fatta e verificata con Claude; prossima: Fase 3.
+Fasi 0 e 1 chiuse e verificate end-to-end con Claude: streaming, tool, approvazioni, memoria su PostgreSQL + pgvector, errori leggibili, turni interrotti e riconnessione, log strutturati. Voce: locale (Speaches: Whisper + Piper) e browser verificate end-to-end; OpenAI non provata (account senza credito). Ollama non provato. Fase 2 (squadra di agenti) fatta. Fase 3 in corso: approvazioni per conversazione e Programmatore (`coder`, Claude Code) fatti e verificati end-to-end.
 
 Cose verificate su Spring AI 2.0.1, da non rifare:
 
@@ -13,9 +13,10 @@ Cose verificate su Spring AI 2.0.1, da non rifare:
 - `JdbcChatMemoryRepository` di Spring AI scarta i messaggi dei tool: per questo c'è `agent/PostgresChatMemoryRepository`.
 - Un turno interrotto (barge-in, `cancel`, disconnessione, crash) lascia in memoria una domanda senza risposta o una chiamata a un tool senza risultato: il modello risponderebbe alla vecchia domanda, e Anthropic rifiuta con 400 ogni turno successivo. `InterruptedTurns` chiude la coda della conversazione, sia all'annullamento sia all'inizio di ogni turno.
 - Rete aziendale con Netskope: Speaches scarica i modelli solo con `SPEACHES_CA_BUNDLE` (vedi README), e su Git Bash i path dei container vanno passati con `MSYS_NO_PATHCONV=1`.
+- Claude Code come processo: `--bare` (niente hook o plugin dell'utente, auth solo con `ANTHROPIC_API_KEY`) più `--restricted`; il prompt passa da stdin e il system prompt da file, per evitare il quoting degli argomenti su Windows. Con `--allowedTools` le regole sono pattern `Bash(cmd:*)`; i comandi non consentiti vengono negati senza chiedere.
 - Chiavi Anthropic con ambito "Organizzazione": serve `spring.ai.anthropic.custom-headers.anthropic-workspace-id`.
 
-Jarvis orchestra una squadra di specialisti in background (sezione "Orchestrazione degli agenti" di `docs/ARCHITECTURE.md`). Prima di dare a uno specialista un tool che scrive, sposta le approvazioni dalla sessione WebSocket alla conversazione (vedi "Da fare" in quella sezione).
+Jarvis orchestra una squadra di specialisti in background (sezione "Orchestrazione degli agenti" di `docs/ARCHITECTURE.md`). Uno specialista che scrive chiede sempre l'approvazione con `TaskContext.requestApproval` prima di agire.
 
 ## Comandi
 
@@ -38,8 +39,9 @@ src/main/java/dev/jarvis/
                 NoteStore e SafePaths (logica pura del filesystem sandbox)
   voice/        SpeechToText, TextToSpeech, OpenAiAudioClient (solo JDK HTTP, OpenAI o Speaches),
                 SentenceChunker, AudioFormats, Multipart, Json, VoiceServices, VoiceConfig (motore per direzione)
-  task/         TaskService (coda, parallelismo, timeout, annullamento), TaskRepository, AgentTask,
-                Specialists (jarvis.agents.*), TaskTools (startTask, listTasks, cancelTask)
+  task/         TaskService (coda, parallelismo, timeout, annullamento, approvazioni), TaskRepository,
+                AgentTask, TaskContext, TaskFailure, Specialists (jarvis.agents.*), ChatSpecialist,
+                ClaudeCodeSpecialist (+ ClaudeCodeEvents, WorkspacePolicy), TaskTools
   ws/           WebSocketConfig, JarvisWebSocketHandler, SessionRegistry, SessionState,
                 TurnService, Turn, Protocol, TaskNotifier (aggiornamenti e annunci dei task), ErrorMessages
 src/main/resources/static/   index.html, style.css, app.js, orb.js (ES modules, nessun build step)

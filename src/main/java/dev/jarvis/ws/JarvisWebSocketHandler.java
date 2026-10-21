@@ -71,6 +71,9 @@ public class JarvisWebSocketHandler extends AbstractWebSocketHandler implements 
                 voice.sttMode(), voice.ttsMode(), voice.language()));
         sessions.send(state.id(), Protocol.history(historyOf(state.conversationId())));
         sessions.send(state.id(), Protocol.tasks(tasks.recent(state.conversationId())));
+        // Tasks may have asked for approval while no tab was open
+        approvals.pendingTaskRequests(state.conversationId())
+                .forEach(request -> sessions.send(state.id(), Protocol.approvalRequest(request)));
     }
 
     /** What the user saw in the conversation: their messages and Jarvis' text answers, no tool traffic. */
@@ -116,7 +119,7 @@ public class JarvisWebSocketHandler extends AbstractWebSocketHandler implements 
                 state.cancelCurrentTurn();
                 sessions.send(state.id(), Protocol.state("idle"));
             }
-            case "approval" -> approvals.resolve(state.id(), msg.id(), Boolean.TRUE.equals(msg.approved()));
+            case "approval" -> approvals.resolve(state.conversationId(), msg.id(), Boolean.TRUE.equals(msg.approved()));
             case "cancel-task" -> tasks.cancel(state.conversationId(), msg.id());
             default -> sessions.send(state.id(), Protocol.error("Tipo di messaggio sconosciuto: " + type));
         }

@@ -56,7 +56,7 @@ export class Orb {
   }
 
   /**
-   * @param {{id: string, color: number[], status: 'queued'|'running'|'completed'|'failed'}[]} agents
+   * @param {{id: string, color: number[], status: 'queued'|'running'|'waiting_approval'|'completed'|'failed'}[]} agents
    *   tasks to show; a task that disappears from the list fades out
    */
   setAgents(agents) {
@@ -111,8 +111,10 @@ export class Orb {
     this.breath = this.state === 'idle' ? (Math.sin(time * 1.3) + 1) * 0.06 * motion : 0;
 
     for (const [id, satellite] of this.satellites) {
-      const target = satellite.leaving ? 0 : satellite.status === 'queued' ? 0.45 : 1;
-      satellite.alpha = ease(satellite.alpha, target, satellite.leaving ? 1.5 : 3);
+      // Waiting for the user: parked on the orbit, breathing to catch the eye
+      const waiting = satellite.status === 'waiting_approval' ? 0.55 + 0.4 * Math.sin(time * 3) : null;
+      const target = satellite.leaving ? 0 : waiting ?? (satellite.status === 'queued' ? 0.45 : 1);
+      satellite.alpha = ease(satellite.alpha, target, satellite.leaving ? 1.5 : waiting != null ? 12 : 3);
       satellite.flash = Math.max(0, satellite.flash - dt * 1.2);
       if (satellite.status === 'running') {
         satellite.phase += ORBIT.speed * dt * (this.reducedMotion.matches ? 0.15 : 1);
@@ -176,7 +178,7 @@ export class Orb {
 
       ctx.beginPath();
       ctx.arc(point.x, point.y, size, 0, Math.PI * 2);
-      if (satellite.status === 'queued') {
+      if (satellite.status === 'queued' || satellite.status === 'waiting_approval') {
         ctx.strokeStyle = `rgba(${r}, ${g}, ${b}, ${alpha})`;
         ctx.lineWidth = 1.5;
         ctx.stroke();

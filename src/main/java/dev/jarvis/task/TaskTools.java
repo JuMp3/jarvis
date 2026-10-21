@@ -1,5 +1,6 @@
 package dev.jarvis.task;
 
+import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
@@ -35,9 +36,11 @@ public class TaskTools {
             @ToolParam(description = "Titolo breve del task, mostrato all'utente") String title,
             @ToolParam(description = "Istruzioni complete e autosufficienti: lo specialista non vede la conversazione") String instructions,
             @ToolParam(description = "Cosa deve restituire lo specialista (formato, lunghezza)", required = false) String expectedOutput,
+            @ToolParam(description = "Solo per il coder: percorso del repository git su cui lavorare (vedi listRepositories)", required = false) String workspace,
             ToolContext toolContext) {
         try {
-            AgentTask task = tasks.start(conversationId(toolContext), agent, title, instructions, expectedOutput);
+            AgentTask task = tasks.start(conversationId(toolContext), agent, title, instructions, expectedOutput,
+                    workspace);
             return "Task avviato: id " + task.id() + ", specialista " + agent + ".";
         } catch (IllegalArgumentException e) {
             return e.getMessage();
@@ -51,6 +54,13 @@ public class TaskTools {
             return "Nessun task in questa conversazione.";
         }
         return recent.stream().map(task -> describe(task, RESULT_PREVIEW)).collect(Collectors.joining("\n\n"));
+    }
+
+    @Tool(description = "Elenca i repository git su cui il coder può lavorare.")
+    public String listRepositories() {
+        List<Path> repositories = tasks.repositories();
+        return repositories.isEmpty() ? "Nessun repository disponibile per il coder."
+                : repositories.stream().map(Path::toString).collect(Collectors.joining("\n"));
     }
 
     @Tool(description = "Ferma un task in coda o in esecuzione. Usa \"all\" per fermarli tutti.")
@@ -80,6 +90,15 @@ public class TaskTools {
             String result = task.result();
             text.append("\n  Risultato: ").append(result.length() <= resultLimit ? result
                     : result.substring(0, resultLimit) + "…");
+        }
+        if (task.workspace() != null) {
+            text.append("\n  Repository: ").append(task.workspace());
+        }
+        if (task.progress() != null) {
+            text.append("\n  Sta facendo: ").append(task.progress());
+        }
+        if (task.costUsd() != null) {
+            text.append(String.format(java.util.Locale.ITALIAN, "\n  Costo: %.2f $", task.costUsd()));
         }
         if (task.error() != null) {
             text.append("\n  Motivo: ").append(task.error());

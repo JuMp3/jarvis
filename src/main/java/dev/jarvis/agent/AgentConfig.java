@@ -22,6 +22,6 @@ public class AgentConfig {
 
     @Bean
     ApprovalService approvalService(ApprovalChannel channel, JarvisProperties properties) {
-        return new ApprovalService(channel, properties.agent().approvalTimeout());
+        return new ApprovalService(channel, properties.agent().approvalTimeout(), properties.tasks().approvalTimeout());
     }
 }

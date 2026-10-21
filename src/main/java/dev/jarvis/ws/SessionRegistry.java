@@ -72,10 +72,17 @@ public class SessionRegistry implements ApprovalChannel {
 
     @Override
     public void send(ApprovalRequest request) {
-        SessionState state = sessions.get(request.sessionId());
-        if (state == null || !state.socket().isOpen()) {
-            throw new IllegalStateException("Session " + request.sessionId() + " is closed");
+        if (!request.fromTask()) {
+            SessionState state = sessions.get(request.sessionId());
+            if (state == null || !state.socket().isOpen()) {
+                throw new IllegalStateException("Session " + request.sessionId() + " is closed");
+            }
         }
-        send(request.sessionId(), Protocol.approvalRequest(request.id(), request.description()));
+        ofConversation(request.conversationId()).forEach(state -> send(state.id(), Protocol.approvalRequest(request)));
+    }
+
+    @Override
+    public void closed(ApprovalRequest request) {
+        ofConversation(request.conversationId()).forEach(state -> send(state.id(), Protocol.approvalClosed(request.id())));
     }
 }

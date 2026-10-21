@@ -4,6 +4,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Locale;
 
+import dev.jarvis.agent.ApprovalRequest;
 import dev.jarvis.task.AgentTask;
 
 /**
@@ -43,15 +44,15 @@ public final class Protocol {
     }
 
     /** A background task as shown in the activity panel; times are epoch milliseconds. */
-    public record TaskView(String id, String agent, String title, String instructions, String status,
-                           String result, String error, Integer inputTokens, Integer outputTokens,
-                           Long createdAt, Long startedAt, Long finishedAt) {
+    public record TaskView(String id, String agent, String title, String instructions, String workspace,
+                           String status, String progress, String result, String error, Integer inputTokens,
+                           Integer outputTokens, Double costUsd, Long createdAt, Long startedAt, Long finishedAt) {
 
         static TaskView of(AgentTask task) {
-            return new TaskView(task.id(), task.agent(), task.title(), task.instructions(),
-                    task.status().name().toLowerCase(Locale.ROOT), task.result(), task.error(),
-                    task.inputTokens(), task.outputTokens(), millis(task.createdAt()), millis(task.startedAt()),
-                    millis(task.finishedAt()));
+            return new TaskView(task.id(), task.agent(), task.title(), task.instructions(), task.workspace(),
+                    task.status().name().toLowerCase(Locale.ROOT), task.progress(), task.result(), task.error(),
+                    task.inputTokens(), task.outputTokens(), task.costUsd(), millis(task.createdAt()),
+                    millis(task.startedAt()), millis(task.finishedAt()));
         }
 
         private static Long millis(Instant instant) {
@@ -74,7 +75,11 @@ public final class Protocol {
     public record Audio(String type, int seq, String mime, String data) {
     }
 
-    public record ApprovalPrompt(String type, String id, String description) {
+    /** @param agent and taskTitle are null when Jarvis itself asks */
+    public record ApprovalPrompt(String type, String id, String description, String agent, String taskTitle) {
+    }
+
+    public record ApprovalClosed(String type, String id) {
     }
 
     public record Done(String type) {
@@ -116,8 +121,13 @@ public final class Protocol {
         return new Audio("audio", seq, mime, base64Data);
     }
 
-    public static ApprovalPrompt approvalRequest(String id, String description) {
-        return new ApprovalPrompt("approval-request", id, description);
+    public static ApprovalPrompt approvalRequest(ApprovalRequest request) {
+        return new ApprovalPrompt("approval-request", request.id(), request.description(), request.agent(),
+                request.taskTitle());
+    }
+
+    public static ApprovalClosed approvalClosed(String id) {
+        return new ApprovalClosed("approval-closed", id);
     }
 
     public static Done done() {

@@ -25,17 +25,17 @@ public class TaskRepository {
     void save(AgentTask task) {
         jdbc.sql("""
                         INSERT INTO agent_task (id, conversation_id, agent, title, instructions, expected_output,
-                                                status, result, error, input_tokens, output_tokens,
-                                                created_at, started_at, finished_at)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                        ON CONFLICT (id) DO UPDATE SET status = EXCLUDED.status, result = EXCLUDED.result,
-                            error = EXCLUDED.error, input_tokens = EXCLUDED.input_tokens,
-                            output_tokens = EXCLUDED.output_tokens, started_at = EXCLUDED.started_at,
-                            finished_at = EXCLUDED.finished_at""")
+                                                workspace, status, progress, result, error, input_tokens,
+                                                output_tokens, cost_usd, created_at, started_at, finished_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ON CONFLICT (id) DO UPDATE SET status = EXCLUDED.status, progress = EXCLUDED.progress,
+                            result = EXCLUDED.result, error = EXCLUDED.error, input_tokens = EXCLUDED.input_tokens,
+                            output_tokens = EXCLUDED.output_tokens, cost_usd = EXCLUDED.cost_usd,
+                            started_at = EXCLUDED.started_at, finished_at = EXCLUDED.finished_at""")
                 .params(task.id(), task.conversationId(), task.agent(), task.title(), task.instructions(),
-                        task.expectedOutput(), task.status().name(), task.result(), task.error(),
-                        task.inputTokens(), task.outputTokens(), timestamp(task.createdAt()),
-                        timestamp(task.startedAt()), timestamp(task.finishedAt()))
+                        task.expectedOutput(), task.workspace(), task.status().name(), task.progress(),
+                        task.result(), task.error(), task.inputTokens(), task.outputTokens(), task.costUsd(),
+                        timestamp(task.createdAt()), timestamp(task.startedAt()), timestamp(task.finishedAt()))
                 .update();
     }
 
@@ -57,8 +57,8 @@ public class TaskRepository {
     /** Tasks that were queued or running when the application stopped can no longer finish. */
     int markInterrupted(String reason) {
         return jdbc.sql("""
-                        UPDATE agent_task SET status = 'INTERRUPTED', error = ?, finished_at = now()
-                        WHERE status IN ('QUEUED', 'RUNNING')""")
+                        UPDATE agent_task SET status = 'INTERRUPTED', error = ?, progress = NULL, finished_at = now()
+                        WHERE status IN ('QUEUED', 'RUNNING', 'WAITING_APPROVAL')""")
                 .param(reason)
                 .update();
     }
@@ -66,8 +66,10 @@ public class TaskRepository {
     private static AgentTask map(ResultSet rs, int row) throws SQLException {
         return new AgentTask(rs.getString("id"), rs.getString("conversation_id"), rs.getString("agent"),
                 rs.getString("title"), rs.getString("instructions"), rs.getString("expected_output"),
-                AgentTask.Status.valueOf(rs.getString("status")), rs.getString("result"), rs.getString("error"),
+                rs.getString("workspace"), AgentTask.Status.valueOf(rs.getString("status")), rs.getString("progress"),
+                rs.getString("result"), rs.getString("error"),
                 (Integer) rs.getObject("input_tokens"), (Integer) rs.getObject("output_tokens"),
+                (Double) rs.getObject("cost_usd"),
                 instant(rs.getTimestamp("created_at")), instant(rs.getTimestamp("started_at")),
                 instant(rs.getTimestamp("finished_at")));
     }

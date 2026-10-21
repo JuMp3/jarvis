@@ -17,21 +17,32 @@ public record JarvisProperties(Providers providers, Agent agent, Voice voice, Ta
      * Background tasks run by specialists.
      *
      * @param maxParallel tasks running at the same time; the others wait in the queue
-     * @param timeout     a task still running after this is stopped and marked failed
+     * @param timeout          a task still running after this is stopped and marked failed (time spent
+     *                         waiting for the user's approval does not count)
+     * @param approvalTimeout  how long a task waits for the user's approval before it is denied
      */
-    public record Tasks(int maxParallel, Duration timeout) {
+    public record Tasks(int maxParallel, Duration timeout, Duration approvalTimeout) {
     }
 
     /**
      * A specialist Jarvis can delegate to (key = id used by the orchestrator).
      *
-     * @param description  what it is good at: the orchestrator reads it to choose
-     * @param tools        tool groups: "time", "web-search" (Anthropic server-side search)
-     * @param maxSearches  web searches allowed per task (budget)
-     * @param maxTokens    output tokens per answer
+     * @param type            "chat" (default: one model call with read-only tools) or "claude-code"
+     * @param description     what it is good at: the orchestrator reads it to choose
+     * @param tools           chat only: tool groups "time", "web-search" (Anthropic server-side search)
+     * @param maxSearches     chat only: web searches allowed per task (budget)
+     * @param maxTokens       chat only: output tokens per answer
+     * @param workspaces      claude-code only: folders whose git repositories it may work on
+     * @param maxBudgetUsd    claude-code only: spending limit per task, plan included
+     * @param allowedCommands claude-code only: shell commands it may run without asking, as Claude Code
+     *                        permission rules (e.g. "Bash(git commit:*)"); git push is always denied
+     * @param timeout         overrides jarvis.tasks.timeout for this specialist
+     * @param command         claude-code only: executable to run, default "claude"
      */
-    public record Specialist(String description, String provider, String model, String systemPrompt,
-                             List<String> tools, Integer maxSearches, Integer maxTokens) {
+    public record Specialist(String type, String description, String provider, String model, String systemPrompt,
+                             List<String> tools, Integer maxSearches, Integer maxTokens,
+                             List<String> workspaces, Double maxBudgetUsd, List<String> allowedCommands,
+                             Duration timeout, String command) {
     }
 
     /**
