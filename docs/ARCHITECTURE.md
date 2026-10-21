@@ -5,23 +5,24 @@ Assistente AI personale con backend Java (Spring Boot 4.1 + Spring AI 2.0), più
 ## Vista d'insieme
 
 ```
-┌──────────────────────────── Frontend (browser, poi Tauri) ────────────────────────────┐
+┌──────────────────────────── Frontend (browser, poi Tauri) ─────────────────────────────┐
 │  orb.js      animazione canvas: idle · listening · thinking · speaking                 │
 │  app.js      WebSocket client · microfono (MediaRecorder) · coda di riproduzione audio │
 │              AnalyserNode sul microfono e sull'audio in uscita → livello per l'orb     │
 └───────────────────────────────┬────────────────────────────────────────────────────────┘
                                 │  WebSocket /ws
                                 │  testo: messaggi JSON   ·   binario: audio registrato
-┌───────────────────────────────▼──────────────── Backend (Spring Boot) ─────────────────┐
-│  ws/      JarvisWebSocketHandler · SessionRegistry · TurnService (un turno = una risposta)│
-│  agent/   AgentService (ChatClient + memoria + tool) · ApprovalService · tools/          │
-│  llm/     ProviderRouter → un ChatClient per provider (Anthropic · OpenAI · Ollama)     │
-│  voice/   SpeechToText · TextToSpeech (OpenAI via HTTP) · SentenceChunker               │
-│  config/  JarvisProperties (prefisso "jarvis")                                          │
+┌───────────────────────────────▼───────────────── Backend (Spring Boot) ────────────────┐
+│  ws/      JarvisWebSocketHandler · SessionRegistry · TurnService (un turno)            │
+│  agent/   AgentService (ChatClient + memoria + tool) · ApprovalService · tools/        │
+│  task/    TaskService · AgentRegistry · specialisti            (previsto, Fase 2)      │
+│  llm/     ProviderRouter → un ChatClient per provider (Anthropic · OpenAI · Ollama)    │
+│  voice/   SpeechToText · TextToSpeech (OpenAI via HTTP) · SentenceChunker              │
+│  config/  JarvisProperties (prefisso "jarvis")                                         │
 └────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-Il frontend gestisce tutto ciò che è audio e grafica; il backend è l'orchestratore. Java non tocca mai il microfono o le casse: è più semplice, funziona uguale nel browser e in Tauri, e lo stesso segnale audio pilota l'animazione.
+Il frontend gestisce tutto ciò che è audio e grafica; il backend coordina tutto il resto. Java non tocca mai il microfono o le casse: è più semplice, funziona uguale nel browser e in Tauri, e lo stesso segnale audio pilota l'animazione.
 
 ## Componenti
 
@@ -81,6 +82,83 @@ Server → client
 - Contenuti esterni (email, pagine web, file) sono **dati, non istruzioni**: quando arriveranno i tool che li leggono, il system prompt e l'approvazione obbligatoria restano la difesa contro la prompt injection.
 - Shell e comandi di sistema arriveranno solo con allowlist esplicita, ed eventualmente in container.
 
+## Orchestrazione degli agenti (progetto, Fase 2)
+
+Non ancora implementata: oggi c'è un solo agente (`AgentService`). Questa sezione fissa il disegno, così le fasi successive non lo contraddicono.
+
+### Ruoli
+
+- **Orchestratore.** È Jarvis, cioè l'agente della conversazione. Per ogni richiesta decide se rispondere da solo, usare un tool, delegare a uno specialista o avviare un task in background. Poi verifica i risultati e ti riferisce.
+- **Specialisti.** Ognuno è definito in configurazione da: id, descrizione (è quella che legge l'orchestratore per scegliere), system prompt, provider e modello, tool consentiti, permessi e budget. Primi candidati:
+
+  | Specialista | Compito | Tool | Scrittura |
+  |---|---|---|---|
+  | `researcher` | Cerca e confronta informazioni sul web | ricerca, lettura pagine | No |
+  | `documents` | Legge e riassume documenti locali | file sandbox, RAG | No |
+  | `organizer` | Calendario ed email | MCP calendario, IMAP/SMTP | Con approvazione |
+  | `coder` | Lavora su un repository locale | git, file, build; in alternativa Claude Code come processo esterno | Con approvazione |
+
+- **Agenti esterni.** Agenti remoti via protocollo A2A, o tool CLI come Claude Code, presentati con la stessa interfaccia degli specialisti interni.
+
+### Delegare significa chiamare un tool
+
+Per l'orchestratore ogni specialista è un tool (`delegate_researcher`, `delegate_documents`…) con due parametri: `task` (istruzioni complete e autosufficienti) ed `expectedOutput` (cosa restituire). In questo modo il ciclo agente di Spring AI resta lo stesso, e la scelta dello specialista la fa il modello leggendo le descrizioni.
+
+Lo specialista parte con un **contesto pulito**: riceve solo il compito, non la conversazione. Costa meno token, non si confonde con discorsi precedenti e non vede dati che non gli servono. Restituisce un risultato sintetico (esito, risultato, fonti o file prodotti, consumo), non la trascrizione del suo lavoro.
+
+```java
+public interface Agent {
+    AgentSpec spec();
+    AgentResult run(AgentTask task, TaskContext context);   // bloccante, su thread virtuale
+}
+
+record AgentSpec(String id, String description, ProviderId provider, String model,
+                 Set<String> tools, boolean canWrite, Budget budget) {}
+record AgentTask(String taskId, String parentTaskId, String instructions, String expectedOutput) {}
+record AgentResult(Outcome outcome, String summary, List<Artifact> artifacts, Usage usage) {}
+// TaskContext: conversationId (per le approvazioni), annullamento, contatore del budget, canale eventi
+```
+
+### Sincrono o in background
+
+- **Richieste brevi** (una domanda, un tool veloce): restano nel turno vocale come oggi.
+- **Lavori lunghi:** l'orchestratore chiama `start_task(title, plan)`, che crea un task e restituisce subito un id. Jarvis risponde "ci lavoro" e la conversazione resta libera. `TaskService` esegue il task in background e pubblica eventi di avanzamento. Alla fine il risultato entra nella conversazione e Jarvis lo annuncia, anche a voce se attiva.
+- **Parallelismo:** un task può avviare più sotto-task, per esempio tre ricerche su fonti diverse, eseguiti in parallelo con un limite di concorrenza.
+- **Ciclo di vita:** `queued → running ⇄ waiting-approval → completed | failed | cancelled`.
+- **Persistenza:** i task si salvano su database (dopo la Fase 1), così lo storico sopravvive ai riavvii. Un task in corso durante uno spegnimento viene segnato come interrotto.
+
+### Sicurezza e controllo
+
+- **Permessi per specialista:** ognuno vede solo i propri tool. Il `researcher` non può inviare email.
+- **Lettura separata dall'azione:** chi legge contenuti non fidati (web, email in arrivo) non ha tool di scrittura. Le azioni le decide l'orchestratore, sulla base del riassunto, e passano comunque dall'approvazione: un riassunto può ancora contenere istruzioni iniettate.
+- **Approvazioni legate alla conversazione:** un task può durare più di una connessione WebSocket, quindi le richieste di approvazione vanno instradate per `conversationId` e non per sessione. Vengono ripresentate quando ti riconnetti e hanno un timeout più lungo dei turni vocali. La richiesta dice quale specialista la fa e per quale task.
+- **Una sola profondità di delega:** gli specialisti non delegano a loro volta. Evita cicli e costi fuori controllo; si potrà rivedere più avanti.
+- **Budget:** limite di passi (chiamate ai tool), token e durata per task e per specialista. Superato il limite, lo specialista si ferma e restituisce un risultato parziale. Per far rispettare budget e annullamento a ogni passo, il ciclo dei tool degli specialisti va guidato a mano (Spring AI 2.0 permette di disattivare quello automatico).
+- **Annullamento:** "Jarvis, ferma tutto" o il pulsante nel pannello attività cancellano il task e i suoi sotto-task.
+- **Tracciabilità:** ogni task registra passi, tool chiamati, token e costo stimato. Li vedi nel pannello attività e nei log.
+
+### Quando non delegare
+
+Il system prompt dell'orchestratore dice di rispondere direttamente quando può. Delega solo se il lavoro è lungo, si può parallelizzare, richiede un modello o permessi diversi, oppure deve leggere molti contenuti esterni. Più agenti costano molti più token e sono più difficili da capire quando sbagliano.
+
+### Protocollo previsto
+
+| Direzione | Tipo | Campi |
+|---|---|---|
+| server → client | `task-started` | `id`, `title`, `agent` |
+| server → client | `task-progress` | `id`, `message` |
+| server → client | `task-completed` | `id`, `summary` |
+| server → client | `task-failed` | `id`, `message` |
+| client → server | `cancel-task` | `id` |
+
+`approval-request` acquisisce i campi `agent` e `taskId`.
+
+### Implementazione in Spring AI
+
+- Ogni specialista è un `ChatClient` creato da `ProviderRouter` con il proprio system prompt e i propri tool, senza la memoria della conversazione (ha una memoria per task).
+- I tool di delega si creano a runtime, uno per specialista in configurazione (`jarvis.agents.*`), come `ToolCallback` programmatici: aggiungere uno specialista non richiede codice. L'API esatta va verificata su Spring AI 2.0.
+- `AgentRegistry` carica le specifiche e costruisce gli specialisti; `TaskService` gestisce coda, esecuzione, eventi e annullamento.
+
 ## Configurazione e segreti
 
 - `application.yml` contiene solo valori di default e riferimenti a variabili d'ambiente.
@@ -94,12 +172,14 @@ Server → client
 3. **STT/TTS con HTTP diretto** invece delle API audio di Spring AI. Il modulo OpenAI è stato riscritto nella 2.0; tenere l'audio dietro interfacce nostre con il solo JDK riduce le dipendenze e rende facile passare a motori locali.
 4. **Approvazione dentro i tool.** Funziona con il ciclo automatico di Spring AI e mette la regola di sicurezza accanto al codice che la richiede.
 5. **TTS sequenziale per turno.** Ordine garantito senza complessità; la parallelizzazione con riordino lato client è un'ottimizzazione successiva (il campo `seq` è già previsto).
+6. **Orchestrazione: delega come tool.** Gli specialisti si presentano all'orchestratore come tool, partono con un contesto pulito, delegano su un solo livello, e chi legge contenuti non fidati non può scrivere. I lavori lunghi girano come task in background, così la conversazione vocale non si blocca.
 
 ## Roadmap
 
 - **Fase 0 — questo scheletro.** Chat multi-provider in streaming, push-to-talk, TTS per frase, orb animato, tool d'esempio con approvazione.
-- **Fase 1 — base solida.** Build verde, Maven wrapper, test, gestione errori e riconnessione, memoria persistente (repository JDBC della chat memory), log strutturati.
-- **Fase 2 — tool reali.** Client MCP (filesystem, calendario, GitHub) con allowlist dei tool esposti; azioni desktop (aprire app e URL).
-- **Fase 3 — voce naturale.** VAD nel browser e barge-in automatico, wake word, STT/TTS locali dietro le stesse interfacce, valutazione di un'API realtime speech-to-speech.
-- **Fase 4 — app desktop.** Shell Tauri con il backend come sidecar, tray, avvio automatico; memoria a lungo termine e RAG sui documenti (pgvector).
-- **Fase 5 — autonomia controllata.** Routine pianificate (briefing del mattino), pattern multi-agente (router, orchestratore-worker, valutatore).
+- **Fase 1 — base solida.** Build verde, Maven wrapper, test, gestione errori e riconnessione, persistenza su database (chat memory JDBC, poi anche i task), log strutturati.
+- **Fase 2 — task e orchestrazione.** `TaskService` con task in background, eventi e pannello attività nell'interfaccia; approvazioni per conversazione; `AgentRegistry` e delega come tool; primo specialista in sola lettura (`researcher`); budget e annullamento.
+- **Fase 3 — tool reali e nuovi specialisti.** Client MCP (filesystem, calendario, GitHub) con allowlist per specialista; specialisti `documents`, `organizer` e `coder`; azioni desktop (aprire app e URL).
+- **Fase 4 — voce naturale.** VAD nel browser e barge-in automatico, wake word, STT/TTS locali dietro le stesse interfacce, valutazione di un'API realtime speech-to-speech.
+- **Fase 5 — app desktop.** Shell Tauri con il backend come sidecar, tray, avvio automatico; memoria a lungo termine e RAG sui documenti (pgvector).
+- **Fase 6 — autonomia controllata.** Routine pianificate (briefing del mattino), agenti esterni via A2A, specialista valutatore che verifica i risultati, eventuale delega su più livelli.
