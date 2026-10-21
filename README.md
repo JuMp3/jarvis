@@ -41,7 +41,10 @@ Su reti aziendali che ispezionano il TLS (es. Netskope) Speaches non riesce a sc
 - Push-to-talk: trascrizione, risposta e sintesi vocale frase per frase.
 - Interruzione: premi il microfono mentre Jarvis parla e si ferma.
 - Ciclo agente con tool d'esempio; le azioni che modificano qualcosa chiedono la tua approvazione.
-- Programmatore: su un repository delle cartelle consentite Jarvis fa lavorare Claude Code. Prima ti propone un piano, poi, se approvi, modifica il codice su un branch nuovo, lancia build e test e fa commit. Non fa mai push e ha un tetto di spesa per task.
+- Programmatore: su un repository delle cartelle consentite Jarvis fa lavorare Claude Code. Prima ti propone un piano, poi, se approvi, modifica il codice su un branch nuovo, lancia build e test e fa commit; il push lo fa solo se glielo autorizzi alla fine. Ha un tetto di spesa per task.
+- Documenti: uno specialista legge, cerca e riassume i file (testo, PDF, Word) delle cartelle che indichi in configurazione.
+- GitHub e altri servizi via MCP: si collegano in configurazione; la lettura la fanno gli specialisti, ogni azione (issue, PR, email) la fa Jarvis dopo la tua conferma.
+- Desktop: Jarvis apre link, cartelle e i programmi del catalogo, sempre dopo la tua conferma.
 - Squadra di agenti: Jarvis affida ricerche e testi lunghi a specialisti che lavorano in parallelo in background; li vedi orbitare intorno alla lampada e nel pannello Squadra, e Jarvis ti riferisce i risultati.
 - Ascolto solo su `127.0.0.1` e WebSocket accettati solo dalla stessa origine.
 

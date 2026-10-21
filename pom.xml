@@ -70,6 +70,17 @@
             <artifactId>postgresql</artifactId>
             <scope>runtime</scope>
         </dependency>
+        <!-- MCP servers (GitHub, email, calendar...) configured in spring.ai.mcp.client.* -->
+        <dependency>
+            <groupId>org.springframework.ai</groupId>
+            <artifactId>spring-ai-starter-mcp-client</artifactId>
+        </dependency>
+        <!-- Text of PDF documents for the documents specialist -->
+        <dependency>
+            <groupId>org.apache.pdfbox</groupId>
+            <artifactId>pdfbox</artifactId>
+            <version>3.0.6</version>
+        </dependency>
         <!-- Starts compose.yaml on spring-boot:run (skipped in tests) -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

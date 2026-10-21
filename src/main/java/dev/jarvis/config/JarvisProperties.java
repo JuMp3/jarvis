@@ -11,7 +11,39 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  */
 @ConfigurationProperties(prefix = "jarvis")
 public record JarvisProperties(Providers providers, Agent agent, Voice voice, Tasks tasks,
-                               Map<String, Specialist> agents) {
+                               Map<String, Specialist> agents, Documents documents, Desktop desktop, Mcp mcp) {
+
+    /** @param servers MCP servers Jarvis uses, by connection name of spring.ai.mcp.client */
+    public record Mcp(Map<String, McpServer> servers) {
+    }
+
+    /**
+     * Which tools of an MCP server are exposed; the others are not.
+     *
+     * @param label      name shown in approval requests, e.g. "GitHub"
+     * @param headers    added to every request to the server (e.g. Authorization)
+     * @param readTools  for the specialists that list "mcp:&lt;server&gt;"
+     * @param writeTools for Jarvis only, each call after the user's approval
+     */
+    public record McpServer(String label, Map<String, String> headers, List<String> readTools,
+                            List<String> writeTools) {
+    }
+
+    /** @param folders folders the documents specialist may read (created if missing) */
+    public record Documents(List<String> folders) {
+    }
+
+    /** @param apps catalog of applications Jarvis may start, always after the user's approval */
+    public record Desktop(Map<String, DesktopApp> apps) {
+    }
+
+    /**
+     * @param description shown to the model and in the approval request
+     * @param command     executable and arguments, started without a shell; "{target}" is replaced by a file
+     *                    or folder the model passes (it must exist)
+     */
+    public record DesktopApp(String description, List<String> command) {
+    }
 
     /**
      * Background tasks run by specialists.

@@ -1,5 +1,6 @@
 package dev.jarvis.task;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
@@ -12,29 +13,39 @@ import org.springframework.ai.chat.metadata.Usage;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.prompt.ChatOptions;
+import org.springframework.ai.tool.ToolCallback;
 
+import dev.jarvis.agent.tools.DocumentTools;
 import dev.jarvis.agent.tools.SystemTools;
 import dev.jarvis.config.JarvisProperties.Specialist;
 import dev.jarvis.llm.ProviderId;
 import dev.jarvis.llm.ProviderRouter;
+import dev.jarvis.mcp.McpTools;
 
 /** A specialist that is one model call with its own system prompt and read-only tools (researcher, writer). */
 final class ChatSpecialist implements SpecialistRunner {
 
     /** Tool groups a chat specialist may use. None of them writes, sends or deletes. */
-    static final Set<String> TOOL_GROUPS = Set.of("time", "web-search");
+    static final Set<String> TOOL_GROUPS = Set.of("time", "web-search", "documents");
     private static final int DEFAULT_MAX_SEARCHES = 5;
+    private static final String MCP = "mcp:";
 
     private final ProviderId provider;
     private final ChatClient client;
     private final Object[] tools;
+    private final List<ToolCallback> mcpCallbacks;
 
-    ChatSpecialist(String id, Specialist spec, ProviderRouter router, SystemTools systemTools) {
+    ChatSpecialist(String id, Specialist spec, ProviderRouter router, SystemTools systemTools,
+                   DocumentTools documentTools, McpTools mcpTools) {
         String property = "jarvis.agents." + id;
         List<String> toolGroups = spec.tools() == null ? List.of() : spec.tools();
-        List<String> unknown = toolGroups.stream().filter(tool -> !TOOL_GROUPS.contains(tool)).toList();
+        List<String> unknown = toolGroups.stream()
+                .filter(tool -> !TOOL_GROUPS.contains(tool))
+                .filter(tool -> !(tool.startsWith(MCP) && mcpTools.configured(tool.substring(MCP.length()))))
+                .toList();
         if (!unknown.isEmpty()) {
-            throw new IllegalStateException(property + ".tools: unknown " + unknown + ", allowed " + TOOL_GROUPS);
+            throw new IllegalStateException(property + ".tools: unknown " + unknown + ", allowed " + TOOL_GROUPS
+                    + " and mcp:<server> for the servers in jarvis.mcp.servers");
         }
         this.provider = ProviderId.parse(spec.provider())
                 .orElseThrow(() -> new IllegalStateException(property + ".provider: unknown " + spec.provider()));
@@ -62,7 +73,19 @@ final class ChatSpecialist implements SpecialistRunner {
                 .defaultSystem(spec.systemPrompt())
                 .defaultOptions(options)
                 .build();
-        this.tools = toolGroups.contains("time") ? new Object[] {systemTools} : new Object[0];
+        List<Object> granted = new ArrayList<>();
+        if (toolGroups.contains("time")) {
+            granted.add(systemTools);
+        }
+        if (toolGroups.contains("documents")) {
+            granted.add(documentTools);
+        }
+        this.tools = granted.toArray();
+        // Read-only tools of MCP servers, resolved at startup (empty if the server is unreachable)
+        this.mcpCallbacks = toolGroups.stream()
+                .filter(tool -> tool.startsWith(MCP))
+                .flatMap(tool -> mcpTools.readTools(tool.substring(MCP.length())).stream())
+                .toList();
     }
 
     @Override
@@ -74,6 +97,9 @@ final class ChatSpecialist implements SpecialistRunner {
         ChatClient.ChatClientRequestSpec request = client.prompt().user(prompt);
         if (tools.length > 0) {
             request.tools(tools);
+        }
+        if (!mcpCallbacks.isEmpty()) {
+            request.toolCallbacks(mcpCallbacks);
         }
         ChatResponse response = request.call().chatResponse();
         if (response == null) {

@@ -13,6 +13,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -29,7 +30,7 @@ import tools.jackson.databind.json.JsonMapper;
  *
  * <p>Flow: read-only plan ({@code --permission-mode plan}) → the user approves it → new branch
  * {@code jarvis/...} → the same session resumes and works, with edits allowed and only the configured shell
- * commands; {@code git push} is always denied. {@code --bare} skips the user's hooks and plugins and
+ * commands; Claude Code is always denied {@code git push} → Jarvis itself pushes, if the user agrees. {@code --bare} skips the user's hooks and plugins and
  * authenticates only with the API key Jarvis passes; {@code --restricted} ignores every settings file and
  * confines the file tools to the repository.
  */
@@ -40,6 +41,7 @@ final class ClaudeCodeSpecialist implements SpecialistRunner {
     private static final List<String> ALWAYS_DENIED = List.of("Bash(git push:*)", "Bash(git remote:*)");
     private static final int STDERR_TAIL = 2000;
     private static final long GIT_TIMEOUT_SECONDS = 60;
+    private static final long PUSH_TIMEOUT_SECONDS = 180;
 
     private final Specialist spec;
     private final WorkspacePolicy policy;
@@ -118,17 +120,46 @@ final class ClaudeCodeSpecialist implements SpecialistRunner {
             text.append("Il programmatore si è fermato prima di finire (").append(work.outcome().subtype())
                     .append("): quello che segue è un risultato parziale.\n\n");
         }
-        text.append("Branch ").append(branch).append(", partito da ").append(base).append(". Nessun push.\n\n")
+        text.append("Branch ").append(branch).append(", partito da ").append(base).append(".\n\n")
                 .append("Commit:\n").append(commits.isBlank() ? "nessuno" : commits).append("\n\n")
                 .append("File modificati:\n").append(files.isBlank() ? "nessuno" : files);
         if (!leftover.isBlank()) {
             text.append("\n\nModifiche rimaste senza commit:\n").append(leftover);
         }
+        text.append("\n\n").append(push(repo, branch, commits, files, context));
         text.append("\n\nResoconto del programmatore:\n").append(work.outcome().text());
         return new Specialists.Result(text.toString(),
                 plan.outcome().inputTokens() + work.outcome().inputTokens(),
                 plan.outcome().outputTokens() + work.outcome().outputTokens(),
                 plan.outcome().costUsd() + work.outcome().costUsd());
+    }
+
+    /**
+     * Pushes the branch only after the user says yes. Jarvis runs the push itself, with the user's git
+     * credentials: Claude Code is never allowed to.
+     */
+    private static String push(Path repo, String branch, String commits, String files, TaskContext context) {
+        if (commits.isBlank()) {
+            return "Nessun push: non ci sono commit.";
+        }
+        String remote;
+        try {
+            remote = git(repo, "remote", "get-url", "origin").strip();
+        } catch (TaskFailure e) {
+            return "Nessun push: il repository non ha un remote origin.";
+        }
+        String question = "Il programmatore ha finito sul branch " + branch + ".\n\nCommit:\n" + commits
+                + "\n\nFile modificati:\n" + files + "\n\nVuoi che faccia il push del branch su " + remote + "?";
+        if (!context.requestApproval(question)) {
+            return "Nessun push: il branch resta solo in locale.";
+        }
+        context.progress("Push del branch " + branch);
+        try {
+            git(repo, PUSH_TIMEOUT_SECONDS, "push", "-u", "origin", branch);
+            return "Push fatto: " + branch + " su " + remote + ".";
+        } catch (TaskFailure e) {
+            return "Push non riuscito, il branch resta in locale. " + e.getMessage();
+        }
     }
 
     private record Run(ClaudeCodeEvents.Outcome outcome, String planText) {
@@ -266,7 +297,8 @@ final class ClaudeCodeSpecialist implements SpecialistRunner {
 
     private static String approvalText(Path repo, String base, String branch, String plan, double remainingUsd) {
         return "Piano per " + repo + ":\n\n" + plan.strip() + "\n\nSe approvi lavorerà sul nuovo branch " + branch
-                + " (da " + base + "): potrà modificare file, lanciare build e test e fare commit, mai push. "
+                + " (da " + base + "): potrà modificare file, lanciare build e test e fare commit. Il push, se vorrai, "
+                + "te lo chiederò alla fine. "
                 + String.format(Locale.ITALIAN, "Spesa massima residua: %.2f $.", remainingUsd);
     }
 
@@ -280,19 +312,34 @@ final class ClaudeCodeSpecialist implements SpecialistRunner {
     }
 
     private static String git(Path repo, String... args) {
+        return git(repo, GIT_TIMEOUT_SECONDS, args);
+    }
+
+    private static String git(Path repo, long timeoutSeconds, String... args) {
         List<String> command = new ArrayList<>(List.of("git", "-C", repo.toString()));
         command.addAll(List.of(args));
         try {
-            Process process = new ProcessBuilder(command).redirectErrorStream(true).start();
-            String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
-            if (!process.waitFor(GIT_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
+            ProcessBuilder builder = new ProcessBuilder(command).redirectErrorStream(true);
+            builder.environment().put("GIT_TERMINAL_PROMPT", "0"); // fail instead of waiting for a typed password
+            Process process = builder.start();
+            // Read on another thread, so the timeout holds even if git never closes its output
+            CompletableFuture<String> output = CompletableFuture.supplyAsync(() -> {
+                try {
+                    return new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+                } catch (IOException e) {
+                    return "";
+                }
+            }, runnable -> Thread.ofVirtual().start(runnable));
+            if (!process.waitFor(timeoutSeconds, TimeUnit.SECONDS)) {
+                process.descendants().forEach(ProcessHandle::destroyForcibly);
                 process.destroyForcibly();
                 throw new TaskFailure("git " + String.join(" ", args) + " non ha risposto in tempo.");
             }
+            String text = output.join();
             if (process.exitValue() != 0) {
-                throw new TaskFailure("git " + String.join(" ", args) + " non è riuscito: " + output.strip());
+                throw new TaskFailure("git " + String.join(" ", args) + " non è riuscito: " + text.strip());
             }
-            return output;
+            return text;
         } catch (IOException e) {
             throw new TaskFailure("Non riesco a eseguire git: " + e.getMessage());
         } catch (InterruptedException e) {

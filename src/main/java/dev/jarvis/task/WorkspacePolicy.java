@@ -5,23 +5,22 @@ import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
-import java.util.Optional;
 import java.util.stream.Stream;
 
+import dev.jarvis.agent.tools.AllowedFolders;
+
 /**
- * Which repositories the coder may work on: git repositories under the configured roots. Paths are resolved
- * to their real location first, so ".." and links cannot escape a root. Pure logic, no Spring dependency.
+ * Which repositories the coder may work on: git repositories under the configured roots. Pure logic.
  */
 final class WorkspacePolicy {
 
     private static final int SEARCH_DEPTH = 2;
 
-    private final List<Path> roots;
+    private final AllowedFolders folders;
 
     /** Roots that do not exist are ignored. */
     WorkspacePolicy(List<String> roots) {
-        this.roots = roots == null ? List.of()
-                : roots.stream().map(Path::of).map(WorkspacePolicy::real).flatMap(Optional::stream).toList();
+        this.folders = new AllowedFolders(roots);
     }
 
     /**
@@ -31,13 +30,9 @@ final class WorkspacePolicy {
     Path resolve(String workspace) {
         if (workspace == null || workspace.isBlank()) {
             throw new IllegalArgumentException("Indica il repository su cui lavorare (parametro workspace). "
-                    + "Cartelle consentite: " + roots + ".");
+                    + "Cartelle consentite: " + folders.roots() + ".");
         }
-        Path repository = real(Path.of(workspace.strip()))
-                .orElseThrow(() -> new IllegalArgumentException("Il percorso " + workspace + " non esiste."));
-        if (roots.stream().noneMatch(repository::startsWith)) {
-            throw new IllegalArgumentException(repository + " è fuori dalle cartelle consentite: " + roots + ".");
-        }
+        Path repository = folders.resolve(workspace);
         if (!Files.exists(repository.resolve(".git"))) {
             throw new IllegalArgumentException(repository + " non è un repository git.");
         }
@@ -46,11 +41,11 @@ final class WorkspacePolicy {
 
     /** Git repositories under the roots, up to two levels deep. */
     List<Path> repositories() {
-        return roots.stream().flatMap(WorkspacePolicy::gitRepositories).sorted().toList();
+        return folders.roots().stream().flatMap(WorkspacePolicy::gitRepositories).sorted().toList();
     }
 
     List<Path> roots() {
-        return roots;
+        return folders.roots();
     }
 
     private static Stream<Path> gitRepositories(Path root) {
@@ -58,14 +53,6 @@ final class WorkspacePolicy {
             return dirs.filter(Files::isDirectory).filter(dir -> Files.exists(dir.resolve(".git"))).toList().stream();
         } catch (IOException e) {
             throw new UncheckedIOException(e);
-        }
-    }
-
-    private static Optional<Path> real(Path path) {
-        try {
-            return Optional.of(path.toRealPath());
-        } catch (IOException e) {
-            return Optional.empty();
         }
     }
 }

@@ -9,6 +9,8 @@ spring:
     openai:
       api-key: sk-...
 
+# The GitHub MCP server reads GITHUB_TOKEN (fine-grained token) from the environment or from .env
+
 jarvis:
   providers:
     enabled: anthropic,openai,ollama

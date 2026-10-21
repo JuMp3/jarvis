@@ -7,12 +7,15 @@ import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.memory.ChatMemory;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.prompt.ChatOptions;
+import org.springframework.ai.tool.ToolCallback;
 import org.springframework.stereotype.Service;
 
+import dev.jarvis.agent.tools.DesktopTools;
 import dev.jarvis.agent.tools.NoteTools;
 import dev.jarvis.agent.tools.SystemTools;
 import dev.jarvis.llm.ProviderId;
 import dev.jarvis.llm.ProviderRouter;
+import dev.jarvis.mcp.McpTools;
 import dev.jarvis.task.TaskTools;
 import reactor.core.publisher.Flux;
 
@@ -32,12 +35,15 @@ public class AgentService {
     private final ProviderRouter router;
     private final ChatMemory memory;
     private final Object[] tools;
+    /** MCP tools that change something, each behind an approval; reading is left to specialists. */
+    private final List<ToolCallback> mcpWriteTools;
 
     public AgentService(ProviderRouter router, ChatMemory memory, SystemTools systemTools, NoteTools noteTools,
-                        TaskTools taskTools) {
+                        DesktopTools desktopTools, TaskTools taskTools, McpTools mcpTools) {
         this.router = router;
         this.memory = memory;
-        this.tools = new Object[] {systemTools, noteTools, taskTools};
+        this.tools = new Object[] {systemTools, noteTools, desktopTools, taskTools};
+        this.mcpWriteTools = mcpTools.writeTools();
     }
 
     /** @param spoken the answer will be read aloud: use the provider's voice model, if configured */
@@ -48,6 +54,9 @@ public class AgentService {
         ChatClient.ChatClientRequestSpec request = router.client(provider).prompt();
         if (spoken) {
             router.voiceModel(provider).ifPresent(model -> request.options(ChatOptions.builder().model(model)));
+        }
+        if (!mcpWriteTools.isEmpty()) {
+            request.toolCallbacks(mcpWriteTools);
         }
         return request
                 .user(userText)

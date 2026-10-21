@@ -114,7 +114,11 @@ Specialisti configurati:
 | `writer` | Scrive testi completi da istruzioni dettagliate | `time` | No |
 | `coder` | Lavora su un repository git locale con Claude Code | file, git locale, build e test consentiti | Solo dopo l'approvazione del piano, su un branch nuovo, mai push |
 
-Previsti: `documents` (documenti locali, RAG), `organizer` (calendario ed email, con approvazione); agenti esterni via A2A.
+| `documents` | Legge, cerca e riassume documenti (testo, PDF, Word) nelle cartelle di `jarvis.documents.folders` | `time`, `documents` | No |
+| `github` | Legge repository, issue, PR, codice e commit tramite il server MCP di GitHub | `time`, `mcp:github` (tool di lettura) | No |
+| `organizer` | Legge posta e calendario (esempio in configurazione, da collegare al server MCP del proprio fornitore) | `time`, `mcp:mail`, `mcp:calendar` | No |
+
+Le azioni che cambiano qualcosa all'esterno (creare una issue o una PR, inviare un'email, creare un evento) non sono mai degli specialisti: sono i `write-tools` dei server MCP, dati solo a Jarvis e ciascuno eseguito dopo la tua approvazione dei parametri esatti. Previsti più avanti: agenti esterni via A2A.
 
 ### Il Programmatore (`coder`)
 
@@ -124,7 +128,8 @@ Claude Code lanciato come processo esterno (`claude -p`, eventi `stream-json`), 
 2. **Piano:** `--permission-mode plan`, quindi sola lettura. Ogni chiamata ai tool diventa avanzamento leggibile ("Legge greet.py", "Esegue ./mvnw verify").
 3. **Approvazione:** il piano ti arriva come richiesta del task; se lo rifiuti il task è annullato e il repository non viene toccato.
 4. **Lavoro:** Jarvis crea `jarvis/<titolo>-<id>`, poi la stessa sessione riprende (`--resume`) con `acceptEdits` e i soli comandi di `allowed-commands`; `git push` e `git remote` sono sempre vietati.
-5. **Resoconto:** branch, commit, file modificati, eventuali modifiche rimaste senza commit, costo.
+5. **Push, se vuoi:** a lavoro finito, se ci sono commit e un remote `origin`, ti chiede se fare il push del branch. Lo esegue Jarvis stesso con le tue credenziali git (`GIT_TERMINAL_PROMPT=0`, timeout); a Claude Code il push resta vietato.
+6. **Resoconto:** branch, commit, file modificati, esito del push, eventuali modifiche rimaste senza commit, costo.
 
 Isolamento: `--bare` salta hook e plugin dell'utente e si autentica **solo** con la chiave Anthropic di Jarvis (stesso workspace, mai il login del PC); `--restricted` ignora ogni file di impostazioni e confina i tool sui file alla cartella del repository. Il `CLAUDE.md` del progetto, che `--bare` non legge da solo, viene passato esplicitamente. Budget: `max-budget-usd` per task, piano compreso; il tempo massimo (`timeout`) esclude l'attesa della tua approvazione.
 
@@ -137,6 +142,11 @@ Isolamento: `--bare` salta hook e plugin dell'utente e si autentica **solo** con
 - **Annullamento:** pulsante "Ferma" nel pannello Squadra, `cancel-task` dal client, oppure "Jarvis, ferma tutto" (`cancelTask("all")`).
 - **Tracciabilità:** ogni task registra stato, tempi e token; li vedi nel pannello Squadra e nel log JSON (`Task ended`).
 - **Approvazioni legate alla conversazione:** qualsiasi scheda della conversazione può rispondere; quelle di Jarvis valgono finché dura il suo turno, quelle dei task sopravvivono alle disconnessioni (`jarvis.tasks.approval-timeout`, 30 minuti) e vengono ripresentate quando ti riconnetti. Quando una richiesta si chiude (risposta, scadenza, task fermato) le altre schede la tolgono (`approval-closed`).
+
+### Strumenti esterni (MCP) e azioni sul desktop
+
+- **MCP:** i server sono connessioni di `spring.ai.mcp.client.*` (HTTP streamable o stdio); `jarvis.mcp.servers.<nome>` dice quali tool esporre. `McpTools` li inizializza all'avvio in modo tollerante (un server irraggiungibile o senza token viene saltato con un warning) e li espone come `<server>_<tool>`: i `read-tools` agli specialisti che dichiarano `mcp:<server>`, i `write-tools` solo a Jarvis, dietro approvazione (`ApprovalToolCallback`). Gli header (per esempio il token) li aggiunge un customizer delle richieste, solo verso l'URL di quel server. Così ognuno collega i propri account (GitHub, posta, calendario) con la sola configurazione.
+- **Desktop (`DesktopTools`, solo Jarvis, sempre con conferma):** `openUrl` (solo http/https), `openFolder` (cartelle esistenti), `launchApp` sul catalogo `jarvis.desktop.apps` (comando ed eventuale `{target}`, che deve esistere), `listApps`. I processi partono senza shell, un argomento per voce: nulla in un link, un percorso o un nome può iniettare un comando. Il catalogo, non il modello, decide quali programmi esistono: un elenco libero di comandi trasformerebbe una prompt injection in esecuzione di codice, protetta solo dalla tua attenzione nel momento della conferma.
 
 ### Interfaccia
 
@@ -185,7 +195,8 @@ Un messaggio di stato completo, invece di eventi separati per inizio, avanzament
 - **Fase 0 — questo scheletro.** Chat multi-provider in streaming, push-to-talk, TTS per frase, orb animato, tool d'esempio con approvazione.
 - **Fase 1 — base solida (fatta).** Build verde, Maven wrapper, test, gestione errori e riconnessione, persistenza su PostgreSQL + pgvector (i task arriveranno con la Fase 2), log strutturati (file JSON ECS in `~/.jarvis/logs/`).
 - **Fase 2 — task e orchestrazione (fatta).** Task in background in parallelo, eventi, pannello Squadra e satelliti nell'orb; delega come tool; specialisti `researcher` e `writer` in sola lettura; budget, timeout e annullamento. Le approvazioni per conversazione passano alla Fase 3, con i primi specialisti che scrivono.
-- **Fase 3 — tool reali e nuovi specialisti (in corso).** Fatti: approvazioni per conversazione, Programmatore (`coder`) con Claude Code. Restano: client MCP (filesystem, calendario, GitHub) con allowlist per specialista; specialisti `documents` e `organizer`; azioni desktop (aprire app e URL).
+- **Fase 3 — tool reali e nuovi specialisti (fatta).** Approvazioni per conversazione; Programmatore (`coder`) con Claude Code e push su autorizzazione; client MCP con tool filtrati per server (lettura agli specialisti, scrittura a Jarvis con approvazione), GitHub collegato; specialisti `documents`, `github` e `organizer` (quest'ultimo da collegare al server MCP del proprio fornitore di posta e calendario); azioni desktop su catalogo.
+- **Fase 3b — installazione e impostazioni.** Wizard iniziale che chiede cartelle, account e chiavi, e una sezione Impostazioni per cambiarli; i valori passano da `application.yml` a una tabella su DB (segreti esclusi, che restano nel portachiavi del sistema o in variabili d'ambiente).
 - **Fase 4 — voce naturale.** VAD nel browser e barge-in automatico, wake word, STT in streaming, valutazione di un'API realtime speech-to-speech. STT/TTS locali e Web Speech API sono già disponibili.
 - **Fase 5 — app desktop.** Shell Tauri con il backend come sidecar, tray, avvio automatico; memoria a lungo termine e RAG sui documenti (pgvector).
 - **Fase 6 — autonomia controllata.** Routine pianificate (briefing del mattino), agenti esterni via A2A, specialista valutatore che verifica i risultati, eventuale delega su più livelli.

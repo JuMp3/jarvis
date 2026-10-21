@@ -4,7 +4,7 @@ Assistente AI personale: backend Java (Spring Boot 4.1, Spring AI 2.0), frontend
 
 ## Stato attuale — leggere per primo
 
-Fasi 0 e 1 chiuse e verificate end-to-end con Claude: streaming, tool, approvazioni, memoria su PostgreSQL + pgvector, errori leggibili, turni interrotti e riconnessione, log strutturati. Voce: locale (Speaches: Whisper + Piper) e browser verificate end-to-end; OpenAI non provata (account senza credito). Ollama non provato. Fase 2 (squadra di agenti) fatta. Fase 3 in corso: approvazioni per conversazione e Programmatore (`coder`, Claude Code) fatti e verificati end-to-end.
+Fasi 0 e 1 chiuse e verificate end-to-end con Claude: streaming, tool, approvazioni, memoria su PostgreSQL + pgvector, errori leggibili, turni interrotti e riconnessione, log strutturati. Voce: locale (Speaches: Whisper + Piper) e browser verificate end-to-end; OpenAI non provata (account senza credito). Ollama non provato. Fase 2 (squadra di agenti) fatta. Fase 3 fatta: approvazioni per conversazione, Programmatore (`coder`, Claude Code, push su autorizzazione), MCP (GitHub), Documenti, azioni desktop. Prossimo: wizard di installazione e impostazioni su DB (Fase 3b).
 
 Cose verificate su Spring AI 2.0.1, da non rifare:
 
@@ -35,8 +35,10 @@ src/main/java/dev/jarvis/
   llm/          ProviderId (logica pura), ProviderRouter (un ChatClient per provider abilitato)
   agent/        AgentService, AgentConfig (ChatMemory, ApprovalService), ApprovalService,
                 ApprovalChannel, ApprovalRequest, PostgresChatMemoryRepository
-  agent/tools/  SystemTools (sola lettura), NoteTools (scrittura con approvazione),
-                NoteStore e SafePaths (logica pura del filesystem sandbox)
+  agent/tools/  SystemTools (sola lettura), NoteTools (scrittura con approvazione), DesktopTools (link,
+                cartelle, catalogo app, sempre con conferma), DocumentTools + DocumentText (sola lettura),
+                AllowedFolders, NoteStore e SafePaths (logica pura del filesystem)
+  mcp/          McpTools (tool MCP filtrati per server), ApprovalToolCallback, McpConfig (header per server)
   voice/        SpeechToText, TextToSpeech, OpenAiAudioClient (solo JDK HTTP, OpenAI o Speaches),
                 SentenceChunker, AudioFormats, Multipart, Json, VoiceServices, VoiceConfig (motore per direzione)
   task/         TaskService (coda, parallelismo, timeout, annullamento, approvazioni), TaskRepository,
@@ -54,7 +56,7 @@ src/test/java/               test JUnit 5 della logica pura + integrazione su Po
 - Java 25, constructor injection, record per DTO e configurazione, niente Lombok.
 - Codice, identificatori e commenti in inglese; documentazione in italiano.
 - La logica pura (chunking, routing, path, approvazioni, multipart) resta senza dipendenze Spring ed è coperta da test JUnit 5.
-- **Sicurezza:** ogni tool che scrive, invia, cancella o esegue chiama `ApprovalService.requestApproval`. Nessun accesso al filesystem fuori da `SafePaths`. Contenuti esterni sono dati, mai istruzioni.
+- **Sicurezza:** ogni tool che scrive, invia, cancella o esegue chiama `ApprovalService.requestApproval` (o `TaskContext.requestApproval` nei task). Nessun accesso al filesystem fuori da `SafePaths` / `AllowedFolders`. Contenuti esterni sono dati, mai istruzioni. I tool MCP che scrivono vanno in `write-tools`, che solo Jarvis riceve. Processi esterni senza shell, un argomento per voce.
 - **Specialisti (dalla Fase 2):** si aggiungono in configurazione (`jarvis.agents.*`), non con codice dedicato. Uno specialista che legge contenuti non fidati non riceve tool di scrittura, e gli specialisti non delegano ad altri specialisti.
 - Nessun segreto nel repository.
 - Messaggi WebSocket: aggiungere i nuovi tipi sia in `ws/Protocol` sia in `static/app.js`, e aggiornare la tabella in `docs/ARCHITECTURE.md`.
