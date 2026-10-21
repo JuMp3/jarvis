@@ -1,6 +1,7 @@
 package dev.jarvis.agent;
 
 import org.springframework.ai.chat.memory.ChatMemory;
+import org.springframework.ai.chat.memory.ChatMemoryRepository;
 import org.springframework.ai.chat.memory.MessageWindowChatMemory;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -10,10 +11,11 @@ import dev.jarvis.config.JarvisProperties;
 @Configuration(proxyBeanMethods = false)
 public class AgentConfig {
 
-    /** In-memory window for now; Phase 1 swaps in a JDBC repository to survive restarts. */
+    /** Sliding window over the conversation stored in PostgreSQL, so it survives restarts. */
     @Bean
-    ChatMemory chatMemory(JarvisProperties properties) {
+    ChatMemory chatMemory(ChatMemoryRepository repository, JarvisProperties properties) {
         return MessageWindowChatMemory.builder()
+                .chatMemoryRepository(repository)
                 .maxMessages(properties.agent().memoryMaxMessages())
                 .build();
     }

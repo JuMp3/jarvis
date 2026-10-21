@@ -54,7 +54,11 @@ public class SessionRegistry implements ApprovalChannel {
         try {
             state.socket().sendMessage(new TextMessage(json.writeValueAsString(message)));
         } catch (IOException | RuntimeException e) {
-            log.warn("Cannot send to session {}: {}", sessionId, e.getMessage());
+            if (state.socket().isOpen()) {
+                log.warn("Cannot send to session {}: {}", sessionId, e.getMessage());
+            } else {
+                log.debug("Session {} closed while sending: {}", sessionId, e.getMessage());
+            }
         }
     }
 

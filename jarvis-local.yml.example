@@ -3,6 +3,9 @@ spring:
   ai:
     anthropic:
       api-key: sk-ant-...
+      # Only for keys not scoped to a workspace (the API answers 400 asking for this header)
+      # custom-headers:
+      #   anthropic-workspace-id: wrkspc_...
     openai:
       api-key: sk-...
 
@@ -11,5 +14,8 @@ jarvis:
     enabled: anthropic,openai,ollama
     default-provider: anthropic
   voice:
-    # Speech-to-text and text-to-speech currently use the OpenAI audio API
-    openai-api-key: sk-...
+    # local (Speaches, default) | openai | browser | off, independently for each direction
+    stt: local
+    tts: local
+    openai:
+      api-key: sk-...   # only needed for stt/tts = openai

@@ -3,16 +3,15 @@ package dev.jarvis.voice;
 import java.util.Optional;
 
 /**
- * Voice engines that are actually configured. Empty when voice is disabled or has no API key,
- * in which case Jarvis works in text-only mode.
+ * Voice engines that run on the server, plus how the client should handle each direction.
+ *
+ * @param sttMode "server", "browser" or "off", as sent to the client
+ * @param ttsMode "server", "browser" or "off", as sent to the client
  */
-public record VoiceServices(Optional<SpeechToText> speechToText, Optional<TextToSpeech> textToSpeech) {
+public record VoiceServices(Optional<SpeechToText> speechToText, Optional<TextToSpeech> textToSpeech,
+                            String sttMode, String ttsMode, String language) {
 
-    public static VoiceServices disabled() {
-        return new VoiceServices(Optional.empty(), Optional.empty());
-    }
-
-    public boolean enabled() {
-        return speechToText.isPresent() && textToSpeech.isPresent();
-    }
+    public static final String SERVER = "server";
+    public static final String BROWSER = "browser";
+    public static final String OFF = "off";
 }

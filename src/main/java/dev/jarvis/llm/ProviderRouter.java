@@ -5,9 +5,11 @@ import java.util.EnumMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.client.advisor.MessageChatMemoryAdvisor;
+import org.springframework.ai.chat.client.advisor.ToolCallingAdvisor;
 import org.springframework.ai.chat.memory.ChatMemory;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.stereotype.Component;
@@ -23,6 +25,7 @@ public class ProviderRouter {
 
     private final Map<ProviderId, ChatClient> clients;
     private final ProviderId defaultProvider;
+    private final Map<String, String> voiceModels;
 
     public ProviderRouter(Map<String, ChatModel> chatModels, ChatMemory chatMemory, JarvisProperties properties) {
         Map<String, String> beanClasses = new LinkedHashMap<>();
@@ -39,10 +42,14 @@ public class ProviderRouter {
         selected.forEach((provider, beanName) -> built.put(provider,
                 ChatClient.builder(chatModels.get(beanName))
                         .defaultSystem(properties.agent().systemPrompt())
-                        .defaultAdvisors(MessageChatMemoryAdvisor.builder(chatMemory).build())
+                        // Inside the tool loop, so tool calls and results are remembered across turns
+                        .defaultAdvisors(MessageChatMemoryAdvisor.builder(chatMemory)
+                                .order(ToolCallingAdvisor.DEFAULT_ORDER + 1)
+                                .build())
                         .build()));
         this.clients = Collections.unmodifiableMap(built);
 
+        this.voiceModels = properties.providers().voiceModels() == null ? Map.of() : properties.providers().voiceModels();
         this.defaultProvider = ProviderId.parse(properties.providers().defaultProvider())
                 .filter(clients::containsKey)
                 .orElse(selected.keySet().iterator().next());
@@ -56,6 +63,11 @@ public class ProviderRouter {
     /** Resolves a provider id coming from the client, falling back to the default one. */
     public ProviderId resolve(String requested) {
         return ProviderId.parse(requested).filter(clients::containsKey).orElse(defaultProvider);
+    }
+
+    /** Model configured for spoken turns with this provider, if any. */
+    public Optional<String> voiceModel(ProviderId provider) {
+        return Optional.ofNullable(voiceModels.get(resolve(provider.id()).id())).filter(model -> !model.isBlank());
     }
 
     public ProviderId defaultProvider() {

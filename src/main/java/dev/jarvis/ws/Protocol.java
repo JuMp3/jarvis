@@ -19,7 +19,20 @@ public final class Protocol {
 
     // ---- server -> client -------------------------------------------------------------------
 
-    public record Hello(String type, List<String> providers, String defaultProvider, boolean voiceEnabled) {
+    /**
+     * @param stt      who transcribes speech: "server" (send recorded audio), "browser" (Web Speech API) or "off"
+     * @param tts      who speaks answers: "server" (audio messages), "browser" (Web Speech API) or "off"
+     * @param language ISO 639-1 code for the browser engines
+     */
+    public record Hello(String type, List<String> providers, String defaultProvider, String stt, String tts,
+                        String language) {
+    }
+
+    public record History(String type, List<HistoryEntry> messages) {
+    }
+
+    /** @param role "user" or "assistant" */
+    public record HistoryEntry(String role, String text) {
     }
 
     public record State(String type, String state) {
@@ -43,8 +56,13 @@ public final class Protocol {
     public record ErrorMessage(String type, String message) {
     }
 
-    public static Hello hello(List<String> providers, String defaultProvider, boolean voiceEnabled) {
-        return new Hello("hello", providers, defaultProvider, voiceEnabled);
+    public static Hello hello(List<String> providers, String defaultProvider, String stt, String tts,
+                              String language) {
+        return new Hello("hello", providers, defaultProvider, stt, tts, language);
+    }
+
+    public static History history(List<HistoryEntry> messages) {
+        return new History("history", messages);
     }
 
     public static State state(String state) {

@@ -17,7 +17,7 @@ Assistente AI personale con backend Java (Spring Boot 4.1 + Spring AI 2.0), più
 │  agent/   AgentService (ChatClient + memoria + tool) · ApprovalService · tools/        │
 │  task/    TaskService · AgentRegistry · specialisti            (previsto, Fase 2)      │
 │  llm/     ProviderRouter → un ChatClient per provider (Anthropic · OpenAI · Ollama)    │
-│  voice/   SpeechToText · TextToSpeech (OpenAI via HTTP) · SentenceChunker              │
+│  voice/   SpeechToText · TextToSpeech (API audio OpenAI o Speaches locale) · Chunker   │
 │  config/  JarvisProperties (prefisso "jarvis")                                         │
 └────────────────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -28,13 +28,15 @@ Il frontend gestisce tutto ciò che è audio e grafica; il backend coordina tutt
 
 | Componente | Responsabilità |
 |---|---|
-| `ProviderRouter` | Trova i `ChatModel` configurati da Spring AI, tiene solo i provider abilitati e crea un `ChatClient` per ciascuno con system prompt e memoria condivisa. Cambiare provider a metà conversazione mantiene la cronologia. |
+| `ProviderRouter` | Trova i `ChatModel` configurati da Spring AI, tiene solo i provider abilitati e crea un `ChatClient` per ciascuno con system prompt e memoria condivisa. Cambiare provider a metà conversazione mantiene la cronologia. L'advisor della memoria sta dentro il ciclo dei tool, così chiamate e risultati dei tool restano in memoria. |
+| `PostgresChatMemoryRepository` | Salva la conversazione su PostgreSQL (tabella `chat_message`), compresi chiamate e risultati dei tool, che il repository JDBC di Spring AI scarta. `MessageWindowChatMemory` ci applica sopra la finestra degli ultimi messaggi. |
 | `AgentService` | Un turno di conversazione: prompt utente → streaming della risposta, con memoria (`conversationId`) e tool. Il ciclo tool → risultato → passo successivo lo esegue Spring AI. |
 | `ApprovalService` | I tool che modificano qualcosa chiedono conferma all'utente e attendono la risposta (con timeout: nessuna risposta = negato). |
 | `tools/` | `SystemTools` (sola lettura) e `NoteTools` (scrittura in una cartella sandbox, previa approvazione). Esempi del pattern da seguire per tutti i tool futuri. |
-| `SpeechToText` / `TextToSpeech` | Interfacce. Implementazione attuale: API audio OpenAI chiamate con `java.net.http`. Sostituibili con whisper.cpp / Piper in locale. |
+| `SpeechToText` / `TextToSpeech` | Interfacce, implementate da `OpenAiAudioClient` (solo `java.net.http`) verso l'API audio OpenAI o verso Speaches in locale, che espone la stessa API. `VoiceConfig` sceglie il motore per direzione da `jarvis.voice.stt` / `jarvis.voice.tts` (`local` · `openai` · `browser` · `off`); con `browser` il server non interviene e il client usa la Web Speech API. |
 | `SentenceChunker` | Spezza lo stream di token in frasi complete, così il TTS parte alla prima frase invece di aspettare la risposta intera. |
-| `TurnService` | Collega tutto per un turno: stato → token → frasi → audio ordinato → fine. Gestisce l'annullamento (barge-in). |
+| `TurnService` | Collega tutto per un turno: stato → token → frasi → audio ordinato → fine. Gestisce l'annullamento (barge-in). Gli errori diventano frasi brevi in italiano (`ErrorMessages`), pronunciate se il turno è vocale; il dettaglio resta nei log. |
+| `InterruptedTurns` | Chiude la coda di una conversazione interrotta: risultato fittizio per le chiamate ai tool rimaste aperte e risposta parziale marcata come interrotta. Gira all'annullamento e all'inizio di ogni turno, così copre anche i crash. |
 
 ## Flusso vocale
 
@@ -45,7 +47,7 @@ Il frontend gestisce tutto ciò che è audio e grafica; il backend coordina tutt
 5. Ogni token va al client (`token`) e al `SentenceChunker`.
 6. Ogni frase completa va al TTS, su un esecutore a thread singolo, così l'ordine è garantito; l'audio torna come `audio` con un numero di sequenza.
 7. Il client accoda e riproduce l'audio in ordine; l'orb va in `speaking` seguendo il livello dell'audio in uscita.
-8. Se l'utente riprende a parlare mentre Jarvis risponde, il client ferma l'audio e invia `cancel`: il backend annulla lo stream e il TTS in corso.
+8. Se l'utente riprende a parlare mentre Jarvis risponde, il client ferma l'audio e invia `cancel`: il backend annulla lo stream e il TTS in corso, e chiude il turno in memoria (`InterruptedTurns`). Lo stesso succede se la connessione cade: alla riconnessione il client riceve `history` se la pagina è stata ricaricata.
 
 Latenza percepita ≈ trascrizione + primo token + TTS della prima frase. Le leve principali sono un modello più veloce per la voce, frasi iniziali brevi e, più avanti, STT in streaming.
 
@@ -65,7 +67,8 @@ Server → client
 
 | Tipo | Campi |
 |---|---|
-| `hello` | `providers`, `defaultProvider`, `voiceEnabled` |
+| `hello` | `providers`, `defaultProvider`, `stt`, `tts` (`server` · `browser` · `off`), `language` |
+| `history` | `messages` (`role`: `user` · `assistant`, `text`): ultimi scambi della conversazione, inviati dopo `hello`. Il client li mostra solo se il log è vuoto (pagina ricaricata) |
 | `state` | `state` (`idle` · `thinking` · `speaking`) |
 | `transcript` | `text` |
 | `token` | `text` |
@@ -159,27 +162,37 @@ Il system prompt dell'orchestratore dice di rispondere direttamente quando può.
 - I tool di delega si creano a runtime, uno per specialista in configurazione (`jarvis.agents.*`), come `ToolCallback` programmatici: aggiungere uno specialista non richiede codice. L'API esatta va verificata su Spring AI 2.0.
 - `AgentRegistry` carica le specifiche e costruisce gli specialisti; `TaskService` gestisce coda, esecuzione, eventi e annullamento.
 
+## Persistenza
+
+- PostgreSQL 18 con pgvector (`compose.yaml`, porta 5433 su loopback). `./mvnw spring-boot:run` avvia il container grazie al supporto Docker Compose di Spring Boot; con `java -jar` va avviato prima con `docker compose up -d`.
+- Lo schema è in `schema.sql`, idempotente ed eseguito a ogni avvio. Alla prima modifica incompatibile si passa a Flyway.
+- L'estensione `vector` è già attiva: servirà alla memoria a lungo termine e al RAG (Fase 5), con un modello di embedding OpenAI o Ollama, perché Anthropic non ne offre.
+- I test d'integrazione usano Testcontainers con la stessa immagine.
+
 ## Configurazione e segreti
 
 - `application.yml` contiene solo valori di default e riferimenti a variabili d'ambiente.
-- Le chiavi vanno in variabili d'ambiente oppure in `jarvis-local.yml` nella cartella da cui si avvia l'app (in `.gitignore`, importato con `spring.config.import`).
+- Le chiavi vanno in variabili d'ambiente oppure in `jarvis-local.yml` o `.env` nella cartella da cui si avvia l'app (in `.gitignore`, importati con `spring.config.import`).
 - Un provider cloud senza chiave resta configurato con un segnaposto, così l'app parte comunque; basta non includerlo in `jarvis.providers.enabled`.
 
 ## Decisioni
 
 1. **Spring Boot 4.1 + Spring AI 2.0.** Astrazione multi-provider, tool calling, memoria come advisor e supporto MCP maturo.
 2. **Audio nel browser, non in Java.** Web Audio API per cattura, riproduzione e analisi del livello; il backend riceve e invia solo byte.
-3. **STT/TTS con HTTP diretto** invece delle API audio di Spring AI. Il modulo OpenAI è stato riscritto nella 2.0; tenere l'audio dietro interfacce nostre con il solo JDK riduce le dipendenze e rende facile passare a motori locali.
+3. **STT/TTS con HTTP diretto** invece delle API audio di Spring AI. Il modulo OpenAI è stato riscritto nella 2.0; tenere l'audio dietro interfacce nostre con il solo JDK riduce le dipendenze. I motori locali passano da Speaches, che espone l'API audio OpenAI: stesso client, cambia solo l'indirizzo.
 4. **Approvazione dentro i tool.** Funziona con il ciclo automatico di Spring AI e mette la regola di sicurezza accanto al codice che la richiede.
 5. **TTS sequenziale per turno.** Ordine garantito senza complessità; la parallelizzazione con riordino lato client è un'ottimizzazione successiva (il campo `seq` è già previsto).
 6. **Orchestrazione: delega come tool.** Gli specialisti si presentano all'orchestratore come tool, partono con un contesto pulito, delegano su un solo livello, e chi legge contenuti non fidati non può scrivere. I lavori lunghi girano come task in background, così la conversazione vocale non si blocca.
+7. **PostgreSQL + pgvector da subito.** Un solo database per conversazioni, task (Fase 2) e vettori (Fase 5), invece di un database su file da migrare più avanti.
+8. **Voce locale di default: Whisper `base` + Piper Paola**, misurati su CPU da portatile (Core Ultra 7 165U, senza GPU dedicata). Su una frase di 2,5 s: Whisper `base` circa 2 s, `small` circa 5,5 s; Piper circa 0,2 s per frase, Kokoro circa 5 volte più lento. Con una GPU conviene `small` o `large-v3-turbo` e l'immagine `latest-cuda`.
+9. **Haiku per i turni parlati** (`jarvis.providers.voice-models`). Misurato: circa 2 s al primo audio contro 4–20 s di Sonnet, che resta il modello dei turni scritti. Vale anche quando la voce la produce il browser.
 
 ## Roadmap
 
 - **Fase 0 — questo scheletro.** Chat multi-provider in streaming, push-to-talk, TTS per frase, orb animato, tool d'esempio con approvazione.
-- **Fase 1 — base solida.** Build verde, Maven wrapper, test, gestione errori e riconnessione, persistenza su database (chat memory JDBC, poi anche i task), log strutturati.
+- **Fase 1 — base solida (fatta).** Build verde, Maven wrapper, test, gestione errori e riconnessione, persistenza su PostgreSQL + pgvector (i task arriveranno con la Fase 2), log strutturati (file JSON ECS in `~/.jarvis/logs/`).
 - **Fase 2 — task e orchestrazione.** `TaskService` con task in background, eventi e pannello attività nell'interfaccia; approvazioni per conversazione; `AgentRegistry` e delega come tool; primo specialista in sola lettura (`researcher`); budget e annullamento.
 - **Fase 3 — tool reali e nuovi specialisti.** Client MCP (filesystem, calendario, GitHub) con allowlist per specialista; specialisti `documents`, `organizer` e `coder`; azioni desktop (aprire app e URL).
-- **Fase 4 — voce naturale.** VAD nel browser e barge-in automatico, wake word, STT/TTS locali dietro le stesse interfacce, valutazione di un'API realtime speech-to-speech.
+- **Fase 4 — voce naturale.** VAD nel browser e barge-in automatico, wake word, STT in streaming, valutazione di un'API realtime speech-to-speech. STT/TTS locali e Web Speech API sono già disponibili.
 - **Fase 5 — app desktop.** Shell Tauri con il backend come sidecar, tray, avvio automatico; memoria a lungo termine e RAG sui documenti (pgvector).
 - **Fase 6 — autonomia controllata.** Routine pianificate (briefing del mattino), agenti esterni via A2A, specialista valutatore che verifica i risultati, eventuale delega su più livelli.

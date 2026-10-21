@@ -14,6 +14,7 @@ final class Turn {
     private final Runnable onCancel;
     private volatile Disposable subscription;
     private volatile boolean cancelled;
+    private volatile boolean speechFailed;
 
     Turn(ExecutorService speechQueue, Runnable onCancel) {
         this.speechQueue = speechQueue;
@@ -29,6 +30,15 @@ final class Turn {
 
     boolean cancelled() {
         return cancelled;
+    }
+
+    /** After the first synthesis error the turn goes on as text only, with a single error message. */
+    boolean speechFailed() {
+        return speechFailed;
+    }
+
+    void markSpeechFailed() {
+        speechFailed = true;
     }
 
     synchronized void cancel() {

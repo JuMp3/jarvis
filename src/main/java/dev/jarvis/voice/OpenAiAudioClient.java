@@ -9,13 +9,12 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 
 /**
- * Speech-to-text and text-to-speech through the OpenAI audio API, using only the JDK HTTP client.
+ * Speech-to-text and text-to-speech through the OpenAI audio API, or any server that implements it
+ * (e.g. Speaches running locally), using only the JDK HTTP client.
  */
 public class OpenAiAudioClient implements SpeechToText, TextToSpeech {
 
-    public static final URI DEFAULT_BASE_URI = URI.create("https://api.openai.com/v1/");
-
-    /** Settings for the OpenAI audio endpoints. {@code ttsInstructions} may be blank. */
+    /** Settings for the audio endpoints. {@code apiKey} and {@code ttsInstructions} may be blank. */
     public record Settings(String apiKey, String language, String sttModel, String ttsModel,
                            String ttsVoice, String ttsInstructions) {
     }
@@ -70,9 +69,11 @@ public class OpenAiAudioClient implements SpeechToText, TextToSpeech {
     }
 
     private HttpRequest.Builder baseRequest(String path) {
-        return HttpRequest.newBuilder(baseUri.resolve(path))
-                .timeout(TIMEOUT)
-                .header("Authorization", "Bearer " + settings.apiKey());
+        HttpRequest.Builder request = HttpRequest.newBuilder(baseUri.resolve(path)).timeout(TIMEOUT);
+        if (settings.apiKey() != null && !settings.apiKey().isBlank()) {
+            request.header("Authorization", "Bearer " + settings.apiKey());
+        }
+        return request;
     }
 
     private HttpResponse<byte[]> send(HttpRequest request) {
@@ -80,15 +81,15 @@ public class OpenAiAudioClient implements SpeechToText, TextToSpeech {
             HttpResponse<byte[]> response = http.send(request, HttpResponse.BodyHandlers.ofByteArray());
             if (response.statusCode() / 100 != 2) {
                 String body = new String(response.body(), StandardCharsets.UTF_8);
-                throw new VoiceException("OpenAI audio API returned " + response.statusCode() + ": "
-                        + body.substring(0, Math.min(body.length(), ERROR_BODY_LIMIT)));
+                throw new VoiceException("Audio API " + baseUri + " returned " + response.statusCode() + ": "
+                        + body.substring(0, Math.min(body.length(), ERROR_BODY_LIMIT)), response.statusCode());
             }
             return response;
         } catch (IOException e) {
-            throw new VoiceException("OpenAI audio API unreachable: " + e.getMessage(), e);
+            throw new VoiceException("Audio API " + baseUri + " unreachable: " + e.getMessage(), e);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            throw new VoiceException("Interrupted while calling the OpenAI audio API", e);
+            throw new VoiceException("Interrupted while calling the audio API " + baseUri, e);
         }
     }
 

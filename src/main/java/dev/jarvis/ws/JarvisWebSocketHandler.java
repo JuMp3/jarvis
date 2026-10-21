@@ -1,12 +1,15 @@
 package dev.jarvis.ws;
 
 import java.nio.ByteBuffer;
+import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.regex.Pattern;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.ai.chat.memory.ChatMemory;
+import org.springframework.ai.chat.messages.MessageType;
 import org.springframework.beans.factory.DisposableBean;
 import org.springframework.stereotype.Component;
 import org.springframework.web.socket.BinaryMessage;
@@ -42,15 +45,17 @@ public class JarvisWebSocketHandler extends AbstractWebSocketHandler implements 
     private final ApprovalService approvals;
     private final ProviderRouter router;
     private final VoiceServices voice;
+    private final ChatMemory memory;
     private final JsonMapper json;
 
     public JarvisWebSocketHandler(SessionRegistry sessions, TurnService turns, ApprovalService approvals,
-                                  ProviderRouter router, VoiceServices voice, JsonMapper json) {
+                                  ProviderRouter router, VoiceServices voice, ChatMemory memory, JsonMapper json) {
         this.sessions = sessions;
         this.turns = turns;
         this.approvals = approvals;
         this.router = router;
         this.voice = voice;
+        this.memory = memory;
         this.json = json;
     }
 
@@ -58,7 +63,20 @@ public class JarvisWebSocketHandler extends AbstractWebSocketHandler implements 
     public void afterConnectionEstablished(WebSocketSession session) {
         WebSocketSession socket = new ConcurrentWebSocketSessionDecorator(session, SEND_TIME_LIMIT_MS, SEND_BUFFER_LIMIT);
         SessionState state = sessions.register(socket, conversationIdOf(session), router.defaultProvider());
-        sessions.send(state.id(), Protocol.hello(router.availableIds(), router.defaultProvider().id(), voice.enabled()));
+        sessions.send(state.id(), Protocol.hello(router.availableIds(), router.defaultProvider().id(),
+                voice.sttMode(), voice.ttsMode(), voice.language()));
+        sessions.send(state.id(), Protocol.history(historyOf(state.conversationId())));
+    }
+
+    /** What the user saw in the conversation: their messages and Jarvis' text answers, no tool traffic. */
+    private List<Protocol.HistoryEntry> historyOf(String conversationId) {
+        return memory.get(conversationId).stream()
+                .filter(message -> message.getText() != null && !message.getText().isBlank())
+                .filter(message -> message.getMessageType() == MessageType.USER
+                        || message.getMessageType() == MessageType.ASSISTANT)
+                .map(message -> new Protocol.HistoryEntry(
+                        message.getMessageType() == MessageType.USER ? "user" : "assistant", message.getText()))
+                .toList();
     }
 
     @Override
@@ -83,7 +101,8 @@ public class JarvisWebSocketHandler extends AbstractWebSocketHandler implements 
                 if (msg.provider() != null) {
                     state.provider(router.resolve(msg.provider()));
                 }
-                boolean speak = Boolean.TRUE.equals(msg.speak()) && voice.enabled();
+                // Spoken turn: server audio only if tts runs on the server, otherwise the browser speaks the tokens
+                boolean speak = Boolean.TRUE.equals(msg.speak());
                 workers.submit(() -> turns.start(state, msg.text().trim(), speak));
             }
             case "set-provider" -> state.provider(router.resolve(msg.provider()));
@@ -104,7 +123,7 @@ public class JarvisWebSocketHandler extends AbstractWebSocketHandler implements 
         }
         SpeechToText stt = voice.speechToText().orElse(null);
         if (stt == null) {
-            sessions.send(state.id(), Protocol.error("Voce non configurata: imposta jarvis.voice.openai-api-key"));
+            sessions.send(state.id(), Protocol.error("La trascrizione sul server non è attiva: controlla jarvis.voice.stt"));
             return;
         }
         byte[] audio = toBytes(message.getPayload());
@@ -121,7 +140,7 @@ public class JarvisWebSocketHandler extends AbstractWebSocketHandler implements 
                 turns.start(state, text, true);
             } catch (RuntimeException e) {
                 log.warn("Transcription failed for session {}", state.id(), e);
-                sessions.send(state.id(), Protocol.error("Trascrizione non riuscita: " + e.getMessage()));
+                sessions.send(state.id(), Protocol.error(ErrorMessages.forVoice(e)));
                 sessions.send(state.id(), Protocol.done());
             }
         });

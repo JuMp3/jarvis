@@ -14,18 +14,25 @@ import java.util.stream.Collectors;
  */
 public enum ProviderId {
 
-    ANTHROPIC("anthropic"),
-    OPENAI("openai"),
-    OLLAMA("ollama");
+    ANTHROPIC("anthropic", "Claude"),
+    OPENAI("openai", "OpenAI"),
+    OLLAMA("ollama", "Ollama");
 
     private final String id;
+    private final String label;
 
-    ProviderId(String id) {
+    ProviderId(String id, String label) {
         this.id = id;
+        this.label = label;
     }
 
     public String id() {
         return id;
+    }
+
+    /** Name used in messages to the user. */
+    public String label() {
+        return label;
     }
 
     /** Parses a user/config value such as "Anthropic" or " openai ". */

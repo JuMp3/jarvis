@@ -33,7 +33,12 @@ const audio = {
   nextSeq: 0,
   current: null,
   turnDone: true,
+  recognition: null,
 };
+
+// Web Speech API, used when the server sends stt/tts = "browser"
+const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+const browserSpeech = { pending: '', queued: 0, pulse: 0, voice: null };
 
 function audioContext() {
   if (!audio.ctx) {
@@ -62,6 +67,11 @@ function levelOf(analyser) {
 
 function currentLevel() {
   if (ui.state === 'listening') return levelOf(audio.micAnalyser);
+  if (ui.state === 'speaking' && browserSpeech.queued > 0) {
+    // speechSynthesis does not expose its audio: pulse on word boundaries instead
+    browserSpeech.pulse *= 0.92;
+    return 0.2 + 0.5 * browserSpeech.pulse;
+  }
   if (ui.state === 'speaking') return levelOf(audio.outAnalyser);
   return 0;
 }
@@ -107,11 +117,47 @@ function playNext() {
 function stopPlayback() {
   audio.queue.clear();
   audio.nextSeq = 0;
+  if (browserSpeech.queued > 0 || browserSpeech.pending) {
+    browserSpeech.pending = '';
+    browserSpeech.queued = 0;
+    speechSynthesis.cancel();
+  }
   if (audio.current) {
     audio.current.onended = null;
     try { audio.current.stop(); } catch { /* already stopped */ }
     audio.current = null;
   }
+}
+
+// ---- browser speech synthesis ------------------------------------------------------------
+
+function browserVoice() {
+  const voices = speechSynthesis.getVoices().filter((v) => v.lang.toLowerCase().startsWith(ui.language));
+  return voices.find((v) => /natural|online/i.test(v.name)) ?? voices[0] ?? null;
+}
+
+function speakInBrowser(text) {
+  const utterance = new SpeechSynthesisUtterance(text);
+  utterance.lang = ui.language;
+  browserSpeech.voice ??= browserVoice();
+  if (browserSpeech.voice) utterance.voice = browserSpeech.voice;
+  utterance.onstart = () => setState('speaking');
+  utterance.onboundary = () => { browserSpeech.pulse = 1; };
+  utterance.onend = utterance.onerror = () => {
+    browserSpeech.queued = Math.max(0, browserSpeech.queued - 1);
+    if (browserSpeech.queued === 0 && audio.turnDone) setState('idle');
+  };
+  browserSpeech.queued += 1;
+  speechSynthesis.speak(utterance);
+}
+
+/** Speaks every complete sentence as soon as it has streamed in; the rest waits for more tokens. */
+function speakStreamed(text, final = false) {
+  browserSpeech.pending += text;
+  const complete = final ? browserSpeech.pending : browserSpeech.pending.match(/^[\s\S]*[.!?…]\s/)?.[0];
+  if (!complete) return;
+  browserSpeech.pending = browserSpeech.pending.slice(complete.length);
+  if (complete.trim()) speakInBrowser(complete.trim());
 }
 
 /** Starts a new turn locally: forget pending audio, interrupt Jarvis if it is still answering. */
@@ -121,6 +167,13 @@ function beginTurn() {
   audio.turnDone = false;
   if (busy) send({ type: 'cancel' });
   finishStreaming();
+}
+
+/** @param spoken whether the answer should be spoken (by the server or by the browser) */
+function sendChat(text, spoken) {
+  ui.spokenTurn = spoken && ui.tts !== 'off';
+  send({ type: 'chat', text, provider: el.provider.value, speak: ui.spokenTurn });
+  setState('thinking');
 }
 
 // ---- microphone -------------------------------------------------------------------------
@@ -139,6 +192,11 @@ async function startRecording() {
       ctx.createMediaStreamSource(audio.stream).connect(audio.micAnalyser);
     }
     if (!ui.recording) return; // released while the permission prompt was open
+    if (ui.stt === 'browser') {
+      startRecognition();
+      setState('listening');
+      return;
+    }
     const mimeType = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4']
       .find((type) => MediaRecorder.isTypeSupported(type));
     audio.recorder = new MediaRecorder(audio.stream, mimeType ? { mimeType } : undefined);
@@ -156,10 +214,44 @@ async function startRecording() {
   }
 }
 
+function startRecognition() {
+  const recognition = new Recognition();
+  recognition.lang = ui.language;
+  recognition.continuous = true;
+  let transcript = '';
+  recognition.onresult = (event) => {
+    for (let i = event.resultIndex; i < event.results.length; i++) {
+      if (event.results[i].isFinal) transcript += event.results[i][0].transcript;
+    }
+  };
+  recognition.onerror = (event) => {
+    if (event.error !== 'no-speech' && event.error !== 'aborted') {
+      note(`Riconoscimento vocale del browser non riuscito (${event.error}).`, true);
+    }
+  };
+  recognition.onend = () => {
+    audio.recognition = null;
+    const text = transcript.trim();
+    if (!text) {
+      note('Non ho sentito nulla. Riprova parlando più vicino al microfono.');
+      setState('idle');
+      return;
+    }
+    addItem('turn-user', text);
+    sendChat(text, true);
+  };
+  audio.recognition = recognition;
+  recognition.start();
+}
+
 function stopRecording() {
   if (!ui.recording) return;
   ui.recording = false;
   el.mic.classList.remove('recording');
+  if (audio.recognition) {
+    audio.recognition.stop(); // the final result arrives before onend
+    return;
+  }
   if (audio.recorder && audio.recorder.state === 'recording') {
     audio.recorder.stop();
   }
@@ -173,6 +265,7 @@ async function sendRecording() {
     setState('idle');
     return;
   }
+  ui.spokenTurn = ui.tts !== 'off';
   setState('thinking');
   socket.send(await blob.arrayBuffer());
 }
@@ -211,7 +304,11 @@ function finishStreaming() {
 
 // ---- state ------------------------------------------------------------------------------
 
-const ui = { state: 'idle', recording: false, voiceEnabled: false, connected: false };
+const ui = {
+  state: 'idle', recording: false, connected: false,
+  stt: 'off', tts: 'off', language: 'it', // from the server's hello: "server", "browser" or "off"
+  spokenTurn: false,
+};
 
 const touchOnly = window.matchMedia('(pointer: coarse)').matches;
 
@@ -262,10 +359,14 @@ function connect() {
   };
 
   socket.onclose = () => {
+    const interrupted = ui.connected && (ui.state === 'thinking' || ui.state === 'speaking');
     ui.connected = false;
     setControlsEnabled(false);
     stopPlayback();
+    audio.turnDone = true;
     finishStreaming();
+    dismissApproval(); // the server already denied it when the connection dropped
+    if (interrupted) note('Connessione persa: la risposta in corso è stata interrotta.', true);
     setState('idle');
     setTimeout(connect, retryDelay);
     retryDelay = Math.min(retryDelay * 2, 10000);
@@ -283,13 +384,20 @@ function send(message) {
 function handle(msg) {
   switch (msg.type) {
     case 'hello':
-      ui.voiceEnabled = msg.voiceEnabled;
+      ui.language = msg.language || 'it';
+      ui.stt = msg.stt === 'browser' && !Recognition ? 'off' : msg.stt;
+      ui.tts = msg.tts === 'browser' && !('speechSynthesis' in window) ? 'off' : msg.tts;
       fillProviders(msg.providers, msg.defaultProvider);
-      el.speak.checked = msg.voiceEnabled;
-      el.speak.disabled = !msg.voiceEnabled;
+      el.speak.checked = ui.tts !== 'off';
+      el.speak.disabled = ui.tts === 'off';
       setControlsEnabled(true);
-      if (!msg.voiceEnabled) {
-        el.mic.title = 'Voce non configurata: imposta jarvis.voice.openai-api-key';
+      el.mic.title = ui.stt !== 'off' ? ''
+        : msg.stt === 'browser' ? 'Questo browser non supporta il riconoscimento vocale'
+          : 'Voce non attiva: controlla jarvis.voice.stt';
+      break;
+    case 'history':
+      if (el.log.children.length === 0) {
+        for (const m of msg.messages) addItem(m.role === 'user' ? 'turn-user' : 'turn-jarvis', m.text);
       }
       break;
     case 'state':
@@ -301,6 +409,7 @@ function handle(msg) {
       break;
     case 'token':
       appendToken(msg.text);
+      if (ui.spokenTurn && ui.tts === 'browser') speakStreamed(msg.text);
       break;
     case 'audio':
       enqueueClip(msg.seq, msg.data);
@@ -310,8 +419,9 @@ function handle(msg) {
       break;
     case 'done':
       finishStreaming();
+      if (ui.spokenTurn && ui.tts === 'browser') speakStreamed('', true);
       audio.turnDone = true;
-      if (!audio.current && audio.queue.size === 0) setState('idle');
+      if (!audio.current && audio.queue.size === 0 && browserSpeech.queued === 0) setState('idle');
       break;
     case 'error':
       finishStreaming();
@@ -336,7 +446,7 @@ function setControlsEnabled(enabled) {
   el.input.disabled = !enabled;
   el.send.disabled = !enabled;
   el.provider.disabled = !enabled;
-  el.mic.disabled = !enabled || !ui.voiceEnabled;
+  el.mic.disabled = !enabled || ui.stt === 'off';
 }
 
 function askApproval(id, description) {
@@ -348,6 +458,12 @@ function askApproval(id, description) {
   el.approval.showModal();
 }
 
+function dismissApproval() {
+  if (!el.approval.open) return;
+  el.approval.onclose = null;
+  el.approval.close();
+}
+
 // ---- input ------------------------------------------------------------------------------
 
 el.composer.addEventListener('submit', (event) => {
@@ -357,9 +473,8 @@ el.composer.addEventListener('submit', (event) => {
   beginTurn();
   if (el.speak.checked) audioContext(); // unlock audio playback with this user gesture
   addItem('turn-user', text);
-  send({ type: 'chat', text, provider: el.provider.value, speak: el.speak.checked });
+  sendChat(text, el.speak.checked);
   el.input.value = '';
-  setState('thinking');
 });
 
 el.provider.addEventListener('change', () => send({ type: 'set-provider', provider: el.provider.value }));

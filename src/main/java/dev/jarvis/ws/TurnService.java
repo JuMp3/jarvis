@@ -13,6 +13,7 @@ import org.springframework.stereotype.Service;
 
 import dev.jarvis.agent.AgentService;
 import dev.jarvis.agent.ApprovalService;
+import dev.jarvis.llm.ProviderId;
 import dev.jarvis.voice.SentenceChunker;
 import dev.jarvis.voice.TextToSpeech;
 import dev.jarvis.voice.VoiceServices;
@@ -40,21 +41,28 @@ public class TurnService {
 
     void start(SessionState session, String userText, boolean speak) {
         String sessionId = session.id();
+        ProviderId provider = session.provider();
         Optional<TextToSpeech> tts = speak ? voice.textToSpeech() : Optional.empty();
         ExecutorService speechQueue = tts.isPresent()
                 ? Executors.newSingleThreadExecutor(Thread.ofVirtual().name("tts-" + sessionId + "-", 0).factory())
                 : null;
 
-        Turn turn = new Turn(speechQueue, () -> approvals.denyAll(sessionId));
+        StringBuffer streamed = new StringBuffer(); // appended on the stream thread, read on cancel
+        Turn turn = new Turn(speechQueue, () -> {
+            approvals.denyAll(sessionId);
+            agent.closeInterruptedTurn(session.conversationId(), streamed.toString());
+        });
         session.replaceTurn(turn);
         sessions.send(sessionId, Protocol.state("thinking"));
 
         SentenceChunker chunker = new SentenceChunker();
         AtomicInteger seq = new AtomicInteger();
+        long startedAt = System.nanoTime();
 
-        turn.attach(agent.stream(session.provider(), session.conversationId(), sessionId, userText)
+        turn.attach(agent.stream(provider, session.conversationId(), sessionId, userText, speak)
                 .subscribe(
                         token -> {
+                            streamed.append(token);
                             sessions.send(sessionId, Protocol.token(token));
                             if (speechQueue != null) {
                                 chunker.append(token).forEach(sentence ->
@@ -62,8 +70,16 @@ public class TurnService {
                             }
                         },
                         error -> {
-                            log.warn("Turn failed for session {}", sessionId, error);
-                            sessions.send(sessionId, Protocol.error(describe(error)));
+                            log.atWarn().setMessage("Turn failed").setCause(error)
+                                    .addKeyValue("provider", provider.id())
+                                    .addKeyValue("conversationId", session.conversationId())
+                                    .addKeyValue("durationMs", elapsedMs(startedAt))
+                                    .log();
+                            String message = ErrorMessages.forProvider(provider, error);
+                            sessions.send(sessionId, Protocol.error(message));
+                            if (speechQueue != null) {
+                                speak(turn, speechQueue, tts.get(), sessionId, message, seq);
+                            }
                             finish(turn, speechQueue, sessionId);
                         },
                         () -> {
@@ -71,14 +87,24 @@ public class TurnService {
                                 chunker.flush().forEach(sentence ->
                                         speak(turn, speechQueue, tts.get(), sessionId, sentence, seq));
                             }
+                            log.atInfo().setMessage("Turn completed")
+                                    .addKeyValue("provider", provider.id())
+                                    .addKeyValue("conversationId", session.conversationId())
+                                    .addKeyValue("spoken", speak)
+                                    .addKeyValue("durationMs", elapsedMs(startedAt))
+                                    .log();
                             finish(turn, speechQueue, sessionId);
                         }));
+    }
+
+    private static long elapsedMs(long startedAt) {
+        return (System.nanoTime() - startedAt) / 1_000_000;
     }
 
     private void speak(Turn turn, ExecutorService queue, TextToSpeech tts, String sessionId,
                        String sentence, AtomicInteger seq) {
         submit(queue, () -> {
-            if (turn.cancelled()) {
+            if (turn.cancelled() || turn.speechFailed()) {
                 return;
             }
             try {
@@ -89,7 +115,8 @@ public class TurnService {
                 }
             } catch (RuntimeException e) {
                 log.warn("Speech synthesis failed for session {}", sessionId, e);
-                sessions.send(sessionId, Protocol.error("Sintesi vocale non riuscita: " + e.getMessage()));
+                turn.markSpeechFailed();
+                sessions.send(sessionId, Protocol.error(ErrorMessages.forVoice(e)));
             }
         });
     }
@@ -114,10 +141,5 @@ public class TurnService {
         } catch (RejectedExecutionException e) {
             // turn already cancelled or finished
         }
-    }
-
-    private static String describe(Throwable error) {
-        String message = error.getMessage();
-        return message == null || message.isBlank() ? error.getClass().getSimpleName() : message;
     }
 }
