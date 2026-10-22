@@ -15,6 +15,7 @@ Cose verificate su Spring AI 2.0.1, da non rifare:
 - Rete aziendale con Netskope: Speaches scarica i modelli solo con `SPEACHES_CA_BUNDLE` (vedi README), e su Git Bash i path dei container vanno passati con `MSYS_NO_PATHCONV=1`.
 - Claude Code come processo: `--bare` (niente hook o plugin dell'utente, auth solo con `ANTHROPIC_API_KEY`) più `--restricted`; il prompt passa da stdin e il system prompt da file, per evitare il quoting degli argomenti su Windows. Con `--allowedTools` le regole sono pattern `Bash(cmd:*)`; i comandi non consentiti vengono negati senza chiedere.
 - Impostazioni: una nuova voce va in `SettingsCatalog`; il nome è la chiave di configurazione o il segnaposto dello YAML. Nei test `jarvis.settings.enabled=false` (BaseTest), altrimenti le impostazioni del DB di sviluppo entrerebbero nel contesto.
+- Server MCP stdio: il trasporto dell'SDK accetta una sola connessione (un nuovo tentativo richiede un client nuovo) e su Windows chiude solo `cmd.exe`, lasciando vivi `npx` e il server: per questo `McpTools` crea da sé i client stdio con `TreeClosingStdioTransport`. Il limite di inizializzazione dell'SDK (20 s) è troppo stretto per un `npx` a freddo.
 - Chiavi Anthropic con ambito "Organizzazione": serve `spring.ai.anthropic.custom-headers.anthropic-workspace-id`.
 
 Jarvis orchestra una squadra di specialisti in background (sezione "Orchestrazione degli agenti" di `docs/ARCHITECTURE.md`). Uno specialista che scrive chiede sempre l'approvazione con `TaskContext.requestApproval` prima di agire.
@@ -25,21 +26,20 @@ Da verificare con l'utente:
 - Mani libere con il microfono vero: tarare in `static/vad.js` `minLevel`, `ratio`, `endMs` e, in `app.js`, `ECHO_SENSITIVITY` (eco delle casse durante le risposte).
 - Organizer: un invio email e un evento di calendario reali su Hotmail (richiesta di approvazione con i dati esatti).
 - Posta `imap` con un provider reale (Gmail o altro, password per le app): finora provata solo con GreenMail.
-- Ripresa in background dei server MCP lenti all'avvio: mai vista in azione dal vivo.
 
 Valutazioni aperte (dettagli in `docs/ARCHITECTURE.md`, sezione "Valutazione: trascrizione in streaming e modelli speech-to-speech"):
 - Trascrizione in streaming durante la frase (Speaches): il prossimo guadagno di latenza, circa 2 s su 5.
 - Modello realtime speech-to-speech solo come "voce veloce" opzionale, non al posto di Claude come orchestratore.
 - Calendario per le caselle `imap` (CalDAV); Google con OAuth completo solo quando Jarvis avrà una propria app Google verificata.
 
-Prossima fase: **Fase 5, app desktop** (Tauri con il backend come sidecar, tray, avvio automatico; poi memoria a lungo termine e RAG su pgvector, che richiede un modello di embedding OpenAI o Ollama). Per l'installazione su PC vanno decisi: come distribuire Postgres e Speaches senza Docker per l'utente finale, e lo scaricamento del server MCP Microsoft durante il wizard.
+Prossima fase: **Fase 5, app desktop** (Tauri con il backend come sidecar, tray, avvio automatico; poi memoria a lungo termine e RAG su pgvector, che richiede un modello di embedding OpenAI o Ollama). Deciso il 22/10/2026 per l'installazione su PC, senza Docker: PostgreSQL portatile con pgvector compilato una volta, nell'installer, avviato dal sidecar con i dati in `~/.jarvis`; voce locale inclusa con whisper.cpp e Piper nativi dietro un adattatore all'API audio OpenAI (`OpenAiAudioClient` resta invariato), modelli nell'installer. Resta da decidere lo scaricamento del server MCP Microsoft durante il wizard.
 
 ## Comandi
 
 ```bash
 ./mvnw verify                    # build + test (Testcontainers: serve Docker)
 ./mvnw spring-boot:run           # avvio su http://localhost:8080, avvia anche Postgres da compose.yaml
-node --test src/test/js/vad.test.mjs   # test del rilevamento della voce (logica pura del browser)
+node --test src/test/js/*.test.mjs     # test della logica pura del browser (voce, registrazione)
 ```
 
 Configurazione locale: `.env` (righe `CHIAVE=valore`) o `jarvis-local.yml` (da `jarvis-local.yml.example`), entrambi ignorati da git, oppure le variabili d'ambiente `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `JARVIS_PROVIDERS`.
@@ -66,7 +66,7 @@ src/main/java/dev/jarvis/
                 ClaudeCodeSpecialist (+ ClaudeCodeEvents, WorkspacePolicy), TaskTools
   ws/           WebSocketConfig, JarvisWebSocketHandler, SessionRegistry, SessionState,
                 TurnService, Turn, Protocol, TaskNotifier (aggiornamenti e annunci dei task), ErrorMessages
-src/main/resources/static/   index.html, style.css, app.js, orb.js, settings.js, vad.js (ES modules, nessun build step)
+src/main/resources/static/   index.html, style.css, app.js, orb.js, settings.js, vad.js, capture.js (ES modules, nessun build step)
 src/main/resources/schema.sql  schema idempotente (estensione vector, chat_message)
 src/test/java/               test JUnit 5 della logica pura + integrazione su Postgres (Testcontainers)
 ```

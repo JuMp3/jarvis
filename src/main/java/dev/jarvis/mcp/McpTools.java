@@ -14,6 +14,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.model.ToolContext;
 import org.springframework.ai.mcp.SyncMcpToolCallback;
+import org.springframework.ai.mcp.client.common.autoconfigure.properties.McpClientCommonProperties;
+import org.springframework.ai.mcp.client.common.autoconfigure.properties.McpStdioClientProperties;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.ai.tool.definition.DefaultToolDefinition;
 import org.springframework.ai.tool.definition.ToolDefinition;
@@ -23,16 +25,19 @@ import org.springframework.stereotype.Component;
 import dev.jarvis.agent.ApprovalService;
 import dev.jarvis.config.JarvisProperties;
 import dev.jarvis.config.JarvisProperties.McpServer;
+import io.modelcontextprotocol.client.McpClient;
 import io.modelcontextprotocol.client.McpSyncClient;
+import io.modelcontextprotocol.client.transport.ServerParameters;
 import io.modelcontextprotocol.spec.McpSchema;
+import jakarta.annotation.PreDestroy;
 
 /**
  * Tools of the MCP servers listed in {@code jarvis.mcp.servers}, filtered and split by what they do.
  *
  * <p>Only the tools named in the configuration are exposed, as {@code <server>_<tool>}. Read tools go to the
  * specialists that list {@code mcp:<server>} (they read untrusted content and cannot act); write tools go
- * only to Jarvis, and each call waits for the user's approval of its exact arguments. A server that cannot
- * be reached at startup is skipped with a warning: Jarvis starts anyway.
+ * only to Jarvis, and each call waits for the user's approval of its exact arguments. Servers connect in
+ * the background: Jarvis starts without waiting, and one that cannot be reached is skipped with a warning.
  */
 @Component
 public class McpTools {
@@ -42,21 +47,34 @@ public class McpTools {
     private static final int RETRIES = 8;
     private static final long RETRY_SECONDS = 15;
 
-    // Filled at startup, or later by the retry of a slow server: read at use time, so new tools appear live
+    // Filled once a server connects: read at use time, so new tools appear live
     private final Map<String, List<ToolCallback>> readTools = new ConcurrentHashMap<>();
     private final List<ToolCallback> writeTools = new CopyOnWriteArrayList<>();
     private final Map<String, McpSyncClient> connected = new ConcurrentHashMap<>();
+    // Built here, so not closed by Spring AI
+    private final List<McpSyncClient> stdioClients = new CopyOnWriteArrayList<>();
     private final Set<String> configured;
+    private final ObjectProvider<McpStdioClientProperties> stdio;
+    private final ObjectProvider<McpClientCommonProperties> common;
+    private volatile boolean closed;
 
     public McpTools(JarvisProperties properties, ObjectProvider<List<McpSyncClient>> clients,
-                    ApprovalService approvals) {
+                    ApprovalService approvals, ObjectProvider<McpStdioClientProperties> stdio,
+                    ObjectProvider<McpClientCommonProperties> common) {
+        this.stdio = stdio;
+        this.common = common;
         Map<String, McpServer> servers = properties.mcp() == null || properties.mcp().servers() == null
                 ? Map.of() : properties.mcp().servers();
         this.configured = Collections.unmodifiableSet(servers.keySet());
         List<McpSyncClient> available = clients.getIfAvailable(List::of);
         servers.forEach((name, server) -> {
-            if (!connect(name, server, available, approvals)) {
-                retryInBackground(name, server, available, approvals);
+            McpSyncClient client = stdioParameters(name) != null ? stdioClient(name) : available.stream()
+                    .filter(candidate -> name.equals(candidate.getClientInfo().title()))
+                    .findFirst().orElse(null);
+            if (client == null) {
+                log.warn("jarvis.mcp.servers.{} has no connection under spring.ai.mcp.client: skipped", name);
+            } else {
+                connectInBackground(name, server, client, approvals);
             }
         });
     }
@@ -77,18 +95,25 @@ public class McpTools {
     }
 
     /**
-     * A server that does not answer at startup (an npx package still downloading, a slow machine) is tried
-     * again for a couple of minutes: Jarvis does not wait for it, and its tools appear once it is ready.
+     * Jarvis does not wait for the servers: their tools appear once they are ready. A server that does not
+     * answer (an npx package still downloading, no network) is tried again for a few minutes.
      */
-    private void retryInBackground(String name, McpServer server, List<McpSyncClient> clients, ApprovalService approvals) {
-        Thread.ofVirtual().name("mcp-retry-" + name).start(() -> {
-            for (int attempt = 1; attempt <= RETRIES; attempt++) {
-                try {
-                    Thread.sleep(RETRY_SECONDS * 1000);
-                } catch (InterruptedException e) {
-                    return; // application closing
+    private void connectInBackground(String name, McpServer server, McpSyncClient first, ApprovalService approvals) {
+        Thread.ofVirtual().name("mcp-connect-" + name).start(() -> {
+            McpSyncClient client = first;
+            for (int attempt = 0; attempt <= RETRIES; attempt++) {
+                if (attempt > 0) {
+                    try {
+                        Thread.sleep(RETRY_SECONDS * 1000);
+                    } catch (InterruptedException e) {
+                        return;
+                    }
+                    if (closed) {
+                        return; // application closing or restarting
+                    }
+                    client = retryClient(name, client);
                 }
-                if (connect(name, server, clients, approvals)) {
+                if (connect(name, server, client, approvals)) {
                     return;
                 }
             }
@@ -96,15 +121,49 @@ public class McpTools {
         });
     }
 
-    /** @return false if the server could not be reached and is worth trying again */
-    private boolean connect(String name, McpServer server, List<McpSyncClient> clients, ApprovalService approvals) {
-        McpSyncClient client = clients.stream()
-                .filter(candidate -> name.equals(candidate.getClientInfo().title()))
-                .findFirst().orElse(null);
-        if (client == null) {
-            log.warn("jarvis.mcp.servers.{} has no connection under spring.ai.mcp.client: skipped", name);
-            return true;
+    /**
+     * A stdio transport serves a single connection: each attempt needs a new client, and closing the failed
+     * one stops the processes it started. Other transports try again on the same client.
+     */
+    private McpSyncClient retryClient(String name, McpSyncClient failed) {
+        if (stdioParameters(name) == null) {
+            return failed;
         }
+        failed.closeGracefully();
+        stdioClients.remove(failed);
+        return stdioClient(name);
+    }
+
+    /**
+     * Stdio servers get a client of our own, to close their whole process tree. Spring AI builds one too, but
+     * never initializes it, so it starts no process.
+     */
+    private McpSyncClient stdioClient(String name) {
+        McpClientCommonProperties properties = common.getIfAvailable(McpClientCommonProperties::new);
+        McpSyncClient client = McpClient.sync(new TreeClosingStdioTransport(stdioParameters(name)))
+                .clientInfo(McpSchema.Implementation.builder(properties.getName() + " - " + name, properties.getVersion())
+                        .title(name).build())
+                .requestTimeout(properties.getRequestTimeout())
+                // the first start of an npx server can take longer than the SDK's 20 seconds; nobody waits for it
+                .initializationTimeout(properties.getRequestTimeout())
+                .build();
+        stdioClients.add(client);
+        return client;
+    }
+
+    private ServerParameters stdioParameters(String name) {
+        McpStdioClientProperties properties = stdio.getIfAvailable();
+        return properties == null ? null : properties.toServerParameters().get(name);
+    }
+
+    @PreDestroy
+    void closeStdioClients() {
+        closed = true;
+        stdioClients.forEach(McpSyncClient::closeGracefully);
+    }
+
+    /** @return false if the server could not be reached and is worth trying again */
+    private boolean connect(String name, McpServer server, McpSyncClient client, ApprovalService approvals) {
         List<McpSchema.Tool> tools;
         try {
             if (!client.isInitialized()) {

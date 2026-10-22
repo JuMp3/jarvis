@@ -1,6 +1,7 @@
 import { Orb } from './orb.js';
 import { createSettings } from './settings.js';
 import { VoiceDetector } from './vad.js';
+import { SpeechCapture } from './capture.js';
 
 // Message types must match dev.jarvis.ws.Protocol and docs/ARCHITECTURE.md.
 
@@ -202,13 +203,14 @@ async function openMicrophone() {
     });
     audio.micAnalyser = ctx.createAnalyser();
     audio.micAnalyser.fftSize = 512;
-    ctx.createMediaStreamSource(audio.stream).connect(audio.micAnalyser);
+    audio.micSource = ctx.createMediaStreamSource(audio.stream);
+    audio.micSource.connect(audio.micAnalyser);
   }
 }
 
 // ---- hands-free: the voice detector starts and stops the recording ------------------------------
 
-const handsFree = { detector: null, timer: null };
+const handsFree = { detector: null, timer: null, capture: null, processor: null };
 const ECHO_SENSITIVITY = 2.5; // while Jarvis speaks, only a clearly louder voice interrupts him
 
 async function startHandsFree() {
@@ -220,10 +222,29 @@ async function startHandsFree() {
     return;
   }
   handsFree.detector = new VoiceDetector();
+  // Raw samples instead of MediaRecorder, to keep the moments before the detector fires (see capture.js).
+  // ScriptProcessorNode is deprecated but everywhere; AudioWorklet would need a module of its own.
+  const ctx = audioContext();
+  handsFree.capture = new SpeechCapture(ctx.sampleRate);
+  handsFree.processor = ctx.createScriptProcessor(2048, 1, 1);
+  handsFree.processor.onaudioprocess = (event) => handsFree.capture.push(event.inputBuffer.getChannelData(0).slice());
+  audio.micSource.connect(handsFree.processor);
+  handsFree.processor.connect(ctx.destination); // silent output: a processor only runs when connected
+  // ?vad in the address shows the live levels, to tune vad.js and ECHO_SENSITIVITY on a real microphone
+  const readout = new URLSearchParams(location.search).has('vad')
+    && document.body.appendChild(Object.assign(document.createElement('pre'),
+      { style: 'position:fixed;left:8px;bottom:8px;margin:0;font:12px monospace;color:#9fe;z-index:99' }));
   handsFree.timer = setInterval(() => {
     if (!ui.connected || el.mic.disabled || el.approval.open) return;
     const sensitivity = ui.state === 'speaking' ? ECHO_SENSITIVITY : 1;
-    const event = handsFree.detector.update(levelOf(audio.micAnalyser), performance.now(), sensitivity);
+    const level = levelOf(audio.micAnalyser);
+    const event = handsFree.detector.update(level, performance.now(), sensitivity);
+    if (readout) {
+      const d = handsFree.detector;
+      const threshold = Math.max(d.minLevel, d.floor * d.ratio) * sensitivity;
+      readout.textContent = `livello ${level.toFixed(3)}  fondo ${d.floor.toFixed(3)}  soglia ${threshold.toFixed(3)}`
+        + `  ${d.speaking ? 'VOCE' : '-'}  ${ui.state}${event ? '  ' + event : ''}`;
+    }
     if (event === 'start' && !ui.recording) startRecording(); // interrupts Jarvis if he is answering
     if (event === 'end' && ui.recording) stopRecording();
   }, 30);
@@ -234,6 +255,9 @@ function stopHandsFree() {
   clearInterval(handsFree.timer);
   handsFree.timer = null;
   if (ui.recording) stopRecording();
+  handsFree.processor?.disconnect();
+  audio.micSource?.disconnect(handsFree.processor);
+  handsFree.processor = handsFree.capture = null;
   setState(ui.state);
 }
 
@@ -278,13 +302,18 @@ async function startRecording() {
       setState('listening');
       return;
     }
+    audio.startedAt = performance.now();
+    if (handsFree.capture) {
+      handsFree.capture.start();
+      setState('listening');
+      return;
+    }
     const mimeType = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4']
       .find((type) => MediaRecorder.isTypeSupported(type));
     audio.recorder = new MediaRecorder(audio.stream, mimeType ? { mimeType } : undefined);
     audio.chunks = [];
     audio.recorder.ondataavailable = (event) => event.data.size && audio.chunks.push(event.data);
     audio.recorder.onstop = sendRecording;
-    audio.startedAt = performance.now();
     audio.recorder.start();
     setState('listening');
   } catch (e) {
@@ -342,22 +371,29 @@ function stopRecording() {
     audio.recognition.stop(); // the final result arrives before onend
     return;
   }
+  if (handsFree.capture?.recording) {
+    sendAudio(handsFree.capture.stop());
+    return;
+  }
   if (audio.recorder && audio.recorder.state === 'recording') {
     audio.recorder.stop();
   }
 }
 
 async function sendRecording() {
+  sendAudio(await new Blob(audio.chunks, { type: audio.recorder.mimeType }).arrayBuffer());
+}
+
+function sendAudio(buffer) {
   const duration = performance.now() - audio.startedAt;
-  const blob = new Blob(audio.chunks, { type: audio.recorder.mimeType });
-  if (duration < MIN_RECORDING_MS || blob.size === 0) {
+  if (duration < MIN_RECORDING_MS || buffer.byteLength === 0) {
     note('Tieni premuto mentre parli, poi rilascia.');
     setState('idle');
     return;
   }
   ui.spokenTurn = ui.tts !== 'off';
   setState('thinking');
-  socket.send(await blob.arrayBuffer());
+  socket.send(buffer);
 }
 
 // ---- conversation -----------------------------------------------------------------------
