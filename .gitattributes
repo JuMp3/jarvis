@@ -1,2 +1,4 @@
 mvnw text eol=lf
 *.cmd text eol=crlf
+# Shell scripts run on Linux and macOS: keep Unix line endings in every checkout
+*.sh text eol=lf

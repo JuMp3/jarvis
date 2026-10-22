@@ -57,7 +57,18 @@ cd desktop && npx tauri build
 
 La versione dell'app sta in `desktop/src-tauri/tauri.conf.json` e `Cargo.toml`: aumentala a ogni rilascio. La prima build di rilascio richiede circa 10 minuti (compilazione ottimizzata di Tauri), quelle dopo molto meno. I dati dell'utente non sono nell'installer: stanno in `~/.jarvis` (database in `pgdata`, chiave master, log) e restano tra un aggiornamento e l'altro.
 
-**Altri sistemi operativi (da completare):** `npx tauri build` produce `.dmg` su macOS e AppImage o `.deb` su Linux, ma va eseguito su quel sistema e servono le versioni bash degli script `prepare-*` e i binari di PostgreSQL per quel sistema.
+**Linux e macOS:** gli stessi passi con gli script `.sh`, eseguiti su quel sistema (i binari si compilano per lui):
+
+```bash
+desktop/prepare-postgres.sh                     # Postgres + pgvector dai sorgenti: compilatore C, make, bison, flex, perl, zlib
+desktop/prepare-voice.sh                        # whisper.cpp dai sorgenti (cmake), Piper, modelli
+desktop/prepare-memory.sh                       # modello della memoria
+desktop/prepare-node.sh                         # Node + server MCP di Outlook
+JAVA_HOME=/percorso/jdk-25 desktop/prepare-backend.sh   # jar + Java ridotto (JARVIS_SKIP_BUILD=1 riusa il jar già costruito)
+cd desktop && npx tauri build                   # .dmg su macOS, AppImage e .deb su Linux
+```
+
+Su Linux servono anche le librerie di sviluppo di Tauri (Debian/Ubuntu: `libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev libssl-dev`). Linux è provato in un container Ubuntu 22.04, macOS non ancora.
 
 ## Cosa c'è
 

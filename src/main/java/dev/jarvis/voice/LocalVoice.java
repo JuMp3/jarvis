@@ -1,5 +1,6 @@
 package dev.jarvis.voice;
 
+import java.io.File;
 import java.io.IOException;
 import java.net.ServerSocket;
 import java.net.URI;
@@ -97,6 +98,7 @@ final class LocalVoice implements AutoCloseable {
                     "-l", language, "-t", String.valueOf(threads), "--inference-path", "/v1/audio/transcriptions"))
                     .redirectErrorStream(true)
                     .redirectOutput(logFile("whisper.log").toFile());
+            withLibraries(builder, home.resolve("whisper"));
             whisperProcess = builder.start();
             waitUntilServing(URI.create("http://127.0.0.1:" + port + "/"));
             OpenAiAudioClient client = new OpenAiAudioClient(http, URI.create("http://127.0.0.1:" + port + "/v1/"), settings);
@@ -148,6 +150,19 @@ final class LocalVoice implements AutoCloseable {
             Thread.currentThread().interrupt();
             throw new LocalVoiceException("Interrotto.", e);
         }
+    }
+
+    /**
+     * Linux and macOS: the libraries next to the program (built without an absolute rpath, prepare-voice.sh). Windows
+     * finds the DLLs next to the executable by itself.
+     */
+    static ProcessBuilder withLibraries(ProcessBuilder builder, Path folder) {
+        if (!WINDOWS) {
+            String variable = System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("mac")
+                    ? "DYLD_LIBRARY_PATH" : "LD_LIBRARY_PATH";
+            builder.environment().merge(variable, folder.toString(), (old, added) -> added + File.pathSeparator + old);
+        }
+        return builder;
     }
 
     private Path executable(String folder, String name) throws IOException {

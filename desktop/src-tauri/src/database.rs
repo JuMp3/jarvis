@@ -92,6 +92,11 @@ impl Database {
 fn tool(bin: &Path, name: &str) -> Command {
     let mut command = Command::new(bin.join(name));
     ProcessTree::prepare(&mut command);
+    // Linux and macOS: built without an absolute rpath (prepare-postgres.sh), the tools find libpq in lib/
+    #[cfg(target_os = "linux")]
+    command.env("LD_LIBRARY_PATH", bin.join("..").join("lib"));
+    #[cfg(target_os = "macos")]
+    command.env("DYLD_LIBRARY_PATH", bin.join("..").join("lib"));
     command
 }
 

@@ -276,18 +276,19 @@ Jarvis ricorda oltre la finestra della conversazione: tutto ciò che è stato de
 
 ### Multipiattaforma
 
-Ogni funzione va pensata per Windows, macOS e Linux; oggi è provata solo su Windows. Le parti specifiche del sistema e il loro equivalente:
+Ogni funzione va pensata per Windows, macOS e Linux. Windows è provato per intero; **Linux** è provato in un container Ubuntu 22.04 (`desktop/*.sh` preparano tutto, e il backend avviato come farebbe la shell ha Postgres con pgvector, whisper.cpp `small`, Piper e la memoria funzionanti; la shell Tauri si compila, la finestra non è provata); **macOS** non è provato (script e configurazione scritti, da verificare su un Mac).
 
-| Parte | Windows (fatto) | macOS / Linux (da estendere) |
+| Parte | Windows | Linux e macOS |
 |---|---|---|
-| Fine dei processi con la shell | job object, anche in crash | gruppo di processi chiuso all'uscita (già nel codice, da provare); in crash resterebbe acceso: serve un watchdog nel backend |
-| Certificati di sistema | `Windows-ROOT` | macOS `KeychainStore-ROOT` (nel codice, da provare); Linux il bundle CA della distribuzione |
-| Build del backend | `prepare-backend.ps1` | script equivalente (bash) o build Maven |
-| Postgres incluso | binari EDB + pgvector con Visual Studio (`prepare-postgres.ps1`) | binari per macOS e Linux (EDB per macOS, o una build portabile) e pgvector con `make`; `database.rs` è già comune |
-| Installer | NSIS | `.dmg` (macOS), AppImage / `.deb` (Linux), da Tauri |
-| Voce locale | whisper.cpp (binari ufficiali per Windows) e Piper (`prepare-voice.ps1`) | Piper ha binari per macOS e Linux; whisper.cpp per macOS e Linux va compilato con `cmake` (gli eseguibili si chiamano uguali, senza `.exe`: `LocalVoice` lo gestisce) |
-| Server MCP con npx | Node incluso (`prepare-node.ps1`, `NpxCommand`), `npx.cmd` in sviluppo | Node per quel sistema (`node` senza `.exe`, già previsto in `NpxCommand`) e `keytar` installato lì |
+| Preparazione | `prepare-*.ps1` | `prepare-*.sh` (stessi passi; `JARVIS_RESOURCES` per un'altra cartella di uscita). Vanno eseguiti sul sistema per cui si costruisce |
+| Postgres incluso | binari ufficiali EDB + pgvector con Visual Studio | compilato dai sorgenti (non ci sono binari portatili ufficiali): servono compilatore C, make, bison, flex, perl, zlib. Su Linux 29 MB. Senza rpath assoluto: la shell passa `LD_LIBRARY_PATH` / `DYLD_LIBRARY_PATH` ai programmi che usano libpq |
+| Voce locale | binari ufficiali di whisper.cpp e Piper | whisper.cpp compilato con cmake (su Linux x86 tutte le varianti di CPU, scelte all'avvio come nella build ufficiale per Windows; su macOS con Metal), Piper dalla release ufficiale; `LocalVoice` passa la cartella delle librerie |
+| Node per i server MCP | `node.exe` ufficiale | `node` ufficiale; `keytar` usa libsecret su Linux e il portachiavi su macOS (non provato) |
+| Certificati di sistema | `Windows-ROOT` (JVM), `--use-system-ca` (Node) | macOS `KeychainStore-ROOT` (da provare); Linux il `cacerts` del JDK (da estendere al bundle della distribuzione per i CA aziendali); Node `--use-system-ca` su tutti |
+| Fine dei processi con la shell | job object, anche in crash | gruppo di processi chiuso all'uscita; in crash resterebbe acceso (serve un watchdog nel backend) |
+| Installer | NSIS (`npx tauri build`) | `tauri.macos.conf.json` (`.dmg`) e `tauri.linux.conf.json` (AppImage, `.deb`): `npx tauri build` su quel sistema |
 | Avvio automatico | registro di Windows (plugin autostart) | LaunchAgent macOS, `.desktop` Linux (stesso plugin) |
+| Binari Linux | — | compilati su una distribuzione vecchia (glibc è compatibile solo in avanti): Ubuntu 22.04 copre le distribuzioni più recenti |
 
 iOS (e Android) non possono eseguire il backend: sarebbero un'app client collegata a un Jarvis acceso altrove. Tauri 2 li supporta, ma è un progetto a parte.
 

@@ -71,8 +71,8 @@ final class PiperTts implements TextToSpeech, AutoCloseable {
         if (!Files.isRegularFile(voice)) {
             throw new IOException(voice + " missing: prepare the local voice (desktop/prepare-voice.ps1)");
         }
-        process = new ProcessBuilder(List.of(executable.toString(), "--model", voice.toString(), "--json-input"))
-                .redirectError(log.toFile())
+        process = LocalVoice.withLibraries(new ProcessBuilder(List.of(executable.toString(), "--model", voice.toString(),
+                        "--json-input")).redirectError(log.toFile()), executable.getParent())
                 .start();
         input = new OutputStreamWriter(process.getOutputStream(), StandardCharsets.UTF_8);
         done = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8));
