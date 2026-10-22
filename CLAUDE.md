@@ -22,7 +22,22 @@ Cose verificate su Spring AI 2.0.1, da non rifare:
 
 Jarvis orchestra una squadra di specialisti in background (sezione "Orchestrazione degli agenti" di `docs/ARCHITECTURE.md`). Uno specialista che scrive chiede sempre l'approvazione con `TaskContext.requestApproval` prima di agire.
 
-## Prossima sessione (aggiornato il 22/10/2026)
+## Prossima sessione (aggiornato il 22/10/2026, sera)
+
+**Da fare per primo: il multilingua, italiano e inglese** (altre lingue dopo). Piano concordato a grandi linee, i dettagli si decidono insieme:
+
+1. **Una lingua sola per tutto:** impostazione "Lingua" nella scheda Profilo (italiano · English), che sostituisce `jarvis.voice.language` e guida interfaccia, voce e date. Il wizard la chiede per prima; il default viene dalla lingua del sistema.
+2. **Interfaccia:** dizionario `static/i18n.js` (`it`, `en`) e una funzione `t('chiave')` in `app.js`, `settings.js`; i testi fissi di `index.html` con attributi `data-i18n`. La pagina prende la lingua da `hello`; la schermata d'avvio della shell da `navigator.language` (il backend non c'è ancora). Test node: ogni chiave esiste in tutte le lingue.
+3. **Testi che arrivano all'utente dal server:** `ErrorMessages`, `LocalVoiceException`, le richieste di approvazione dei tool, le note del WebSocket, le etichette del `SettingsCatalog` (testi per lingua nel catalogo, risolti in `SettingsService.view`). I risultati dei tool vanno al modello, non all'utente: possono restare in italiano.
+4. **Prompt:** system prompt, `SPOKEN`/`WRITTEN`, specialisti e Organizer dicono già "rispondi nella lingua dell'utente"; da decidere se tradurli o lasciarli in italiano con la lingua dell'utente indicata nel prompt (più semplice, da misurare la qualità in inglese).
+5. **Voce:** Whisper con la lingua scelta (`-l`, e nella richiesta); una voce Piper inglese in `prepare-voice` (per esempio `en_US-lessac-medium` o `en_GB-alan-medium`) scelta per lingua; riconoscimento e sintesi del browser con la lingua scelta; parola di attivazione invariata ("Jarvis").
+6. **Date e numeri:** `DocumentTools` (oggi `Locale.ITALIAN`), `MemoryIndexer` (`dd/MM/yyyy`), `SystemTools`, la pagina (`toLocaleString('it-IT')`): dal locale della lingua scelta.
+
+Ordine proposto: 1 → 2 → 3 → 5 → 6, poi 4 con una prova di qualità.
+
+Altro rimasto aperto:
+- Disco virtuale di Docker (Rancher Desktop, `distro-data/ext4.vhdx`, 43 GB per 19 GB usati): il trim è fatto ma il disco non è sparse e senza amministratore non si compatta. Strada possibile senza admin: `wsl --export rancher-desktop-data` → verifica del backup → `--unregister` → `--import` (dentro ci sono anche i database dell'altro progetto: solo con un backup verificato). Non urgente: Docker riusa lo spazio libero.
+- Prova dell'installer da parte dell'utente; rigenerarlo per avere anche il Node incluso.
 
 Da verificare con l'utente:
 - Mani libere con il microfono vero: dopo il pre-roll di `capture.js` l'utente lo trova "un po' meglio". Se serve ancora, tarare con `?vad` in `static/vad.js` `minLevel`, `ratio`, `endMs` e, in `app.js`, `ECHO_SENSITIVITY` (eco delle casse durante le risposte).
