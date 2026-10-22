@@ -35,7 +35,8 @@ public record JarvisProperties(Providers providers, Agent agent, Voice voice, Ta
      * @param readTools  for the specialists that list "mcp:&lt;server&gt;"
      * @param writeTools for Jarvis only, each call after the user's approval
      */
-    public record McpServer(String label, Map<String, String> headers, List<String> readTools,
+    /** @param token sent as "Authorization: Bearer", for servers such as GitHub (set from Settings) */
+    public record McpServer(String label, Map<String, String> headers, String token, List<String> readTools,
                             List<String> writeTools) {
     }
 

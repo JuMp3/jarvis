@@ -231,8 +231,9 @@ Un messaggio di stato completo, invece di eventi separati per inizio, avanzament
 
 Jarvis va installato su un PC, dove un file `.env` non è una soluzione: le impostazioni stanno nel database, scelte dal wizard del primo avvio e modificabili dalla sezione Impostazioni (icona nell'header).
 
-- **Tabella `setting`** (`name`, `kind` text · secret · list, `value`). I nomi sono le stesse chiavi della configurazione (`jarvis.voice.stt`) o i segnaposto di `application.yml` (`ANTHROPIC_API_KEY`, `GITHUB_TOKEN`).
+- **Tabella `setting`** (`name`, `kind` text · secret · list, `value`). Il nome è la chiave della configurazione (`jarvis.voice.stt`) oppure, per le prime voci, un nome storico (`ANTHROPIC_API_KEY`, `GITHUB_TOKEN`) che non si può cambiare perché fa parte della cifratura: `DatabaseSettingsSource` pubblica il valore anche sotto la proprietà del catalogo (`spring.ai.anthropic.api-key`, `jarvis.mcp.servers.github.token`; la chiave OpenAI anche per la voce).
 - **Segreti cifrati** con AES-256-GCM (`SecretBox`); il nome dell'impostazione è dato autenticato, quindi un valore copiato sotto un altro nome non si decifra. La chiave master non sta nel database: `~/.jarvis/master.key`, generata al primo avvio (o `JARVIS_MASTER_KEY`). Protegge un dump o un backup del DB, non da chi può accedere con l'utente del PC.
+- **Interfaccia:** una scheda per funzione (Modelli, Voce, Posta e calendario, GitHub, Cartelle: il campo `group` di `SettingsCatalog`, nell'ordine in cui compare); il wizard le percorre in ordine, le Impostazioni le lasciano scegliere, e i valori modificati restano passando da una scheda all'altra. Le scelte sono riquadri con nome e descrizione (`SettingsCatalog.Choice`); i campi IMAP compaiono solo con la casella `imap`.
 - **Lettura all'avvio:** `SettingsEnvironmentPostProcessor` aggiunge `DatabaseSettingsSource` subito dopo le variabili d'ambiente: le impostazioni vincono su `application.yml` e `.env`, una variabile d'ambiente o un argomento da riga di comando vincono ancora. La sorgente si carica al primo uso con JDBC semplice (il DataSource non esiste ancora) e, se il database sta ancora partendo, riprova al massimo una volta al secondo; una tabella che non esiste ancora vale come "nessuna impostazione". Le liste salvate sostituiscono per intero quelle dello YAML.
 - **Applicazione:** dopo il salvataggio Jarvis si riavvia nello stesso processo (`JarvisApplication.restart`), le pagine si riconnettono da sole; i container di sviluppo restano accesi (`lifecycle-management: start-only`).
 - **Sicurezza:** tutto passa dal WebSocket, che accetta solo pagine della stessa origine. L'elenco delle impostazioni non contiene mai i segreti: la pagina sa solo se sono impostati e da dove (impostazioni, variabile d'ambiente, file). Il valore in chiaro arriva solo premendo l'occhio accanto al campo, una chiave alla volta (`settings-reveal`). "Verifica" prova la chiave contro il servizio senza salvarla.
@@ -241,9 +242,9 @@ Jarvis va installato su un PC, dove un file `.env` non è una soluzione: le impo
 
 ## Configurazione e segreti
 
-- `application.yml` contiene solo valori di default e riferimenti a variabili d'ambiente.
-- Le chiavi vanno in variabili d'ambiente oppure in `jarvis-local.yml` o `.env` nella cartella da cui si avvia l'app (in `.gitignore`, importati con `spring.config.import`).
-- Un provider cloud senza chiave resta configurato con un segnaposto, così l'app parte comunque; basta non includerlo in `jarvis.providers.enabled`.
+- Tutto ciò che è nelle Impostazioni (chiavi, fornitori, voce, cartelle, posta, GitHub) si salva e si legge solo dal database: `application.yml` ne contiene i default, senza riferimenti a variabili d'ambiente.
+- `application.yml` usa variabili d'ambiente solo per ciò che serve prima del database o non è nelle Impostazioni: connessione al database, porta, modelli, indirizzo di Speaches. In sviluppo si possono mettere in `jarvis-local.yml` o `.env` (in `.gitignore`, importati con `spring.config.import`).
+- Una chiave non ancora salvata vale `not-configured`, così Spring AI parte e il wizard può comparire; le Impostazioni la mostrano come non impostata.
 
 ## Decisioni
 

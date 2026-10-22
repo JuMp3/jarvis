@@ -101,6 +101,13 @@ final class DatabaseSettingsSource extends EnumerablePropertySource<Object> {
                 SettingsRows.expand(rows.getString("name"), rows.getString("kind"), rows.getString("value"), box, settings);
             }
         }
+        // Under the configuration keys too: application.yml no longer refers to the names
+        for (SettingsCatalog.Definition definition : SettingsCatalog.ALL) {
+            Object value = settings.get(definition.name());
+            if (value != null) {
+                SettingsCatalog.properties(definition).forEach(property -> settings.putIfAbsent(property, value));
+            }
+        }
         log.info("Loaded {} settings from the database", settings.size());
         return Map.copyOf(settings);
     }

@@ -7,31 +7,21 @@ Assistente AI personale con voce: backend Java (Spring Boot 4.1 + Spring AI 2.0)
 Requisiti: Java 25+, Docker (per PostgreSQL con pgvector), un browser recente. Maven non serve: c'è il wrapper.
 
 ```bash
-cp jarvis-local.yml.example jarvis-local.yml   # inserisci le tue chiavi (oppure un file .env)
 ./mvnw spring-boot:run                          # avvia anche Postgres da compose.yaml
 ```
 
 Apri http://localhost:8080: al primo avvio un wizard chiede chiavi, voce, cartelle e account, e li salva nel database (i segreti cifrati, con la chiave in `~/.jarvis/master.key`). Puoi cambiarli quando vuoi dall'icona Impostazioni. Poi tieni premuto il microfono (o la barra spaziatrice) e parla.
 
-`.env` e `jarvis-local.yml` restano comodi in sviluppo; le impostazioni salvate hanno la precedenza su di loro, le variabili d'ambiente su tutto.
-
-In alternativa alle chiavi in `jarvis-local.yml`:
-
-```bash
-export ANTHROPIC_API_KEY=...
-export OPENAI_API_KEY=...          # serve anche per la voce
-export JARVIS_PROVIDERS=anthropic,openai,ollama
-./mvnw spring-boot:run
-```
+Chiavi, fornitori, voce, cartelle e posta stanno solo nel database: niente chiavi in `application.yml`, in `.env` o nelle variabili d'ambiente. `jarvis-local.yml` (da `jarvis-local.yml.example`) e `.env` servono solo in sviluppo, per ciò che non è nelle Impostazioni (database, porta, modelli, indirizzo di Speaches) e per `compose.yaml`.
 
 ### Voce
 
-Trascrizione (`jarvis.voice.stt`) e sintesi (`jarvis.voice.tts`) si scelgono in `application.yml`, indipendentemente:
+Trascrizione e sintesi si scelgono in Impostazioni → Voce, indipendentemente:
 
 | Valore | Motore | Note |
 |---|---|---|
 | `local` (default) | Speaches in Docker: Whisper `base` + Piper (voce Paola) | Gratis e privato. Parte con `compose.yaml`; al primo avvio scarica i modelli |
-| `openai` | API audio OpenAI | Qualità migliore, serve `OPENAI_API_KEY` con credito |
+| `openai` | API audio OpenAI | Qualità migliore, serve la chiave OpenAI (Impostazioni → Modelli) con credito |
 | `browser` | Web Speech API | Gratis, ma il riconoscimento manda l'audio a Google/Microsoft e l'orb non segue la voce reale |
 | `off` | — | Solo testo |
 

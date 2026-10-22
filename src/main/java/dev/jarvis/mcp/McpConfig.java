@@ -16,8 +16,8 @@ import io.modelcontextprotocol.client.transport.customizer.McpSyncHttpClientRequ
 public class McpConfig {
 
     /**
-     * Adds the headers of {@code jarvis.mcp.servers.<name>.headers} (e.g. a token) to the requests of that
-     * server only, matched by its connection URL: Spring AI's connection properties have no headers.
+     * Adds the headers of {@code jarvis.mcp.servers.<name>.headers}, and its {@code token}, to the requests of
+     * that server only, matched by its connection URL: Spring AI's connection properties have no headers.
      */
     @Bean
     McpSyncHttpClientRequestCustomizer mcpServerHeaders(JarvisProperties properties,
@@ -29,8 +29,12 @@ public class McpConfig {
         if (connections != null) {
             servers.forEach((name, server) -> {
                 var connection = connections.getConnections().get(name);
-                if (connection != null && connection.url() != null && server.headers() != null) {
-                    headersByUrl.put(connection.url(), server.headers());
+                Map<String, String> headers = new LinkedHashMap<>(server.headers() == null ? Map.of() : server.headers());
+                if (server.token() != null && !server.token().isBlank()) {
+                    headers.put("Authorization", "Bearer " + server.token());
+                }
+                if (connection != null && connection.url() != null && !headers.isEmpty()) {
+                    headersByUrl.put(connection.url(), headers);
                 }
             });
         }

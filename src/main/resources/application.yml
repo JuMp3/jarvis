@@ -41,16 +41,16 @@ spring:
               url: https://api.githubcopilot.com
               endpoint: /mcp/
     anthropic:
-      # Placeholder keeps startup working when the provider is not used
-      api-key: ${ANTHROPIC_API_KEY:not-configured}
+      # The keys come from Settings (saved in the database); the placeholder lets Jarvis start before the wizard
+      api-key: not-configured
       chat:
         model: ${JARVIS_ANTHROPIC_MODEL:claude-sonnet-5-5}
         max-tokens: 1024
     openai:
-      api-key: ${OPENAI_API_KEY:not-configured}
+      api-key: not-configured
       # chat.model left to the Spring AI default; set JARVIS_OPENAI_MODEL / spring.ai.openai.chat.model to override
     ollama:
-      base-url: ${OLLAMA_BASE_URL:http://localhost:11434}
+      base-url: http://localhost:11434
       chat:
         model: ${JARVIS_OLLAMA_MODEL:llama3.2}
 
@@ -68,7 +68,7 @@ logging:
 jarvis:
   providers:
     # Comma-separated: anthropic, openai, ollama. Only these are offered in the UI.
-    enabled: ${JARVIS_PROVIDERS:anthropic}
+    enabled: anthropic
     default-provider: ${JARVIS_DEFAULT_PROVIDER:anthropic}
     # Faster model for spoken turns, where latency matters more than depth; unlisted providers keep their model
     voice-models:
@@ -95,8 +95,6 @@ jarvis:
     servers:
       github:
         label: GitHub
-        headers:
-          Authorization: Bearer ${GITHUB_TOKEN:}
         read-tools: [get_me, search_repositories, get_file_contents, list_branches, list_commits, get_commit,
                      list_issues, issue_read, search_issues, list_pull_requests, pull_request_read,
                      search_pull_requests, search_code, list_releases, get_latest_release, list_tags]
@@ -114,10 +112,10 @@ jarvis:
       #   read-tools: [list_events]
       #   write-tools: [create_event, update_event]
   mail:
-    # IMAP/SMTP mailbox, set from Settings → Account (imap); servers derived from the address for known providers
+    # IMAP/SMTP mailbox, set from Settings → Posta e calendario (with the password); servers derived from the
+    # address for known providers
     enabled: false
     address: ""
-    password: ${MAIL_PASSWORD:}
     imap-server: ""
     smtp-server: ""
   documents:
@@ -242,14 +240,15 @@ jarvis:
         e nel formato indicati. Rispondi in italiano salvo diversa richiesta. Non inventare fatti: se
         mancano informazioni, segnale tra parentesi quadre.
   voice:
-    # Who transcribes your speech (stt) and who speaks the answers (tts), each one of:
+    # Defaults until the wizard saves the choice (Settings → Voce). Who transcribes your speech (stt) and who
+    # speaks the answers (tts), each one of:
     #   local    Speaches on this machine (compose.yaml): Whisper + Piper, free and private
-    #   openai   OpenAI audio API: best quality, needs OPENAI_API_KEY with credit
+    #   openai   OpenAI audio API: best quality, needs the OpenAI key (Settings → Modelli) with credit
     #   browser  Web Speech API in the browser: free, but recognition sends audio to Google/Microsoft
     #            and the orb cannot follow the real voice level
     #   off      disabled
-    stt: ${JARVIS_VOICE_STT:local}
-    tts: ${JARVIS_VOICE_TTS:local}
+    stt: local
+    tts: local
     language: it
     # Hands-free with wake word: only phrases that start with it reach the model
     wake-word: jarvis
@@ -262,8 +261,8 @@ jarvis:
       tts-model: speaches-ai/piper-it_IT-paola-medium
       tts-voice: paola
     openai:
+      # api-key: the OpenAI key of Settings
       base-url: https://api.openai.com/v1/
-      api-key: ${OPENAI_API_KEY:}
       stt-model: gpt-4o-mini-transcribe
       tts-model: gpt-4o-mini-tts
       tts-voice: onyx

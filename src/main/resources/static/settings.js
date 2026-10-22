@@ -1,12 +1,15 @@
-// Wizard (first start) and Settings: the same form, one step at a time or all sections together.
-// Secrets never come back from the server: an empty field keeps the saved one.
+// Wizard (first start) and Settings: the same form, one tab per group of the catalog (SettingsCatalog).
+// The wizard walks the tabs in order; Settings lets you jump between them. Values edited in a tab are kept
+// while moving to another one. Secrets never come back from the server: an empty field keeps the saved one.
 
-const GROUPS = ['Modelli', 'Voce', 'Cartelle', 'Account'];
 const ORIGIN = {
-  settings: 'salvata nelle impostazioni',
+  settings: 'nelle impostazioni',
   environment: 'da una variabile d\'ambiente, che ha la precedenza',
   file: 'da un file di configurazione (.env o application.yml)',
 };
+const MAIL = 'JARVIS_MAIL';
+const IMAP_ONLY = new Set(['jarvis.mail.address', 'MAIL_PASSWORD', 'jarvis.mail.imap-server', 'jarvis.mail.smtp-server']);
+const MICROSOFT = new Set(['outlook', 'microsoft365']);
 
 function node(tag, className, text) {
   const element = document.createElement(tag);
@@ -37,6 +40,7 @@ export function createSettings({ send }) {
   const form = document.getElementById('settings-form');
   const title = document.getElementById('settings-title');
   const intro = document.getElementById('settings-intro');
+  const tabs = document.getElementById('settings-tabs');
   const body = document.getElementById('settings-body');
   const status = document.getElementById('settings-status');
   const back = document.getElementById('settings-back');
@@ -45,13 +49,22 @@ export function createSettings({ send }) {
   const later = document.getElementById('settings-later');
 
   let settings = [];
+  let groups = [];
   let wizard = false;
   let step = 0;
   let restarting = false;
   const fields = new Map(); // name -> { read: () => value | undefined, clear?: () => boolean }
 
+  /** The values of every tab seen so far are kept while moving between tabs. */
+  const pending = new Map();
+  const pendingClears = new Set();
+
+  /** What a field shows: the value edited in another tab, if any, else the one in use. */
+  const shown = (setting) => (pending.has(setting.name) ? pending.get(setting.name) : setting.value);
+
   function field(setting) {
-    const wrapper = node('div', `setting setting-${setting.kind}`);
+    const wrapper = node('div', `setting kind-${setting.kind}`); // not setting-<kind>: .setting-choice is an option
+    wrapper.dataset.name = setting.name;
     const id = `setting-${setting.name.replace(/[^a-zA-Z0-9]/g, '-')}`;
     const label = node('label', 'setting-label', setting.label);
     label.htmlFor = id;
@@ -63,8 +76,12 @@ export function createSettings({ send }) {
       case 'secret': {
         const input = node('input');
         Object.assign(input, { id, type: 'password', autocomplete: 'off', spellcheck: false });
-        input.placeholder = setting.set ? `Impostata, ${ORIGIN[setting.origin] ?? ''}. Lascia vuoto per non cambiarla.` : 'Non impostata';
-        input.setAttribute('aria-describedby', help.id);
+        input.placeholder = setting.set ? '••••••••••••' : 'Incolla qui la chiave';
+        input.value = pending.get(setting.name) ?? '';
+        const setText = `✓ Impostata ${ORIGIN[setting.origin] ?? ''}. Lascia vuoto il campo per non cambiarla.`;
+        const state = node('p', setting.set ? 'setting-state set' : 'setting-state', setting.set ? setText : 'Non impostata.');
+        state.id = `${id}-state`;
+        input.setAttribute('aria-describedby', `${state.id} ${help.id}`);
         const row = node('div', 'setting-row');
         // Show / hide: the value in use is asked to the server only when the user wants to see it
         const eye = node('button', 'eye');
@@ -83,7 +100,9 @@ export function createSettings({ send }) {
         const masked = node('div', 'secret-field');
         masked.append(input, eye);
         row.append(masked);
-        let clear = null;
+        const result = node('p', 'setting-result');
+        result.setAttribute('aria-live', 'polite');
+        result.dataset.test = setting.name;
         if (setting.test) {
           const verify = node('button', 'secondary small', 'Verifica');
           verify.type = 'button';
@@ -93,24 +112,29 @@ export function createSettings({ send }) {
           });
           row.append(verify);
         }
+        let removing = pendingClears.has(setting.name);
         if (setting.set && setting.origin === 'settings') {
-          const remove = node('label', 'setting-remove');
-          clear = node('input');
-          clear.type = 'checkbox';
-          remove.append(clear, ' Rimuovi');
+          const remove = node('button', 'secondary small');
+          remove.type = 'button';
+          const update = () => {
+            remove.textContent = removing ? 'Annulla' : 'Rimuovi';
+            remove.setAttribute('aria-pressed', String(removing));
+            state.textContent = removing ? 'Verrà rimossa al salvataggio.' : setText;
+            state.classList.toggle('removing', removing);
+          };
+          remove.addEventListener('click', () => { removing = !removing; update(); });
+          update();
           row.append(remove);
         }
-        const result = node('p', 'setting-result');
-        result.setAttribute('aria-live', 'polite');
-        result.dataset.test = setting.name;
-        wrapper.append(row, help, result);
-        fields.set(setting.name, { read: () => input.value || undefined, clear: () => clear?.checked ?? false });
+        wrapper.append(row, state, help, result);
+        fields.set(setting.name, { read: () => input.value || undefined, clear: () => removing });
         break;
       }
       case 'list': {
         const area = node('textarea');
-        Object.assign(area, { id, rows: 3, spellcheck: false });
-        area.value = (setting.value ?? []).join('\n');
+        Object.assign(area, { id, rows: 4, spellcheck: false });
+        const value = shown(setting);
+        area.value = Array.isArray(value) ? value.join('\n') : (value ?? '');
         area.setAttribute('aria-describedby', help.id);
         wrapper.append(area, help);
         fields.set(setting.name, { read: () => area.value });
@@ -121,29 +145,41 @@ export function createSettings({ send }) {
         const group = node('div', 'setting-choices');
         group.setAttribute('role', setting.kind === 'choice' ? 'radiogroup' : 'group');
         group.setAttribute('aria-labelledby', `${id}-label`);
+        group.setAttribute('aria-describedby', help.id);
         label.id = `${id}-label`;
         label.removeAttribute('for');
-        const current = Array.isArray(setting.value) ? setting.value : [setting.value];
+        const value = shown(setting);
+        const current = Array.isArray(value) ? value : [value];
+        // Each option is a tile: its name, and right below it what it means
         const inputs = setting.choices.map((choice) => {
           const option = node('label', 'setting-choice');
           const input = node('input');
-          Object.assign(input, { type: setting.kind === 'choice' ? 'radio' : 'checkbox', name: id, value: choice, checked: current.includes(choice) });
-          option.append(input, ` ${choice}`);
+          Object.assign(input, {
+            type: setting.kind === 'choice' ? 'radio' : 'checkbox', name: id, value: choice.value,
+            checked: current.includes(choice.value),
+          });
+          const text = node('span', 'choice-text');
+          text.append(node('span', 'choice-label', choice.label));
+          if (choice.description) text.append(node('span', 'choice-description', choice.description));
+          option.append(input, text);
           group.append(option);
           return input;
         });
-        wrapper.append(group, help);
+        wrapper.append(help, group);
         fields.set(setting.name, {
           read: () => (setting.kind === 'choice'
             ? inputs.find((i) => i.checked)?.value
             : inputs.filter((i) => i.checked).map((i) => i.value)),
         });
-        if (setting.name === 'JARVIS_MAIL') wrapper.append(accountControls(current[0]));
+        if (setting.name === MAIL) {
+          wrapper.append(accountControls(setting.value));
+          inputs.forEach((input) => input.addEventListener('change', () => showMailFields(input.value)));
+        }
         break;
       }
       default: {
         const input = node('input');
-        Object.assign(input, { id, type: 'text', value: setting.value ?? '', spellcheck: false });
+        Object.assign(input, { id, type: 'text', value: shown(setting) ?? '', spellcheck: false });
         input.setAttribute('aria-describedby', help.id);
         wrapper.append(input, help);
         fields.set(setting.name, { read: () => input.value });
@@ -152,10 +188,17 @@ export function createSettings({ send }) {
     return wrapper;
   }
 
-  /** Sign-in of the mail account: only once the provider is saved and Jarvis has restarted with it. */
+  /** The IMAP fields only matter for an IMAP mailbox. */
+  function showMailFields(provider) {
+    body.querySelectorAll('.setting').forEach((wrapper) => {
+      if (IMAP_ONLY.has(wrapper.dataset.name)) wrapper.hidden = provider !== 'imap';
+    });
+  }
+
+  /** Sign-in of the Microsoft account: only once the provider is saved and Jarvis has restarted with it. */
   function accountControls(provider) {
     const box = node('div', 'account');
-    if (provider !== 'outlook') return box;
+    if (!MICROSOFT.has(provider)) return box;
     const login = node('button', 'secondary small', 'Collega l\'account Microsoft');
     const verify = node('button', 'secondary small', 'Ho fatto l\'accesso');
     login.type = verify.type = 'button';
@@ -168,40 +211,65 @@ export function createSettings({ send }) {
   }
 
   function render() {
+    groups = [...new Set(settings.map((s) => s.group))];
+    step = Math.max(0, Math.min(step, groups.length - 1));
+    tabs.replaceChildren(...groups.map((group, index) => {
+      const tab = node('button', 'settings-tab', group);
+      Object.assign(tab, { type: 'button', id: `settings-tab-${index}` });
+      tab.setAttribute('role', 'tab');
+      tab.setAttribute('aria-selected', String(index === step));
+      tab.setAttribute('aria-controls', 'settings-body');
+      tab.tabIndex = index === step ? 0 : -1;
+      tab.addEventListener('click', () => go(index));
+      return tab;
+    }));
+
     body.replaceChildren();
+    body.setAttribute('aria-labelledby', `settings-tab-${step}`);
     fields.clear();
-    const groups = wizard ? [GROUPS[step]] : GROUPS;
-    for (const group of groups) {
-      const section = node('section', 'settings-group');
-      section.append(node('h3', null, group));
-      settings.filter((s) => s.group === group).forEach((s) => section.append(field(s)));
-      body.append(section);
-    }
+    const section = node('section', 'settings-group');
+    settings.filter((s) => s.group === groups[step]).forEach((s) => section.append(field(s)));
+    body.append(section);
+    const mail = settings.find((s) => s.name === MAIL);
+    if (mail) showMailFields(shown(mail));
+    body.scrollTop = 0;
+
     title.textContent = wizard ? 'Configuriamo Jarvis' : 'Impostazioni';
     intro.textContent = wizard
-      ? `Passo ${step + 1} di ${GROUPS.length}. Puoi cambiare tutto più tardi da Impostazioni.`
+      ? `Passo ${step + 1} di ${groups.length}. Puoi cambiare tutto più tardi da Impostazioni.`
       : 'Le modifiche si applicano con un breve riavvio di Jarvis.';
     back.hidden = !wizard || step === 0;
-    next.hidden = !wizard || step === GROUPS.length - 1;
-    save.hidden = wizard && step < GROUPS.length - 1;
+    next.hidden = !wizard || step === groups.length - 1;
+    save.hidden = wizard && step < groups.length - 1;
     later.hidden = !wizard;
     status.textContent = '';
   }
 
-  /** The values of every step seen so far are kept while moving between steps. */
-  const pending = new Map();
-  const pendingClears = new Set();
+  function go(index) {
+    collect();
+    step = index;
+    render();
+  }
 
   function collect() {
     for (const [name, f] of fields) {
       const value = f.read();
       if (value !== undefined) pending.set(name, value);
       if (f.clear?.()) pendingClears.add(name);
+      else pendingClears.delete(name);
     }
   }
 
-  back.addEventListener('click', () => { collect(); step -= 1; render(); });
-  next.addEventListener('click', () => { collect(); step += 1; render(); });
+  // Arrows move between tabs, as in any tab list
+  tabs.addEventListener('keydown', (event) => {
+    const move = { ArrowDown: 1, ArrowRight: 1, ArrowUp: -1, ArrowLeft: -1 }[event.key];
+    if (!move || groups.length === 0) return;
+    event.preventDefault();
+    go((step + move + groups.length) % groups.length);
+    tabs.children[step].focus();
+  });
+  back.addEventListener('click', () => go(step - 1));
+  next.addEventListener('click', () => go(step + 1));
   later.addEventListener('click', () => { sessionStorage.setItem('jarvis.setupLater', '1'); dialog.close(); });
   form.addEventListener('submit', (event) => {
     event.preventDefault();

@@ -55,6 +55,7 @@ class SettingsServiceTest extends BaseTest {
         assertThat(stored).startsWith("v1:").doesNotContain("segreta");
         DatabaseSettingsSource next = nextStart();
         assertThat(next.getProperty("ANTHROPIC_API_KEY")).isEqualTo("sk-ant-segreta");
+        assertThat(next.getProperty("spring.ai.anthropic.api-key")).isEqualTo("sk-ant-segreta");
         assertThat(next.getProperty("JARVIS_VOICE_TTS")).isEqualTo("browser");
         assertThat(next.getProperty("jarvis.documents.folders[1]")).isEqualTo(tmp.resolve("altri").toString());
         assertThat(next.getProperty(SettingsService.SETUP_COMPLETED)).isEqualTo("true");
@@ -65,9 +66,19 @@ class SettingsServiceTest extends BaseTest {
         settings.save(Map.of("GITHUB_TOKEN", "github_pat_1"), List.of());
         settings.save(Map.of("GITHUB_TOKEN", ""), List.of());
         assertThat(nextStart().getProperty("GITHUB_TOKEN")).isEqualTo("github_pat_1");
+        assertThat(nextStart().getProperty("jarvis.mcp.servers.github.token")).isEqualTo("github_pat_1");
 
         settings.save(Map.of(), List.of("GITHUB_TOKEN"));
         assertThat(nextStart().getProperty("GITHUB_TOKEN")).isNull();
+        assertThat(nextStart().getProperty("jarvis.mcp.servers.github.token")).isNull();
+    }
+
+    @Test
+    void theOpenAiKeyFeedsBothChatAndVoice() {
+        settings.save(Map.of("OPENAI_API_KEY", "sk-proj-1"), List.of());
+        DatabaseSettingsSource next = nextStart();
+        assertThat(next.getProperty("spring.ai.openai.api-key")).isEqualTo("sk-proj-1");
+        assertThat(next.getProperty("jarvis.voice.openai.api-key")).isEqualTo("sk-proj-1");
     }
 
     @Test

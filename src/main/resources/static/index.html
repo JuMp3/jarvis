@@ -94,7 +94,10 @@
     <form id="settings-form">
       <h2 id="settings-title">Impostazioni</h2>
       <p id="settings-intro" class="settings-intro"></p>
-      <div id="settings-body" class="settings-body"></div>
+      <div class="settings-layout">
+        <nav id="settings-tabs" class="settings-tabs" role="tablist" aria-label="Sezioni delle impostazioni" aria-orientation="vertical"></nav>
+        <div id="settings-body" class="settings-body" role="tabpanel"></div>
+      </div>
       <p id="settings-status" class="settings-status" role="status"></p>
       <div class="settings-actions">
         <button id="settings-later" type="button" class="secondary">Più tardi</button>

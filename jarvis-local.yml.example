@@ -1,23 +1,16 @@
-# Copy to jarvis-local.yml (git-ignored) in the directory you start Jarvis from.
+# Copy to jarvis-local.yml (git-ignored) in the directory you start Jarvis from. Development only.
+# Keys, providers, voice, folders and mail are not here: the wizard and Settings save them in the database.
+# This file is for what Settings does not cover, for example:
+
 spring:
   ai:
     anthropic:
-      api-key: sk-ant-...
-      # Only for keys not scoped to a workspace (the API answers 400 asking for this header)
-      # custom-headers:
-      #   anthropic-workspace-id: wrkspc_...
-    openai:
-      api-key: sk-...
-
-# The GitHub MCP server reads GITHUB_TOKEN (fine-grained token) from the environment or from .env
+      chat:
+        model: claude-sonnet-5-5
 
 jarvis:
   providers:
-    enabled: anthropic,openai,ollama
     default-provider: anthropic
   voice:
-    # local (Speaches, default) | openai | browser | off, independently for each direction
-    stt: local
-    tts: local
-    openai:
-      api-key: sk-...   # only needed for stt/tts = openai
+    local:
+      base-url: http://localhost:8000/v1/

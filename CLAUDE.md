@@ -4,7 +4,7 @@ Assistente AI personale: backend Java (Spring Boot 4.1, Spring AI 2.0), frontend
 
 ## Stato attuale — leggere per primo
 
-Fasi 0 e 1 chiuse e verificate end-to-end con Claude: streaming, tool, approvazioni, memoria su PostgreSQL + pgvector, errori leggibili, turni interrotti e riconnessione, log strutturati. Voce: locale (Speaches: Whisper + Piper) e browser verificate end-to-end; OpenAI non provata (account senza credito). Ollama non provato. Fase 2 (squadra di agenti) fatta. Fase 3 fatta: approvazioni per conversazione, Programmatore (`coder`, Claude Code, push su autorizzazione), MCP (GitHub), Documenti, azioni desktop. Fase 3b fatta: wizard e Impostazioni su DB (segreti cifrati), riavvio interno, Organizer su Outlook.com verificato. Fase 4 fatta: mani libere (VAD nel browser), interruzione automatica, wake word. Prossima: Fase 5 (app desktop).
+Fasi 0 e 1 chiuse e verificate end-to-end con Claude: streaming, tool, approvazioni, memoria su PostgreSQL + pgvector, errori leggibili, turni interrotti e riconnessione, log strutturati. Voce: locale (Speaches: Whisper + Piper) e browser verificate end-to-end; OpenAI non provata (account senza credito). Ollama non provato. Fase 2 (squadra di agenti) fatta. Fase 3 fatta: approvazioni per conversazione, Programmatore (`coder`, Claude Code, push su autorizzazione), MCP (GitHub), Documenti, azioni desktop. Fase 3b fatta: wizard e Impostazioni su DB (segreti cifrati), riavvio interno, Organizer su Outlook.com verificato (anche invio email ed evento reali, 22/10/2026). Fase 4 fatta: mani libere (VAD nel browser), interruzione automatica, wake word. Prossima: Fase 5 (app desktop).
 
 Cose verificate su Spring AI 2.0.1, da non rifare:
 
@@ -25,7 +25,6 @@ Jarvis orchestra una squadra di specialisti in background (sezione "Orchestrazio
 
 Da verificare con l'utente:
 - Mani libere con il microfono vero: dopo il pre-roll di `capture.js` l'utente lo trova "un po' meglio". Se serve ancora, tarare con `?vad` in `static/vad.js` `minLevel`, `ratio`, `endMs` e, in `app.js`, `ECHO_SENSITIVITY` (eco delle casse durante le risposte).
-- Organizer: un invio email e un evento di calendario reali su Hotmail (richiesta di approvazione con i dati esatti).
 - Posta `imap` con un provider reale (Gmail o altro, password per le app): finora provata solo con GreenMail.
 
 Valutazioni aperte (dettagli in `docs/ARCHITECTURE.md`, sezione "Valutazione: trascrizione in streaming e modelli speech-to-speech"):
@@ -34,7 +33,7 @@ Valutazioni aperte (dettagli in `docs/ARCHITECTURE.md`, sezione "Valutazione: tr
 - Modello realtime speech-to-speech solo come "voce veloce" opzionale, non al posto di Claude come orchestratore.
 - Calendario per le caselle `imap` (CalDAV); Google con OAuth completo solo quando Jarvis avrà una propria app Google verificata.
 
-Prossima fase: **Fase 5, app desktop** (Tauri con il backend come sidecar, tray, avvio automatico; poi memoria a lungo termine e RAG su pgvector, che richiede un modello di embedding OpenAI o Ollama). Deciso il 22/10/2026 per l'installazione su PC, senza Docker: PostgreSQL portatile con pgvector compilato una volta, nell'installer, avviato dal sidecar con i dati in `~/.jarvis`; voce locale inclusa con whisper.cpp e Piper nativi dietro un adattatore all'API audio OpenAI (`OpenAiAudioClient` resta invariato), modelli nell'installer. Resta da decidere lo scaricamento del server MCP Microsoft durante il wizard.
+Prossima fase: **Fase 5, app desktop** (Tauri con il backend come sidecar, tray, avvio automatico; poi memoria a lungo termine e RAG su pgvector, che richiede un modello di embedding OpenAI o Ollama). Deciso il 22/10/2026 per l'installazione su PC, senza Docker: PostgreSQL portatile con pgvector compilato una volta, nell'installer, avviato dal sidecar con i dati in `~/.jarvis`; voce locale inclusa con whisper.cpp e Piper nativi dietro un adattatore all'API audio OpenAI (`OpenAiAudioClient` resta invariato), modelli nell'installer. Server MCP di Outlook: Node portatile e pacchetto alla versione fissata già nell'installer. Embedding per il RAG: modello ONNX multilingue locale nel backend (Spring AI Transformers). Ordine: shell Tauri, Postgres portatile, voce nativa, installer NSIS, RAG.
 
 ## Comandi
 
@@ -44,7 +43,7 @@ Prossima fase: **Fase 5, app desktop** (Tauri con il backend come sidecar, tray,
 node --test src/test/js/*.test.mjs     # test della logica pura del browser (voce, registrazione)
 ```
 
-Configurazione locale: `.env` (righe `CHIAVE=valore`) o `jarvis-local.yml` (da `jarvis-local.yml.example`), entrambi ignorati da git, oppure le variabili d'ambiente `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `JARVIS_PROVIDERS`.
+Configurazione: chiavi, fornitori, voce, cartelle e posta solo nel database, dal wizard e dalle Impostazioni (`SettingsCatalog`); `application.yml` ha per queste voci solo i default, senza variabili d'ambiente. `.env` e `jarvis-local.yml` (ignorati da git) restano per lo sviluppo: database, porta, modelli, Speaches, e `compose.yaml`.
 
 ## Struttura
 

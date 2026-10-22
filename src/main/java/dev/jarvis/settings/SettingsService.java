@@ -16,6 +16,7 @@ import java.util.stream.Stream;
 
 import org.springframework.boot.context.properties.bind.Bindable;
 import org.springframework.boot.context.properties.bind.Binder;
+import org.springframework.boot.context.properties.source.ConfigurationPropertySources;
 import org.springframework.core.env.ConfigurableEnvironment;
 import org.springframework.core.env.EnumerablePropertySource;
 import org.springframework.core.env.PropertySource;
@@ -41,7 +42,7 @@ public class SettingsService {
     private static final HttpClient HTTP = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build();
 
     /** @param value current value (text, or list of strings); null for secrets */
-    public record View(String name, String group, String label, String help, String kind, List<String> choices,
+    public record View(String name, String group, String label, String help, String kind, List<SettingsCatalog.Choice> choices,
                        Object value, boolean set, String origin, String test) {
     }
 
@@ -64,6 +65,9 @@ public class SettingsService {
         return !environment.getProperty(SETUP_COMPLETED, Boolean.class, false);
     }
 
+    /** The placeholder of application.yml that lets Spring AI start before the wizard saves a key. */
+    static final String UNSET = "not-configured";
+
     public List<View> view() {
         return SettingsCatalog.ALL.stream().map(this::view).toList();
     }
@@ -75,10 +79,12 @@ public class SettingsService {
             case LIST, MULTI_CHOICE -> Binder.get(environment)
                     .bind(definition.property(), Bindable.listOf(String.class)).orElse(List.of());
             case TEXT, CHOICE -> environment.getProperty(definition.property(),
-                    definition.kind() == Kind.CHOICE ? definition.choices().getFirst() : "");
+                    definition.kind() == Kind.CHOICE ? definition.values().getFirst() : "");
         };
         boolean set = definition.kind() == Kind.SECRET
-                ? !environment.getProperty(definition.property(), "").isBlank() : value != null;
+                ? !environment.getProperty(definition.property(), "").isBlank()
+                        && !UNSET.equals(environment.getProperty(definition.property()))
+                : value != null;
         return new View(definition.name(), definition.group(), definition.label(), definition.help(),
                 definition.kind().name().toLowerCase(Locale.ROOT), definition.choices(), value, set, origin,
                 definition.test());
@@ -87,6 +93,9 @@ public class SettingsService {
     /** Where the effective value comes from: the database, an environment variable or a configuration file. */
     private String origin(String property) {
         for (PropertySource<?> source : environment.getPropertySources()) {
+            if (ConfigurationPropertySources.isAttachedConfigurationPropertySource(source)) {
+                continue; // Spring Boot's view over all the others: it would answer first for every key
+            }
             Object found = source.getProperty(property);
             if (found == null && source instanceof EnumerablePropertySource<?> enumerable) {
                 for (String name : enumerable.getPropertyNames()) {
@@ -147,16 +156,16 @@ public class SettingsService {
             }
             case CHOICE -> {
                 String choice = raw == null ? "" : raw.toString().strip();
-                if (!definition.choices().contains(choice)) {
-                    throw new IllegalArgumentException(label + ": scegli tra " + definition.choices() + ".");
+                if (!definition.values().contains(choice)) {
+                    throw new IllegalArgumentException(label + ": scegli tra " + definition.values() + ".");
                 }
                 yield SettingsCatalog.MAIL.equals(definition.name()) ? () -> applyMail(choice)
                         : () -> upsert(definition.name(), SettingsRows.TEXT, choice);
             }
             case MULTI_CHOICE -> {
                 List<String> chosen = items(raw, true);
-                if (chosen.isEmpty() || !definition.choices().containsAll(chosen)) {
-                    throw new IllegalArgumentException(label + ": scegli almeno uno tra " + definition.choices() + ".");
+                if (chosen.isEmpty() || !definition.values().containsAll(chosen)) {
+                    throw new IllegalArgumentException(label + ": scegli almeno uno tra " + definition.values() + ".");
                 }
                 yield () -> upsert(definition.name(), SettingsRows.TEXT, String.join(",", chosen));
             }
