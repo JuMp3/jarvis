@@ -242,15 +242,19 @@ Jarvis va installato su un PC, dove un file `.env` non è una soluzione: le impo
 
 ## App desktop (Fase 5)
 
-`desktop/` è una shell Tauri 2: avvia il backend, ne mostra la pagina in una finestra e resta nella tray. Nessun frontend duplicato: la finestra carica la stessa pagina servita dal backend.
+`desktop/` è una shell Tauri 2: avvia il database e il backend, ne mostra la pagina in una finestra e resta nella tray. Niente Docker. Nessun frontend duplicato: la finestra carica la stessa pagina servita dal backend.
 
 - **Backend incluso:** `prepare-backend.ps1` costruisce il jar e un runtime Java ridotto con jlink (moduli da `jdeps`, più quelli caricati solo a runtime: dati di localizzazione per le date in italiano, JNDI, charset, zipfs, archivio certificati di Windows), in `src-tauri/resources/backend` (circa 195 MB). La shell lo avvia con `~/.jarvis` come cartella di lavoro e la console in `~/.jarvis/logs/backend-console.log`.
+- **Postgres incluso** (`prepare-postgres.ps1`, `src-tauri/src/database.rs`): i binari ufficiali EDB di PostgreSQL 18 ridotti al server (niente pgAdmin, StackBuilder, header, simboli; messaggi in inglese e italiano) con il runtime di Visual C++ accanto, più pgvector compilato con Visual Studio; circa 92 MB. Dati in `~/.jarvis/pgdata`, porta 47322, ascolto solo su 127.0.0.1, utente `jarvis` con una password casuale (`~/.jarvis/db.password`, generatore del sistema) passata al backend con `JARVIS_DB_*`. Il primo avvio crea il cluster (`initdb`, locale `builtin C.UTF-8`, uguale su tutti i sistemi) e il database, in circa 30 s: la schermata d'avvio lo dice; i successivi partono in circa 15 s. All'uscita prima il backend, poi `pg_ctl stop -m fast` (checkpoint, nessun recupero al giro dopo); in un crash il job object chiude anche Postgres, che si riprende da solo. Il database di sviluppo resta quello di `compose.yaml`.
+- **Percorsi:** Tauri dà la cartella delle risorse nella forma estesa di Windows (`\\?\C:\...`); `initdb` ricava da lì dove sta `postgres.exe` e con quella forma non lo trova: la shell la semplifica (`dunce`).
 - **Porta fissa 47321**, non casuale: la pagina mantiene la sua origine e quindi il suo `localStorage`. La 8080 resta per lo sviluppo. Una pagina senza conversazione (finestra nuova, browser nuovo) riprende l'ultima dell'archivio.
 - **Certificati:** jlink prende `cacerts` dai jmods, quindi un CA aggiunto al JDK di sviluppo si perde. La shell fa usare a Java l'archivio del sistema (`-Djavax.net.ssl.trustStoreType=Windows-ROOT`), dove l'IT installa i CA aziendali (ispezione TLS come Netskope).
 - **Processi:** su Windows il backend entra in un job object con "kill on close": chiudendo la shell, anche in crash o con un kill forzato, terminano Java e tutto ciò che ha avviato (`npx`, server MCP). Verificato.
 - **Finestra e tray:** splash finché il backend non risponde (con il messaggio d'errore se si chiude), poi la pagina; chiudere la finestra la nasconde nella tray ("Apri Jarvis", "Avvia con il sistema", "Esci"); una sola istanza (un secondo avvio porta in primo piano la prima); con l'avvio automatico parte nascosta (`--hidden`). Su schermi più piccoli della finestra si apre massimizzata.
+- **Voce nella finestra desktop:** WebView2 ha l'interfaccia del riconoscimento vocale ma non il servizio online dietro, e fallisce sempre con `network`: la pagina riconosce la finestra desktop (`window.chrome.webview`) e non offre la trascrizione "Browser", spiegando cosa scegliere. La sintesi "Browser" funziona, con le voci installate nel sistema.
+- **Rilascio:** `npx tauri build` produce l'eseguibile ottimizzato e l'installer NSIS (circa 180 MB); come e quando rigenerarli è nel `README.md`.
 - **Sviluppo:** `JARVIS_BACKEND_URL=http://localhost:8080` collega la shell a un backend già acceso (`./mvnw spring-boot:run`) invece di avviare quello incluso.
-- **Prossimi passi della fase:** Postgres portatile (oggi il backend incluso usa ancora quello di `compose.yaml`), voce locale nativa, installer NSIS, RAG.
+- **Prossimi passi della fase:** voce locale nativa, installer NSIS completo, RAG.
 
 ### Multipiattaforma
 
@@ -261,6 +265,7 @@ Ogni funzione va pensata per Windows, macOS e Linux; oggi è provata solo su Win
 | Fine dei processi con la shell | job object, anche in crash | gruppo di processi chiuso all'uscita (già nel codice, da provare); in crash resterebbe acceso: serve un watchdog nel backend |
 | Certificati di sistema | `Windows-ROOT` | macOS `KeychainStore-ROOT` (nel codice, da provare); Linux il bundle CA della distribuzione |
 | Build del backend | `prepare-backend.ps1` | script equivalente (bash) o build Maven |
+| Postgres incluso | binari EDB + pgvector con Visual Studio (`prepare-postgres.ps1`) | binari per macOS e Linux (EDB per macOS, o una build portabile) e pgvector con `make`; `database.rs` è già comune |
 | Installer | NSIS | `.dmg` (macOS), AppImage / `.deb` (Linux), da Tauri |
 | Server MCP con npx | `npx.cmd` (`MailTemplates`) | `npx` (già previsto) |
 | Avvio automatico | registro di Windows (plugin autostart) | LaunchAgent macOS, `.desktop` Linux (stesso plugin) |

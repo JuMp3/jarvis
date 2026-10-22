@@ -25,7 +25,8 @@
   <div class="orb" aria-hidden="true"></div>
   <p id="status" role="status">Avvio di Jarvis…</p>
   <script>
-    // Called by the shell if the backend does not start
+    // Called by the shell: progress of the start, or why it failed
+    window.setStatus = (message) => { document.getElementById('status').textContent = message; };
     window.showError = (message) => {
       document.body.classList.add('error');
       document.getElementById('status').textContent = message;

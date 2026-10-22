@@ -13,3 +13,5 @@ desktop/node_modules/
 desktop/src-tauri/target/
 desktop/src-tauri/gen/
 desktop/src-tauri/resources/backend/
+desktop/.cache/
+desktop/src-tauri/resources/postgres/

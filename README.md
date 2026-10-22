@@ -27,6 +27,37 @@ Trascrizione e sintesi si scelgono in Impostazioni → Voce, indipendentemente:
 
 Su reti aziendali che ispezionano il TLS (es. Netskope) Speaches non riesce a scaricare i modelli: metti un bundle di CA in `.certs/` (ignorata da git) e aggiungi `SPEACHES_CA_BUNDLE=/certs/<file>` alla `.env`.
 
+## App desktop: come rigenerarla
+
+L'app desktop (`desktop/`, Tauri 2) contiene il backend, un Java ridotto e PostgreSQL con pgvector: per l'utente non serve né Java né Docker. Quando cambia il sorgente va ricostruita la parte toccata. Oggi i passi sono provati su **Windows**; macOS e Linux sono da completare (vedi "Multipiattaforma" in `docs/ARCHITECTURE.md`).
+
+**Prerequisiti, una volta sola (Windows):** JDK 25, Rust (`rustup`, toolchain MSVC), Node.js 20+, Visual Studio Build Tools con gli strumenti C++ (per compilare pgvector), WebView2 (già presente in Windows 11). Poi `cd desktop && npm install`.
+
+| Cosa è cambiato | Cosa rifare |
+|---|---|
+| Codice Java, pagina web (`src/main/...`), dipendenze Maven | `cd desktop && npm run backend -- -JavaHome <JDK 25>`: jar e Java ridotto in `src-tauri/resources/backend` |
+| Versione di PostgreSQL o di pgvector | `powershell -ExecutionPolicy Bypass -File desktop/prepare-postgres.ps1` (parametri `-PostgresVersion`, `-PgvectorVersion`): circa un minuto, i download restano in `desktop/.cache` |
+| Shell (`desktop/src-tauri/src`, `tauri.conf.json`, icone) | niente di più: la ricompila il passo dopo |
+
+Poi, a seconda di cosa serve:
+
+```bash
+# Prova in sviluppo: eseguibile non ottimizzato, con le risorse accanto
+cd desktop/src-tauri && cargo build && ./target/debug/jarvis-desktop.exe
+
+# Shell collegata al backend di sviluppo (./mvnw spring-boot:run su 8080), senza ricostruire il backend incluso
+JARVIS_BACKEND_URL=http://localhost:8080 ./target/debug/jarvis-desktop.exe
+
+# Rilascio: eseguibile ottimizzato e installer
+cd desktop && npx tauri build
+#   → src-tauri/target/release/jarvis-desktop.exe
+#   → src-tauri/target/release/bundle/nsis/Jarvis_<versione>_x64-setup.exe   (circa 180 MB)
+```
+
+La versione dell'app sta in `desktop/src-tauri/tauri.conf.json` e `Cargo.toml`: aumentala a ogni rilascio. La prima build di rilascio richiede circa 10 minuti (compilazione ottimizzata di Tauri), quelle dopo molto meno. I dati dell'utente non sono nell'installer: stanno in `~/.jarvis` (database in `pgdata`, chiave master, log) e restano tra un aggiornamento e l'altro.
+
+**Altri sistemi operativi (da completare):** `npx tauri build` produce `.dmg` su macOS e AppImage o `.deb` su Linux, ma va eseguito su quel sistema e servono le versioni bash degli script `prepare-*` e i binari di PostgreSQL per quel sistema.
+
 ## Cosa c'è
 
 - Chat in streaming con più provider, selezionabili dall'interfaccia, con memoria condivisa salvata su PostgreSQL (sopravvive ai riavvii).

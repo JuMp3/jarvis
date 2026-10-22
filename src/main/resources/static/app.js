@@ -54,8 +54,14 @@ const audio = {
   recognition: null,
 };
 
-// Web Speech API, used when the server sends stt/tts = "browser"
-const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+// Web Speech API, used when the server sends stt/tts = "browser". The desktop window (WebView2) has the recognition
+// interface but no access to the online service behind it: it always fails with "network". Its speech synthesis
+// uses the voices installed in the system, and works.
+const desktopWindow = Boolean(window.chrome?.webview);
+const Recognition = desktopWindow ? null : window.SpeechRecognition || window.webkitSpeechRecognition;
+const NO_BROWSER_RECOGNITION = desktopWindow
+  ? 'Nell\'app desktop il riconoscimento vocale del browser non è disponibile: scegli «Sul tuo PC» o «OpenAI» in Impostazioni → Voce.'
+  : 'Questo browser non supporta il riconoscimento vocale: scegli «Sul tuo PC» o «OpenAI» in Impostazioni → Voce.';
 const browserSpeech = { pending: '', queued: 0, pulse: 0, voice: null };
 
 function audioContext() {
@@ -338,7 +344,10 @@ function startRecognition() {
     }
   };
   recognition.onerror = (event) => {
-    if (event.error !== 'no-speech' && event.error !== 'aborted') {
+    if (event.error === 'network') {
+      note('Il riconoscimento vocale del browser usa un servizio online che non risponde (rete o proxy aziendale): '
+        + 'prova «Sul tuo PC» in Impostazioni → Voce.', true);
+    } else if (event.error !== 'no-speech' && event.error !== 'aborted') {
       note(`Riconoscimento vocale del browser non riuscito (${event.error}).`, true);
     }
   };
@@ -867,14 +876,18 @@ function handle(msg) {
       if (settingsPanel.onHello(msg)) note('Impostazioni applicate.');
       ui.language = msg.language || 'it';
       ui.stt = msg.stt === 'browser' && !Recognition ? 'off' : msg.stt;
+      if (msg.stt === 'browser' && !Recognition && !ui.toldNoRecognition) {
+        ui.toldNoRecognition = true; // once per page, not at every reconnection
+        note(NO_BROWSER_RECOGNITION, true);
+      }
       ui.tts = msg.tts === 'browser' && !('speechSynthesis' in window) ? 'off' : msg.tts;
       fillProviders(msg.providers, msg.defaultProvider);
       el.speak.checked = ui.tts !== 'off';
       el.speak.disabled = ui.tts === 'off';
       setControlsEnabled(true);
       el.mic.title = ui.stt !== 'off' ? ''
-        : msg.stt === 'browser' ? 'Questo browser non supporta il riconoscimento vocale'
-          : 'Voce non attiva: controlla jarvis.voice.stt';
+        : msg.stt === 'browser' ? NO_BROWSER_RECOGNITION
+          : 'Voce non attiva: scegli chi trascrive la tua voce in Impostazioni → Voce';
       break;
     case 'history':
       if (el.log.children.length === 0) {

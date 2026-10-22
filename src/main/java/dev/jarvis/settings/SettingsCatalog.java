@@ -61,7 +61,8 @@ public final class SettingsCatalog {
                     "Chi trasforma in testo quello che dici.", Kind.CHOICE,
                     List.of(new Choice("local", "Sul tuo PC", "Whisper: gratis e privato, l'audio non esce dal computer."),
                             new Choice("openai", "OpenAI", "Più preciso, a pagamento: serve la chiave di OpenAI."),
-                            new Choice("browser", "Browser", "Gratis, ma l'audio va a Google o Microsoft."),
+                            new Choice("browser", "Browser", "Gratis, ma l'audio va a Google o Microsoft. Non "
+                                    + "funziona nell'app desktop."),
                             new Choice("off", "Disattivata", "Solo messaggi scritti.")), null),
             new Definition("JARVIS_VOICE_TTS", "jarvis.voice.tts", "Voce", "Chi dà la voce a Jarvis",
                     "Come Jarvis legge le risposte ad alta voce.", Kind.CHOICE,

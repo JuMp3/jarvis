@@ -11,6 +11,8 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-single-instance = "2"
 tauri-plugin-autostart = "2"
+getrandom = "0.3"
+dunce = "1"
 
 # The backend and everything it starts die with the shell: a job object on Windows, a process group elsewhere
 [target.'cfg(windows)'.dependencies]

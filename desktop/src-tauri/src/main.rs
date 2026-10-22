@@ -1,9 +1,12 @@
-// Jarvis desktop shell. Starts the backend (the bundled Java runtime with the Spring Boot jar), shows its page in a
-// window and lives in the tray. The backend, and everything it starts (MCP servers), ends with the shell.
+// Jarvis desktop shell. Starts the bundled PostgreSQL and the backend (the bundled Java runtime with the Spring Boot
+// jar), shows its page in a window and lives in the tray. Both, and everything the backend starts (MCP servers), end
+// with the shell.
 //
 // Development: JARVIS_BACKEND_URL=http://localhost:8080 uses a backend already running (./mvnw spring-boot:run)
 // instead of the bundled one.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
+mod database;
 
 use std::fs::{self, File};
 use std::io::{Read, Write};
@@ -26,15 +29,21 @@ const HIDDEN: &str = "--hidden";
 /// The first start creates the database schema and connects the MCP servers.
 const READY_TIMEOUT: Duration = Duration::from_secs(180);
 
-/// The backend process, if the shell started it. Ending the shell ends it (see `ProcessTree`).
-struct Backend(Mutex<Option<(Child, ProcessTree)>>);
+/// What the shell started: the database and the backend. Ending the shell ends them (see `ProcessTree`).
+#[derive(Default)]
+struct Started {
+    database: Option<database::Database>,
+    backend: Option<(Child, ProcessTree)>,
+}
+
+struct Backend(Mutex<Started>);
 
 fn main() {
     tauri::Builder::default()
         // First: a second start only brings the running Jarvis to the front
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| show(app)))
         .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, Some(vec![HIDDEN])))
-        .manage(Backend(Mutex::new(None)))
+        .manage(Backend(Mutex::new(Started::default())))
         .setup(|app| {
             tray(app.handle())?;
             let window = app.get_webview_window("main").expect("main window");
@@ -66,7 +75,7 @@ fn main() {
 fn open_backend(app: &AppHandle, window: &WebviewWindow) {
     let url = match std::env::var("JARVIS_BACKEND_URL") {
         Ok(url) if !url.is_empty() => url,
-        _ => match start_backend(app) {
+        _ => match start_backend(app, window) {
             Ok(()) => format!("http://127.0.0.1:{PORT}/"),
             Err(error) => return fail(window, &format!("Non riesco ad avviare Jarvis: {error}")),
         },
@@ -91,15 +100,24 @@ fn open_backend(app: &AppHandle, window: &WebviewWindow) {
     }
 }
 
-fn start_backend(app: &AppHandle) -> Result<(), String> {
-    let backend = app.path().resource_dir().map_err(|e| e.to_string())?.join("backend");
+fn start_backend(app: &AppHandle, window: &WebviewWindow) -> Result<(), String> {
+    // Without the \\?\ prefix Tauri gives on Windows: initdb finds postgres.exe next to itself from its own path, and
+    // cannot with that form
+    let resources = dunce::simplified(&app.path().resource_dir().map_err(|e| e.to_string())?).to_path_buf();
+    let home = jarvis_home(app)?;
+    let (database, password) = database::start(&resources.join("postgres").join("bin"), &home,
+        |message| { let _ = window.eval(&format!("setStatus({message:?})")); })
+        .map_err(|e| format!("database: {e}"))?;
+    app.state::<Backend>().0.lock().unwrap().database = Some(database);
+    let _ = window.eval("setStatus('Avvio di Jarvis…')");
+
+    let backend = resources.join("backend");
     let java = backend.join("runtime").join("bin").join(if cfg!(windows) { "java.exe" } else { "java" });
     let jar = backend.join("jarvis.jar");
     if !java.is_file() || !jar.is_file() {
         return Err(format!("backend mancante in {} (esegui prepare-backend.ps1)", backend.display()));
     }
     // ~/.jarvis as working directory: the backend imports ./.env and ./jarvis-local.yml, never from a random folder
-    let home = jarvis_home(app)?;
     let console = File::create(console_log(app)).map_err(|e| e.to_string())?;
     let mut command = Command::new(&java);
     command
@@ -108,13 +126,16 @@ fn start_backend(app: &AppHandle) -> Result<(), String> {
         .arg(&jar)
         .current_dir(&home)
         .env("JARVIS_PORT", PORT.to_string())
+        .env("JARVIS_DB_URL", format!("jdbc:postgresql://127.0.0.1:{}/{}", database::PORT, database::NAME))
+        .env("JARVIS_DB_USER", database::USER)
+        .env("JARVIS_DB_PASSWORD", password)
         .stdin(Stdio::null())
         .stdout(console.try_clone().map_err(|e| e.to_string())?)
         .stderr(console);
     ProcessTree::prepare(&mut command);
     let child = command.spawn().map_err(|e| format!("{}: {e}", java.display()))?;
     let tree = ProcessTree::adopt(&child)?;
-    *app.state::<Backend>().0.lock().unwrap() = Some((child, tree));
+    app.state::<Backend>().0.lock().unwrap().backend = Some((child, tree));
     Ok(())
 }
 
@@ -127,19 +148,25 @@ const TRUST_STORE: &str = "KeychainStore-ROOT"; // to verify on macOS
 #[cfg(all(unix, not(target_os = "macos")))]
 const TRUST_STORE: &str = "PKCS12";
 
+/// The backend first, so it does not see its database disappear, then the database, cleanly.
 fn stop_backend(app: &AppHandle) {
-    if let Some((mut child, tree)) = app.state::<Backend>().0.lock().unwrap().take() {
+    let state = app.state::<Backend>();
+    let mut started = state.0.lock().unwrap();
+    if let Some((mut child, tree)) = started.backend.take() {
         tree.end();
         let _ = child.kill();
         let _ = child.wait();
+    }
+    if let Some(database) = started.database.take() {
+        database.stop();
     }
 }
 
 /// Exit status of the backend the shell started, if it has already ended.
 fn exited(app: &AppHandle) -> Option<String> {
     let state = app.state::<Backend>();
-    let mut backend = state.0.lock().unwrap();
-    let (child, _) = backend.as_mut()?;
+    let mut started = state.0.lock().unwrap();
+    let (child, _) = started.backend.as_mut()?;
     child.try_wait().ok().flatten().map(|status| status.to_string())
 }
 
