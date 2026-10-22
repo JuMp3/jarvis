@@ -61,6 +61,13 @@ class MemoryTest extends BaseTest {
     }
 
     @Test
+    void meanPoolingSkipsThePaddingAndNormalizes() {
+        float[] mean = OnnxEmbeddings.meanPooled(new float[][] {{3, 0}, {1, 4}, {100, 100}}, new long[] {1, 1, 0});
+        assertThat(mean[0]).isCloseTo(2 / (float) Math.sqrt(8), org.assertj.core.data.Offset.offset(1e-6f));
+        assertThat(mean[1]).isCloseTo(2 / (float) Math.sqrt(8), org.assertj.core.data.Offset.offset(1e-6f));
+    }
+
+    @Test
     void e5GetsItsPrefixes() {
         WordEmbeddings words = new WordEmbeddings();
         E5Embeddings e5 = new E5Embeddings(words);

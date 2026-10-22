@@ -80,11 +80,18 @@
             <groupId>org.eclipse.angus</groupId>
             <artifactId>angus-mail</artifactId>
         </dependency>
-        <!-- Long-term memory: embeddings computed locally (ONNX), vectors in pgvector. Not the starters: the beans are
-             built by MemoryConfig only when the model is installed, so Jarvis starts without it -->
+        <!-- Long-term memory: embeddings computed locally with ONNX Runtime and the DJL tokenizers (OnnxEmbeddings), vectors
+             in pgvector. Not spring-ai-transformers: it brings DJL's PyTorch engine, which downloads PyTorch at the first
+             use. Versions as spring-ai-transformers 2.0.1 has them -->
         <dependency>
-            <groupId>org.springframework.ai</groupId>
-            <artifactId>spring-ai-transformers</artifactId>
+            <groupId>com.microsoft.onnxruntime</groupId>
+            <artifactId>onnxruntime</artifactId>
+            <version>1.21.1</version>
+        </dependency>
+        <dependency>
+            <groupId>ai.djl.huggingface</groupId>
+            <artifactId>tokenizers</artifactId>
+            <version>0.36.0</version>
         </dependency>
         <dependency>
             <groupId>org.springframework.ai</groupId>
@@ -138,8 +145,7 @@
             <artifactId>testcontainers-junit-jupiter</artifactId>
             <scope>test</scope>
         </dependency>
-        <!-- Testcontainers needs it, and loses it: DJL (spring-ai-transformers) brings commons-compress excluding it,
-             and that path now wins -->
+        <!-- Testcontainers needs it, and loses it: DJL brings commons-compress excluding it, and that path now wins -->
         <dependency>
             <groupId>org.apache.commons</groupId>
             <artifactId>commons-lang3</artifactId>

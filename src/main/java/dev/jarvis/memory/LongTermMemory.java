@@ -3,18 +3,15 @@ package dev.jarvis.memory;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
-import java.util.Map;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.embedding.EmbeddingModel;
-import org.springframework.ai.transformers.TransformersEmbeddingModel;
 import org.springframework.ai.vectorstore.SearchRequest;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.ai.vectorstore.pgvector.PgVectorStore;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.core.io.FileSystemResource;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
@@ -23,7 +20,7 @@ import jakarta.annotation.PreDestroy;
 
 /**
  * Long-term memory: what was said and done, as vectors in pgvector (table {@code memory_vector}, see schema.sql),
- * searched by meaning. The embeddings are computed here, with multilingual-e5-small (ONNX) from
+ * searched by meaning. The embeddings are computed here, with multilingual-e5-small (ONNX, see OnnxEmbeddings) from
  * {@code jarvis.memory.home} (desktop/prepare-memory.ps1). Without the model the memory is off and Jarvis works
  * as before.
  */
@@ -39,12 +36,12 @@ public class LongTermMemory {
     static final double MIN_SIMILARITY = 0.80;
 
     private final VectorStore store;
-    private final TransformersEmbeddingModel model;
+    private final OnnxEmbeddings model;
     private final double minSimilarity;
 
     @Autowired
     public LongTermMemory(JarvisProperties properties, JdbcTemplate jdbc) {
-        TransformersEmbeddingModel loaded = load(properties.memory() == null ? null : properties.memory().home());
+        OnnxEmbeddings loaded = load(properties.memory() == null ? null : properties.memory().home());
         this.model = loaded;
         this.store = loaded == null ? null : store(jdbc, new E5Embeddings(loaded));
         this.minSimilarity = MIN_SIMILARITY;
@@ -99,7 +96,7 @@ public class LongTermMemory {
                 .build();
     }
 
-    private static TransformersEmbeddingModel load(String home) {
+    private static OnnxEmbeddings load(String home) {
         Path modelFile = home == null ? null : Path.of(home, "model.onnx");
         Path tokenizerFile = home == null ? null : Path.of(home, "tokenizer.json");
         if (modelFile == null || !Files.isRegularFile(modelFile) || !Files.isRegularFile(tokenizerFile)) {
@@ -107,13 +104,7 @@ public class LongTermMemory {
             return null;
         }
         try {
-            TransformersEmbeddingModel model = new TransformersEmbeddingModel();
-            model.setModelResource(new FileSystemResource(modelFile));
-            model.setTokenizerResource(new FileSystemResource(tokenizerFile));
-            model.setDisableCaching(true); // a local file: no copy in a cache folder
-            // Texts of a batch padded to the same length (the model takes a rectangular tensor), longer ones cut
-            model.setTokenizerOptions(Map.of("padding", "true", "truncation", "true", "maxLength", "512"));
-            model.afterPropertiesSet();
+            OnnxEmbeddings model = new OnnxEmbeddings(modelFile, tokenizerFile, DIMENSIONS);
             log.info("Long-term memory on: multilingual-e5-small from {}", home);
             return model;
         } catch (Exception e) {
