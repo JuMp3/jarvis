@@ -131,6 +131,7 @@ fn start_backend(app: &AppHandle, window: &WebviewWindow) -> Result<(), String> 
         .env("JARVIS_DB_PASSWORD", password)
         // The backend runs whisper.cpp and Piper itself (LocalVoice): it only needs where they are
         .env("JARVIS_VOICE_HOME", resources.join("voice"))
+        .env("JARVIS_MEMORY_HOME", resources.join("memory"))
         .stdin(Stdio::null())
         .stdout(console.try_clone().map_err(|e| e.to_string())?)
         .stderr(console);

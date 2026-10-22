@@ -55,6 +55,23 @@ CREATE TABLE IF NOT EXISTS agent_task (
 
 CREATE INDEX IF NOT EXISTS agent_task_conversation_idx ON agent_task (conversation_id, created_at);
 
+-- Phase 5: long-term memory (LongTermMemory). Passages of the archive and of the task results with their embedding
+-- (multilingual-e5-small, 384 dimensions), in the layout of Spring AI's PgVectorStore; memory_progress says where
+-- the indexing got to for each source.
+CREATE TABLE IF NOT EXISTS memory_vector (
+    id        UUID PRIMARY KEY,
+    content   TEXT,
+    metadata  JSON,
+    embedding VECTOR(384)
+);
+
+CREATE INDEX IF NOT EXISTS memory_vector_embedding_idx ON memory_vector USING hnsw (embedding vector_cosine_ops);
+
+CREATE TABLE IF NOT EXISTS memory_progress (
+    source   VARCHAR(16) PRIMARY KEY,
+    position BIGINT      NOT NULL
+);
+
 -- Phase 3: coder tasks work on a repository, report live progress and their cost
 ALTER TABLE agent_task ADD COLUMN IF NOT EXISTS workspace TEXT;
 ALTER TABLE agent_task ADD COLUMN IF NOT EXISTS progress  TEXT;

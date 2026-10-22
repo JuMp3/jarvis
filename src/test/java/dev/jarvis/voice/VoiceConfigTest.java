@@ -16,7 +16,7 @@ class VoiceConfigTest {
         AudioEndpoint openai = new AudioEndpoint("https://api.openai.com/v1/", openAiKey, "stt", "tts", "onyx", "");
         Local local = new Local("missing-folder", "small", "it_IT-paola-medium", 1); // engines not installed: still configured
         Voice voice = new Voice(stt, tts, "it", openai, local, "jarvis");
-        return new VoiceConfig().voiceServices(new JarvisProperties(null, null, voice, null, null, null, null, null, null));
+        return new VoiceConfig().voiceServices(new JarvisProperties(null, null, voice, null, null, null, null, null, null, null));
     }
 
     @Test

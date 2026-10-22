@@ -1,0 +1,186 @@
+package dev.jarvis.memory;
+
+import java.nio.charset.StandardCharsets;
+import java.sql.Timestamp;
+import java.time.Duration;
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.ai.document.Document;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.event.EventListener;
+import org.springframework.jdbc.core.simple.JdbcClient;
+import org.springframework.stereotype.Component;
+
+import jakarta.annotation.PreDestroy;
+
+/**
+ * Feeds the long-term memory in the background, without slowing the turns down: the messages of the archive
+ * (chat_archive, also those cleared from the screen) and the results of the finished tasks (also those hidden from
+ * the panel). Where it got to is kept in memory_progress, so nothing is embedded twice.
+ */
+@Component
+public class MemoryIndexer {
+
+    private static final Logger log = LoggerFactory.getLogger(MemoryIndexer.class);
+    private static final Duration EVERY = Duration.ofSeconds(20);
+    private static final int BATCH = 64;
+    /** e5 reads up to 512 tokens: longer texts are split, about 1,200 characters with a little overlap. */
+    static final int CHUNK = 1200;
+    private static final int OVERLAP = 150;
+    /** Automatic task updates are in the memory as tasks already, with their whole result. */
+    private static final String TASK_NOTICE = "[Aggiornamento automatico sui task";
+    private static final DateTimeFormatter DAY = DateTimeFormatter.ofPattern("dd/MM/yyyy").withZone(ZoneId.systemDefault());
+
+    private final LongTermMemory memory;
+    private final JdbcClient jdbc;
+    private volatile boolean running;
+
+    public MemoryIndexer(LongTermMemory memory, JdbcClient jdbc) {
+        this.memory = memory;
+        this.jdbc = jdbc;
+    }
+
+    @EventListener(ApplicationReadyEvent.class)
+    void start() {
+        if (!memory.enabled()) {
+            return;
+        }
+        running = true;
+        Thread.ofVirtual().name("memory-indexer").start(() -> {
+            while (running) {
+                try {
+                    int added = indexOnce();
+                    if (added > 0) {
+                        log.info("Long-term memory: {} new passages", added);
+                    }
+                    if (added < BATCH) {
+                        Thread.sleep(EVERY); // otherwise more is waiting: go on
+                    }
+                } catch (InterruptedException e) {
+                    return;
+                } catch (RuntimeException e) {
+                    log.warn("Long-term memory: indexing failed, retrying later: {}", e.getMessage());
+                    sleepQuietly();
+                }
+            }
+        });
+    }
+
+    @PreDestroy
+    void stop() {
+        running = false;
+    }
+
+    /** One round: a batch of messages and of tasks. @return passages stored */
+    int indexOnce() {
+        return indexMessages() + indexTasks();
+    }
+
+    private int indexMessages() {
+        long from = position("chat");
+        List<Map<String, Object>> rows = jdbc.sql("""
+                        SELECT id, conversation_id, type, content, created_at FROM chat_archive
+                        WHERE id > ? ORDER BY id LIMIT ?""")
+                .params(from, BATCH).query().listOfRows();
+        if (rows.isEmpty()) {
+            return 0;
+        }
+        List<Document> documents = new ArrayList<>();
+        for (Map<String, Object> row : rows) {
+            String type = (String) row.get("type");
+            String content = (String) row.get("content");
+            if (!("USER".equals(type) || "ASSISTANT".equals(type)) || content == null || content.isBlank()
+                    || content.startsWith(TASK_NOTICE)) {
+                continue; // tool traffic and automatic notices
+            }
+            Instant at = ((Timestamp) row.get("created_at")).toInstant();
+            String who = "USER".equals(type) ? "L'utente ha detto" : "Jarvis ha risposto";
+            documents.addAll(passages("chat:" + row.get("id"), DAY.format(at) + ", " + who + ": ", content.strip(),
+                    Map.of("source", "chat", "conversation", row.get("conversation_id"), "at", at.toString())));
+        }
+        memory.store(documents);
+        setPosition("chat", ((Number) rows.getLast().get("id")).longValue());
+        return documents.size();
+    }
+
+    private int indexTasks() {
+        long from = position("task");
+        List<Map<String, Object>> rows = jdbc.sql("""
+                        SELECT id, conversation_id, agent, title, result, finished_at FROM agent_task
+                        WHERE status = 'COMPLETED' AND result IS NOT NULL AND finished_at > ?
+                        ORDER BY finished_at LIMIT ?""")
+                .params(timestamp(from), BATCH).query().listOfRows();
+        if (rows.isEmpty()) {
+            return 0;
+        }
+        List<Document> documents = new ArrayList<>();
+        long last = from;
+        for (Map<String, Object> row : rows) {
+            Instant at = ((Timestamp) row.get("finished_at")).toInstant();
+            last = micros(at);
+            String head = DAY.format(at) + ", lavoro «" + row.get("title") + "» (" + row.get("agent") + "): ";
+            documents.addAll(passages("task:" + row.get("id"), head, ((String) row.get("result")).strip(),
+                    Map.of("source", "task", "conversation", row.get("conversation_id"), "at", at.toString())));
+        }
+        memory.store(documents);
+        setPosition("task", last);
+        return documents.size();
+    }
+
+    /**
+     * A text as one or more passages, each starting with when and who, so a passage alone still says where it
+     * comes from. Ids derived from the source, so storing again replaces instead of duplicating.
+     */
+    static List<Document> passages(String source, String head, String text, Map<String, Object> metadata) {
+        List<Document> passages = new ArrayList<>();
+        int part = 0;
+        for (int start = 0; start < text.length(); start += CHUNK - OVERLAP) {
+            int end = Math.min(text.length(), start + CHUNK);
+            String id = UUID.nameUUIDFromBytes((source + ":" + part++).getBytes(StandardCharsets.UTF_8)).toString();
+            passages.add(Document.builder().id(id).text(head + text.substring(start, end)).metadata(metadata).build());
+            if (end == text.length()) {
+                break;
+            }
+        }
+        return passages;
+    }
+
+    // Microseconds, as PostgreSQL keeps them: with milliseconds the last task would come back at every round
+    static long micros(Instant at) {
+        return at.getEpochSecond() * 1_000_000 + at.getNano() / 1_000;
+    }
+
+    static Timestamp timestamp(long micros) {
+        Timestamp timestamp = new Timestamp(Math.floorDiv(micros, 1_000_000) * 1_000);
+        timestamp.setNanos((int) Math.floorMod(micros, 1_000_000) * 1_000);
+        return timestamp;
+    }
+
+    private long position(String source) {
+        return jdbc.sql("SELECT position FROM memory_progress WHERE source = ?").param(source)
+                .query(Long.class).optional().orElse(0L);
+    }
+
+    private void setPosition(String source, long position) {
+        jdbc.sql("""
+                        INSERT INTO memory_progress (source, position) VALUES (?, ?)
+                        ON CONFLICT (source) DO UPDATE SET position = EXCLUDED.position""")
+                .params(source, position).update();
+    }
+
+    private static void sleepQuietly() {
+        try {
+            Thread.sleep(EVERY);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+    }
+}

@@ -4,7 +4,7 @@ Assistente AI personale: backend Java (Spring Boot 4.1, Spring AI 2.0), frontend
 
 ## Stato attuale — leggere per primo
 
-Fasi 0 e 1 chiuse e verificate end-to-end con Claude: streaming, tool, approvazioni, memoria su PostgreSQL + pgvector, errori leggibili, turni interrotti e riconnessione, log strutturati. Voce: locale (whisper.cpp + Piper avviati da Jarvis, prima Speaches) e browser verificate end-to-end; OpenAI non provata (account senza credito). Ollama non provato. Fase 2 (squadra di agenti) fatta. Fase 3 fatta: approvazioni per conversazione, Programmatore (`coder`, Claude Code, push su autorizzazione), MCP (GitHub), Documenti, azioni desktop. Fase 3b fatta: wizard e Impostazioni su DB (segreti cifrati), riavvio interno, Organizer su Outlook.com verificato (anche invio email ed evento reali, 22/10/2026). Fase 4 fatta: mani libere (VAD nel browser), interruzione automatica, wake word. Fase 5 in corso: shell desktop Tauri fatta e verificata su Windows (backend incluso con runtime jlink, tray, istanza unica, job object) e Postgres 18 + pgvector inclusi, senza Docker (primo avvio con wizard verificato); prossimi passi voce nativa, installer, RAG. Requisito: tutto deve funzionare anche su macOS e Linux (tabella "Multipiattaforma" in `docs/ARCHITECTURE.md`).
+Fasi 0 e 1 chiuse e verificate end-to-end con Claude: streaming, tool, approvazioni, memoria su PostgreSQL + pgvector, errori leggibili, turni interrotti e riconnessione, log strutturati. Voce: locale (whisper.cpp + Piper avviati da Jarvis, prima Speaches) e browser verificate end-to-end; OpenAI non provata (account senza credito). Ollama non provato. Fase 2 (squadra di agenti) fatta. Fase 3 fatta: approvazioni per conversazione, Programmatore (`coder`, Claude Code, push su autorizzazione), MCP (GitHub), Documenti, azioni desktop. Fase 3b fatta: wizard e Impostazioni su DB (segreti cifrati), riavvio interno, Organizer su Outlook.com verificato (anche invio email ed evento reali, 22/10/2026). Fase 4 fatta: mani libere (VAD nel browser), interruzione automatica, wake word. Fase 5 in corso: shell desktop Tauri fatta e verificata su Windows (backend incluso con runtime jlink, tray, istanza unica, job object), Postgres 18 + pgvector inclusi senza Docker (primo avvio con wizard verificato), voce locale nativa (whisper.cpp + Piper avviati da Jarvis), memoria a lungo termine (embedding e5 locali, tool `searchMemory`); prossimo passo: rigenerare l'app desktop e l'installer con voce e memoria, poi i documenti nella memoria. Requisito: tutto deve funzionare anche su macOS e Linux (tabella "Multipiattaforma" in `docs/ARCHITECTURE.md`).
 
 Cose verificate su Spring AI 2.0.1, da non rifare:
 
@@ -46,6 +46,8 @@ node --test src/test/js/*.test.mjs     # test della logica pura del browser (voc
 # App desktop (desktop/, Tauri 2): backend incluso, poi la shell
 cd desktop && npm install && npm run backend -- -JavaHome <JDK 25>   # jar + runtime jlink in src-tauri/resources/backend
 powershell -ExecutionPolicy Bypass -File desktop/prepare-postgres.ps1   # PostgreSQL + pgvector in src-tauri/resources/postgres (una volta)
+powershell -ExecutionPolicy Bypass -File desktop/prepare-voice.ps1      # whisper.cpp + Piper + modelli (JARVIS_VOICE_HOME in .env)
+powershell -ExecutionPolicy Bypass -File desktop/prepare-memory.ps1     # modello di embedding della memoria (JARVIS_MEMORY_HOME in .env)
 cd desktop/src-tauri && cargo build && ./target/debug/jarvis-desktop.exe   # oppure: cd desktop && npx tauri dev
 JARVIS_BACKEND_URL=http://localhost:8080 ./target/debug/jarvis-desktop.exe # shell collegata al backend di sviluppo
 ```
@@ -69,6 +71,8 @@ src/main/java/dev/jarvis/
   settings/     SettingsService, SettingsCatalog, MailTemplates, SecretBox (AES-GCM), MasterKey,
                 DatabaseSettingsSource + SettingsEnvironmentPostProcessor (impostazioni su DB all'avvio)
   mail/         MailClient (IMAP/SMTP, Jakarta Mail), MailServers (server dal dominio dell'indirizzo)
+  memory/       LongTermMemory (embedding e5 locali, pgvector), MemoryIndexer (archivio e task in background),
+                E5Embeddings (prefissi query/passage); il tool è agent/tools/MemoryTools
   voice/        SpeechToText, TextToSpeech, OpenAiAudioClient (solo JDK HTTP, OpenAI o whisper.cpp), LocalVoice e
                 PiperTts (voce sul tuo PC),
                 SentenceChunker, AudioFormats, Multipart, Json, VoiceServices, VoiceConfig (motore per direzione)

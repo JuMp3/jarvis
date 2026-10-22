@@ -76,7 +76,7 @@ class TaskServiceTest extends BaseTest {
 
     private TaskService service(int maxParallel, Duration timeout) {
         JarvisProperties properties = new JarvisProperties(null, null, null,
-                new JarvisProperties.Tasks(maxParallel, timeout, Duration.ofSeconds(5)), null, null, null, null, null);
+                new JarvisProperties.Tasks(maxParallel, timeout, Duration.ofSeconds(5)), null, null, null, null, null, null);
         service = new TaskService(specialists, repository,
                 event -> published.add(((TaskService.TaskUpdated) event).task()), approvals, properties);
         return service;

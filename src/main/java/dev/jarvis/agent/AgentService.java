@@ -12,6 +12,7 @@ import org.springframework.stereotype.Service;
 
 import dev.jarvis.agent.tools.DesktopTools;
 import dev.jarvis.agent.tools.MailTools;
+import dev.jarvis.agent.tools.MemoryTools;
 import dev.jarvis.agent.tools.NoteTools;
 import dev.jarvis.agent.tools.SystemTools;
 import dev.jarvis.llm.ProviderId;
@@ -40,13 +41,14 @@ public class AgentService {
     private final List<ToolCallback> mcpWriteTools;
 
     public AgentService(ProviderRouter router, ChatMemory memory, SystemTools systemTools, NoteTools noteTools,
-                        DesktopTools desktopTools, TaskTools taskTools, McpTools mcpTools, MailTools mailTools) {
+                        DesktopTools desktopTools, TaskTools taskTools, McpTools mcpTools, MailTools mailTools,
+                        MemoryTools memoryTools) {
         this.router = router;
         this.memory = memory;
         // Sending email is Jarvis', behind approval; reading it is the organizer's
         this.tools = mailTools.enabled()
-                ? new Object[] {systemTools, noteTools, desktopTools, taskTools, mailTools.sender()}
-                : new Object[] {systemTools, noteTools, desktopTools, taskTools};
+                ? new Object[] {systemTools, noteTools, desktopTools, taskTools, memoryTools, mailTools.sender()}
+                : new Object[] {systemTools, noteTools, desktopTools, taskTools, memoryTools};
         this.mcpWriteTools = mcpTools.writeTools();
     }
 

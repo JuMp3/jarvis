@@ -12,7 +12,11 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 @ConfigurationProperties(prefix = "jarvis")
 public record JarvisProperties(Providers providers, Agent agent, Voice voice, Tasks tasks,
                                Map<String, Specialist> agents, Documents documents, Desktop desktop, Mcp mcp,
-                               Mail mail) {
+                               Mail mail, Memory memory) {
+
+    /** @param home folder with model.onnx and tokenizer.json of the embedding model (desktop/prepare-memory.ps1) */
+    public record Memory(String home) {
+    }
 
     /**
      * An IMAP/SMTP mailbox (Gmail, iCloud, Yahoo, Libero... with an app password).

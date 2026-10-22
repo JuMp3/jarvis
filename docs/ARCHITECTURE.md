@@ -257,7 +257,20 @@ Jarvis va installato su un PC, dove un file `.env` non è una soluzione: le impo
 - **Rilascio:** `npx tauri build` produce l'eseguibile ottimizzato e l'installer NSIS (circa 180 MB); come e quando rigenerarli è nel `README.md`.
 - **Sviluppo:** `JARVIS_BACKEND_URL=http://localhost:8080` collega la shell a un backend già acceso (`./mvnw spring-boot:run`) invece di avviare quello incluso.
 - **Voce locale:** whisper.cpp e Piper li avvia il backend (`LocalVoice`), quindi la shell passa solo la cartella (`JARVIS_VOICE_HOME`, `src-tauri/resources/voice`: circa 430 MB, quasi tutti modelli: Whisper `small` quantizzato e `base`, voce Paola).
-- **Prossimi passi della fase:** installer NSIS completo, RAG.
+- **Memoria a lungo termine:** il modello di embedding sta in `src-tauri/resources/memory` (`prepare-memory.ps1`, circa 130 MB), passato con `JARVIS_MEMORY_HOME`.
+- **Prossimi passi della fase:** installer NSIS completo con voce e memoria.
+
+## Memoria a lungo termine (Fase 5)
+
+Jarvis ricorda oltre la finestra della conversazione: tutto ciò che è stato detto (`chat_archive`, anche le conversazioni cancellate dallo schermo) e i risultati dei lavori della Squadra (anche quelli nascosti dal pannello).
+
+- **Embedding locali:** `multilingual-e5-small` (ONNX quantizzato, 384 dimensioni, buono in italiano) eseguito nel backend con Spring AI Transformers; nessun servizio esterno. e5 vuole i prefissi `query: ` e `passage: ` (`E5Embeddings`). Senza il modello (`jarvis.memory.home`) la memoria è spenta e il resto funziona.
+- **Archivio vettoriale:** tabella `memory_vector` (layout di `PgVectorStore`, creata da `schema.sql` con indice HNSW per la distanza coseno: l'inizializzazione di Spring AI installerebbe anche hstore e uuid-ossp).
+- **Indicizzazione** (`MemoryIndexer`): in background ogni 20 s, a gruppi di 64, senza rallentare i turni. Ogni passaggio comincia con data e provenienza ("22/10/2026, L'utente ha detto: …", "lavoro «Meteo» (researcher): …"); i testi lunghi diventano passaggi di circa 1200 caratteri sovrapposti; id derivati dalla sorgente, quindi rifare non duplica. Il traffico dei tool e gli aggiornamenti automatici sui task (già indicizzati come task) restano fuori. `memory_progress` tiene il punto raggiunto per sorgente (l'id dell'archivio; per i task la fine in microsecondi, come li tiene Postgres).
+- **Uso:** il tool `searchMemory` (sola lettura, solo Jarvis), che il system prompt invita a usare quando l'utente si riferisce al passato, invece di un'iniezione automatica a ogni turno (rumore e costi anche quando non serve). Restituisce fino a 6 passaggi con similarità almeno 0,78: misurato, sotto quella soglia e5 trova solo rumore ("ricetta della carbonara" non trova nulla tra ricordi di vacanze e riunioni).
+- **Verificato:** in una conversazione nuova, "che tempo mi avevi detto a Rho, e chi se n'era occupato?" ha trovato il risultato del ricercatore di quella mattina (nascosto dal pannello).
+- **Peso:** ONNX Runtime contiene le librerie native di tutti i sistemi (circa 137 MB): il jar passa da circa 140 a circa 300 MB. Nell'installer di ogni sistema si potranno togliere quelle degli altri.
+- **Da fare:** i documenti delle cartelle (`jarvis.documents.folders`) nella stessa memoria; per ora lo specialista Documenti li legge al momento.
 
 ### Multipiattaforma
 
