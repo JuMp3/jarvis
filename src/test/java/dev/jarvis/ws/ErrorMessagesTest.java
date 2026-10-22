@@ -13,6 +13,7 @@ import org.springframework.web.reactive.function.client.WebClientRequestExceptio
 import org.springframework.web.reactive.function.client.WebClientResponseException;
 
 import dev.jarvis.llm.ProviderId;
+import dev.jarvis.voice.LocalVoiceException;
 import dev.jarvis.voice.VoiceException;
 
 class ErrorMessagesTest {
@@ -50,6 +51,8 @@ class ErrorMessagesTest {
         assertThat(ErrorMessages.forVoice(new VoiceException("Audio API returned 429: quota", 429)))
                 .isEqualTo("Il servizio vocale ha raggiunto il limite di richieste, o il credito è esaurito. Riprova tra poco.");
         assertThat(ErrorMessages.forVoice(new VoiceException("unreachable", new ConnectException())))
-                .contains("Speaches");
+                .contains("riavvia Jarvis");
+        assertThat(ErrorMessages.forVoice(new RuntimeException(new LocalVoiceException("La voce sul tuo PC non è pronta.", null))))
+                .isEqualTo("La voce sul tuo PC non è pronta.");
     }
 }

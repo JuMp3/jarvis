@@ -64,6 +64,12 @@ public final class SettingsCatalog {
                             new Choice("browser", "Browser", "Gratis, ma l'audio va a Google o Microsoft. Non "
                                     + "funziona nell'app desktop."),
                             new Choice("off", "Disattivata", "Solo messaggi scritti.")), null),
+            new Definition("jarvis.voice.local.stt-model", "jarvis.voice.local.stt-model", "Voce",
+                    "Trascrizione sul tuo PC", "Vale quando la trascrizione è «Sul tuo PC».", Kind.CHOICE,
+                    List.of(new Choice("small", "Più precisa", "Whisper small: capisce molto meglio, qualche secondo "
+                                    + "in più per frase."),
+                            new Choice("base", "Più veloce", "Whisper base: circa un secondo per frase, più errori.")),
+                    null),
             new Definition("JARVIS_VOICE_TTS", "jarvis.voice.tts", "Voce", "Chi dà la voce a Jarvis",
                     "Come Jarvis legge le risposte ad alta voce.", Kind.CHOICE,
                     List.of(new Choice("local", "Sul tuo PC", "Piper: gratis e privato."),
@@ -116,6 +122,7 @@ public final class SettingsCatalog {
         defaults.put("spring.ai.ollama.base-url", "http://localhost:11434");
         defaults.put("jarvis.voice.stt", "local");
         defaults.put("jarvis.voice.tts", "local");
+        defaults.put("jarvis.voice.local.stt-model", "small");
         defaults.put("jarvis.documents.folders[0]", System.getProperty("user.home") + "/.jarvis/documents");
         return defaults;
     }

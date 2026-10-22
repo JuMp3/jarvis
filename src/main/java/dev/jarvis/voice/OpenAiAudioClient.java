@@ -10,7 +10,7 @@ import java.time.Duration;
 
 /**
  * Speech-to-text and text-to-speech through the OpenAI audio API, or any server that implements it
- * (e.g. Speaches running locally), using only the JDK HTTP client.
+ * (e.g. the whisper.cpp server run by LocalVoice), using only the JDK HTTP client.
  */
 public class OpenAiAudioClient implements SpeechToText, TextToSpeech {
 

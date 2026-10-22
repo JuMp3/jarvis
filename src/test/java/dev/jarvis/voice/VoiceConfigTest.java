@@ -8,12 +8,13 @@ import dev.jarvis.config.JarvisProperties;
 import dev.jarvis.config.JarvisProperties.Voice;
 import dev.jarvis.config.JarvisProperties.Voice.AudioEndpoint;
 import dev.jarvis.config.JarvisProperties.Voice.Engine;
+import dev.jarvis.config.JarvisProperties.Voice.Local;
 
 class VoiceConfigTest {
 
     private static VoiceServices services(Engine stt, Engine tts, String openAiKey) {
         AudioEndpoint openai = new AudioEndpoint("https://api.openai.com/v1/", openAiKey, "stt", "tts", "onyx", "");
-        AudioEndpoint local = new AudioEndpoint("http://localhost:8000/v1/", "", "whisper", "piper", "paola", "");
+        Local local = new Local("missing-folder", "small", "it_IT-paola-medium", 1); // engines not installed: still configured
         Voice voice = new Voice(stt, tts, "it", openai, local, "jarvis");
         return new VoiceConfig().voiceServices(new JarvisProperties(null, null, voice, null, null, null, null, null, null));
     }

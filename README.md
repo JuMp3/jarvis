@@ -12,7 +12,7 @@ Requisiti: Java 25+, Docker (per PostgreSQL con pgvector), un browser recente. M
 
 Apri http://localhost:8080: al primo avvio un wizard chiede chiavi, voce, cartelle e account, e li salva nel database (i segreti cifrati, con la chiave in `~/.jarvis/master.key`). Puoi cambiarli quando vuoi dall'icona Impostazioni. Poi tieni premuto il microfono (o la barra spaziatrice) e parla.
 
-Chiavi, fornitori, voce, cartelle e posta stanno solo nel database: niente chiavi in `application.yml`, in `.env` o nelle variabili d'ambiente. `jarvis-local.yml` (da `jarvis-local.yml.example`) e `.env` servono solo in sviluppo, per ciò che non è nelle Impostazioni (database, porta, modelli, indirizzo di Speaches) e per `compose.yaml`.
+Chiavi, fornitori, voce, cartelle e posta stanno solo nel database: niente chiavi in `application.yml`, in `.env` o nelle variabili d'ambiente. `jarvis-local.yml` (da `jarvis-local.yml.example`) e `.env` servono solo in sviluppo, per ciò che non è nelle Impostazioni (database, porta, modelli, cartella della voce locale) e per `compose.yaml`.
 
 ### Voce
 
@@ -20,12 +20,10 @@ Trascrizione e sintesi si scelgono in Impostazioni → Voce, indipendentemente:
 
 | Valore | Motore | Note |
 |---|---|---|
-| `local` (default) | Speaches in Docker: Whisper `base` + Piper (voce Paola) | Gratis e privato. Parte con `compose.yaml`; al primo avvio scarica i modelli |
+| `local` (default) | Sul tuo PC: whisper.cpp (Whisper `small` o `base`) + Piper (voce Paola), avviati da Jarvis | Gratis e privato, niente Docker. Binari e modelli: `desktop/prepare-voice.ps1`, poi `JARVIS_VOICE_HOME` (in `.env`) verso `desktop/src-tauri/resources/voice` |
 | `openai` | API audio OpenAI | Qualità migliore, serve la chiave OpenAI (Impostazioni → Modelli) con credito |
-| `browser` | Web Speech API | Gratis, ma il riconoscimento manda l'audio a Google/Microsoft e l'orb non segue la voce reale |
+| `browser` | Web Speech API | Gratis, ma il riconoscimento manda l'audio a Google/Microsoft, non funziona nell'app desktop e l'orb non segue la voce reale |
 | `off` | — | Solo testo |
-
-Su reti aziendali che ispezionano il TLS (es. Netskope) Speaches non riesce a scaricare i modelli: metti un bundle di CA in `.certs/` (ignorata da git) e aggiungi `SPEACHES_CA_BUNDLE=/certs/<file>` alla `.env`.
 
 ## App desktop: come rigenerarla
 

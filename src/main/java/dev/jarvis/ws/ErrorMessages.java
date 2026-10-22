@@ -11,6 +11,7 @@ import com.openai.errors.OpenAIIoException;
 import com.openai.errors.OpenAIServiceException;
 
 import dev.jarvis.llm.ProviderId;
+import dev.jarvis.voice.LocalVoiceException;
 import dev.jarvis.voice.VoiceException;
 
 /**
@@ -35,8 +36,14 @@ public final class ErrorMessages {
     }
 
     static String forVoice(Throwable error) {
+        for (Throwable current = error; current != null; current = current.getCause()) {
+            if (current instanceof LocalVoiceException local) {
+                return local.getMessage(); // already written for the user
+            }
+        }
         if (isNetwork(error)) {
-            return "Non riesco a raggiungere il servizio vocale. Se è locale, verifica che Speaches sia avviato.";
+            return "Non riesco a raggiungere il servizio vocale. Se è quello sul tuo PC, riavvia Jarvis "
+                    + "(dettagli in ~/.jarvis/logs).";
         }
         return describe("Il servizio vocale", statusOf(error));
     }

@@ -15,3 +15,4 @@ desktop/src-tauri/gen/
 desktop/src-tauri/resources/backend/
 desktop/.cache/
 desktop/src-tauri/resources/postgres/
+desktop/src-tauri/resources/voice/

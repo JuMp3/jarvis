@@ -4,7 +4,7 @@ Assistente AI personale: backend Java (Spring Boot 4.1, Spring AI 2.0), frontend
 
 ## Stato attuale — leggere per primo
 
-Fasi 0 e 1 chiuse e verificate end-to-end con Claude: streaming, tool, approvazioni, memoria su PostgreSQL + pgvector, errori leggibili, turni interrotti e riconnessione, log strutturati. Voce: locale (Speaches: Whisper + Piper) e browser verificate end-to-end; OpenAI non provata (account senza credito). Ollama non provato. Fase 2 (squadra di agenti) fatta. Fase 3 fatta: approvazioni per conversazione, Programmatore (`coder`, Claude Code, push su autorizzazione), MCP (GitHub), Documenti, azioni desktop. Fase 3b fatta: wizard e Impostazioni su DB (segreti cifrati), riavvio interno, Organizer su Outlook.com verificato (anche invio email ed evento reali, 22/10/2026). Fase 4 fatta: mani libere (VAD nel browser), interruzione automatica, wake word. Fase 5 in corso: shell desktop Tauri fatta e verificata su Windows (backend incluso con runtime jlink, tray, istanza unica, job object) e Postgres 18 + pgvector inclusi, senza Docker (primo avvio con wizard verificato); prossimi passi voce nativa, installer, RAG. Requisito: tutto deve funzionare anche su macOS e Linux (tabella "Multipiattaforma" in `docs/ARCHITECTURE.md`).
+Fasi 0 e 1 chiuse e verificate end-to-end con Claude: streaming, tool, approvazioni, memoria su PostgreSQL + pgvector, errori leggibili, turni interrotti e riconnessione, log strutturati. Voce: locale (whisper.cpp + Piper avviati da Jarvis, prima Speaches) e browser verificate end-to-end; OpenAI non provata (account senza credito). Ollama non provato. Fase 2 (squadra di agenti) fatta. Fase 3 fatta: approvazioni per conversazione, Programmatore (`coder`, Claude Code, push su autorizzazione), MCP (GitHub), Documenti, azioni desktop. Fase 3b fatta: wizard e Impostazioni su DB (segreti cifrati), riavvio interno, Organizer su Outlook.com verificato (anche invio email ed evento reali, 22/10/2026). Fase 4 fatta: mani libere (VAD nel browser), interruzione automatica, wake word. Fase 5 in corso: shell desktop Tauri fatta e verificata su Windows (backend incluso con runtime jlink, tray, istanza unica, job object) e Postgres 18 + pgvector inclusi, senza Docker (primo avvio con wizard verificato); prossimi passi voce nativa, installer, RAG. Requisito: tutto deve funzionare anche su macOS e Linux (tabella "Multipiattaforma" in `docs/ARCHITECTURE.md`).
 
 Cose verificate su Spring AI 2.0.1, da non rifare:
 
@@ -13,7 +13,8 @@ Cose verificate su Spring AI 2.0.1, da non rifare:
 - `JdbcChatMemoryRepository` di Spring AI scarta i messaggi dei tool: per questo c'è `agent/PostgresChatMemoryRepository`.
 - `MessageWindowChatMemory` riscrive a ogni turno la conversazione con i soli ultimi messaggi: i più vecchi spariscono da `chat_message`. Per questo `AgentConfig` scrive ogni messaggio anche in `chat_archive` (solo in aggiunta), e il cestino dell'interfaccia svuota solo la finestra. Il RAG della Fase 5 legge l'archivio e i task, anche quelli nascosti dal pannello.
 - Un turno interrotto (barge-in, `cancel`, disconnessione, crash) lascia in memoria una domanda senza risposta o una chiamata a un tool senza risultato: il modello risponderebbe alla vecchia domanda, e Anthropic rifiuta con 400 ogni turno successivo. `InterruptedTurns` chiude la coda della conversazione, sia all'annullamento sia all'inizio di ogni turno.
-- Rete aziendale con Netskope: Speaches scarica i modelli solo con `SPEACHES_CA_BUNDLE` (vedi README), e su Git Bash i path dei container vanno passati con `MSYS_NO_PATHCONV=1`.
+- Rete aziendale con Netskope: i download degli script `prepare-*` usano `curl.exe --ssl-no-revoke` (Windows non raggiunge le liste di revoca dietro l'ispezione TLS). Su Git Bash i path dei container vanno passati con `MSYS_NO_PATHCONV=1`, ma con quella variabile anche i percorsi `/c/...` restano tali e i programmi Windows non li trovano: usare `C:/...`.
+- Voce locale: whisper.cpp (`whisper-server`, API OpenAI su `/v1/audio/transcriptions`) e Piper (`--json-input`, sempre acceso) li avvia Jarvis (`voice/LocalVoice`, `PiperTts`), sia in sviluppo sia nell'app desktop. whisper-server legge solo WAV (senza ffmpeg): il browser manda sempre WAV a 16 kHz (`capture.js`). La prima trascrizione dopo il caricamento costa circa il doppio: `LocalVoice` la fa a vuoto all'avvio. `small` capisce molto meglio di `base` ma su questo portatile impiega circa 5 s per una frase di 3 s (`base` circa 1 s); 4 thread valgono quanto 8. Per misurare, controllare sempre che il testo trascritto non sia vuoto: un server non partito sembra "veloce".
 - Claude Code come processo: `--bare` (niente hook o plugin dell'utente, auth solo con `ANTHROPIC_API_KEY`) più `--restricted`; il prompt passa da stdin e il system prompt da file, per evitare il quoting degli argomenti su Windows. Con `--allowedTools` le regole sono pattern `Bash(cmd:*)`; i comandi non consentiti vengono negati senza chiedere.
 - Impostazioni: una nuova voce va in `SettingsCatalog`, con il nome uguale alla chiave di configurazione e il suo default in `SettingsCatalog.defaults()`, mai in `application.yml` (che tiene solo la configurazione del prodotto: specialisti, prompt, tool MCP di GitHub, limiti). Posta e Organizer li scrive nel DB `MailTemplates` quando l'utente sceglie la casella. Nei test `jarvis.settings.enabled=false` (BaseTest), altrimenti le impostazioni del DB di sviluppo entrerebbero nel contesto.
 - Server MCP stdio: il trasporto dell'SDK accetta una sola connessione (un nuovo tentativo richiede un client nuovo) e su Windows chiude solo `cmd.exe`, lasciando vivi `npx` e il server: per questo `McpTools` crea da sé i client stdio con `TreeClosingStdioTransport`. Il limite di inizializzazione dell'SDK (20 s) è troppo stretto per un `npx` a freddo.
@@ -29,7 +30,7 @@ Da verificare con l'utente:
 
 Valutazioni aperte (dettagli in `docs/ARCHITECTURE.md`, sezione "Valutazione: trascrizione in streaming e modelli speech-to-speech"):
 - **Qualità di trascrizione e voce** (l'utente vuole completarla più avanti): confronto dei motori e ordine consigliato in `docs/ARCHITECTURE.md`, sezione "Valutazione: motori di trascrizione e di voce". Primo passo: credito OpenAI e prova di `openai` in entrambe le direzioni (mai provato dal vivo); poi Groq per la trascrizione.
-- Trascrizione in streaming durante la frase (Speaches): il prossimo guadagno di latenza, circa 2 s su 5.
+- Trascrizione in streaming durante la frase: il prossimo guadagno di latenza (whisper.cpp ha anche un esempio `stream`).
 - Modello realtime speech-to-speech solo come "voce veloce" opzionale, non al posto di Claude come orchestratore.
 - Calendario per le caselle `imap` (CalDAV); Google con OAuth completo solo quando Jarvis avrà una propria app Google verificata.
 
@@ -51,7 +52,7 @@ JARVIS_BACKEND_URL=http://localhost:8080 ./target/debug/jarvis-desktop.exe # she
 
 Rigenerare l'app desktop (cosa rifare quando cambia cosa, build di rilascio e installer): sezione "App desktop: come rigenerarla" del `README.md`.
 
-Configurazione: chiavi, fornitori, voce, cartelle e posta solo nel database, dal wizard e dalle Impostazioni (`SettingsCatalog`); `application.yml` ha per queste voci solo i default, senza variabili d'ambiente. `.env` e `jarvis-local.yml` (ignorati da git) restano per lo sviluppo: database, porta, modelli, Speaches, e `compose.yaml`.
+Configurazione: chiavi, fornitori, voce, cartelle e posta solo nel database, dal wizard e dalle Impostazioni (`SettingsCatalog`); `application.yml` ha per queste voci solo i default, senza variabili d'ambiente. `.env` e `jarvis-local.yml` (ignorati da git) restano per lo sviluppo: database, porta, modelli, cartella della voce locale (`JARVIS_VOICE_HOME`), e `compose.yaml`.
 
 ## Struttura
 
@@ -68,7 +69,8 @@ src/main/java/dev/jarvis/
   settings/     SettingsService, SettingsCatalog, MailTemplates, SecretBox (AES-GCM), MasterKey,
                 DatabaseSettingsSource + SettingsEnvironmentPostProcessor (impostazioni su DB all'avvio)
   mail/         MailClient (IMAP/SMTP, Jakarta Mail), MailServers (server dal dominio dell'indirizzo)
-  voice/        SpeechToText, TextToSpeech, OpenAiAudioClient (solo JDK HTTP, OpenAI o Speaches),
+  voice/        SpeechToText, TextToSpeech, OpenAiAudioClient (solo JDK HTTP, OpenAI o whisper.cpp), LocalVoice e
+                PiperTts (voce sul tuo PC),
                 SentenceChunker, AudioFormats, Multipart, Json, VoiceServices, VoiceConfig (motore per direzione)
   task/         TaskService (coda, parallelismo, timeout, annullamento, approvazioni), TaskRepository,
                 AgentTask, TaskContext, TaskFailure, Specialists (jarvis.agents.*), ChatSpecialist,

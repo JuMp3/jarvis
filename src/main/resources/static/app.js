@@ -44,8 +44,8 @@ const audio = {
   micAnalyser: null,
   outAnalyser: null,
   stream: null,
-  recorder: null,
-  chunks: [],
+  capture: null,
+  processor: null,
   startedAt: 0,
   queue: new Map(),
   nextSeq: 0,
@@ -214,12 +214,20 @@ async function openMicrophone() {
     audio.micAnalyser.fftSize = 512;
     audio.micSource = ctx.createMediaStreamSource(audio.stream);
     audio.micSource.connect(audio.micAnalyser);
+    // Every recording goes through raw samples, sent as a 16 kHz WAV: the local whisper.cpp reads only WAV, and the
+    // last moments before the start are kept (capture.js). ScriptProcessorNode is deprecated but everywhere;
+    // AudioWorklet would need a module of its own.
+    audio.capture = new SpeechCapture(ctx.sampleRate);
+    audio.processor = ctx.createScriptProcessor(2048, 1, 1);
+    audio.processor.onaudioprocess = (event) => audio.capture.push(event.inputBuffer.getChannelData(0).slice());
+    audio.micSource.connect(audio.processor);
+    audio.processor.connect(ctx.destination); // silent output: a processor only runs when connected
   }
 }
 
 // ---- hands-free: the voice detector starts and stops the recording ------------------------------
 
-const handsFree = { detector: null, timer: null, capture: null, processor: null };
+const handsFree = { detector: null, timer: null };
 const ECHO_SENSITIVITY = 2.5; // while Jarvis speaks, only a clearly louder voice interrupts him
 
 async function startHandsFree() {
@@ -231,14 +239,6 @@ async function startHandsFree() {
     return;
   }
   handsFree.detector = new VoiceDetector();
-  // Raw samples instead of MediaRecorder, to keep the moments before the detector fires (see capture.js).
-  // ScriptProcessorNode is deprecated but everywhere; AudioWorklet would need a module of its own.
-  const ctx = audioContext();
-  handsFree.capture = new SpeechCapture(ctx.sampleRate);
-  handsFree.processor = ctx.createScriptProcessor(2048, 1, 1);
-  handsFree.processor.onaudioprocess = (event) => handsFree.capture.push(event.inputBuffer.getChannelData(0).slice());
-  audio.micSource.connect(handsFree.processor);
-  handsFree.processor.connect(ctx.destination); // silent output: a processor only runs when connected
   // ?vad in the address shows the live levels, to tune vad.js and ECHO_SENSITIVITY on a real microphone
   const readout = new URLSearchParams(location.search).has('vad')
     && document.body.appendChild(Object.assign(document.createElement('pre'),
@@ -264,9 +264,6 @@ function stopHandsFree() {
   clearInterval(handsFree.timer);
   handsFree.timer = null;
   if (ui.recording) stopRecording();
-  handsFree.processor?.disconnect();
-  audio.micSource?.disconnect(handsFree.processor);
-  handsFree.processor = handsFree.capture = null;
   setState(ui.state);
 }
 
@@ -312,18 +309,7 @@ async function startRecording() {
       return;
     }
     audio.startedAt = performance.now();
-    if (handsFree.capture) {
-      handsFree.capture.start();
-      setState('listening');
-      return;
-    }
-    const mimeType = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4']
-      .find((type) => MediaRecorder.isTypeSupported(type));
-    audio.recorder = new MediaRecorder(audio.stream, mimeType ? { mimeType } : undefined);
-    audio.chunks = [];
-    audio.recorder.ondataavailable = (event) => event.data.size && audio.chunks.push(event.data);
-    audio.recorder.onstop = sendRecording;
-    audio.recorder.start();
+    audio.capture.start();
     setState('listening');
   } catch (e) {
     ui.recording = false;
@@ -383,17 +369,9 @@ function stopRecording() {
     audio.recognition.stop(); // the final result arrives before onend
     return;
   }
-  if (handsFree.capture?.recording) {
-    sendAudio(handsFree.capture.stop());
-    return;
+  if (audio.capture?.recording) {
+    sendAudio(audio.capture.stop());
   }
-  if (audio.recorder && audio.recorder.state === 'recording') {
-    audio.recorder.stop();
-  }
-}
-
-async function sendRecording() {
-  sendAudio(await new Blob(audio.chunks, { type: audio.recorder.mimeType }).arrayBuffer());
 }
 
 function sendAudio(buffer) {

@@ -197,13 +197,12 @@ jarvis:
     # Hands-free with wake word: only phrases that start with it reach the model
     wake-word: jarvis
     local:
-      base-url: ${JARVIS_SPEACHES_URL:http://localhost:8000/v1/}
-      # Measured on a laptop CPU for a 2.5 s phrase: base ~2 s, small ~5.5 s but more accurate (names, rare words).
-      # Keep PRELOAD_MODELS in compose.yaml in sync.
-      stt-model: Systran/faster-whisper-base
-      # Alternative, more natural but ~5x slower on CPU: speaches-ai/Kokoro-82M-v1.0-ONNX / im_nicola, if_sara
-      tts-model: speaches-ai/piper-it_IT-paola-medium
-      tts-voice: paola
+      # whisper.cpp and Piper, run by Jarvis (LocalVoice): binaries and models prepared by desktop/prepare-voice.ps1.
+      # The desktop app passes its own folder; in development point JARVIS_VOICE_HOME to the prepared one.
+      home: ${JARVIS_VOICE_HOME:${user.home}/.jarvis/voice}
+      # stt-model (small or base): Settings → Voce. Measured on a laptop CPU for a 6 s phrase: base 1.2 s, small 3.3 s
+      # but far fewer mistakes
+      tts-voice: it_IT-paola-medium
     openai:
       # api-key: the OpenAI key of Settings
       base-url: https://api.openai.com/v1/

@@ -17,7 +17,7 @@ Assistente AI personale con backend Java (Spring Boot 4.1 + Spring AI 2.0), più
 │  agent/   AgentService (ChatClient + memoria + tool) · ApprovalService · tools/        │
 │  task/    TaskService · Specialists · TaskTools (squadra di agenti in background)      │
 │  llm/     ProviderRouter → un ChatClient per provider (Anthropic · OpenAI · Ollama)    │
-│  voice/   SpeechToText · TextToSpeech (API audio OpenAI o Speaches locale) · Chunker   │
+│  voice/   SpeechToText · TextToSpeech (API audio OpenAI, o whisper.cpp + Piper) · Chunker│
 │  config/  JarvisProperties (prefisso "jarvis")                                         │
 └────────────────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -33,15 +33,15 @@ Il frontend gestisce tutto ciò che è audio e grafica; il backend coordina tutt
 | `AgentService` | Un turno di conversazione: prompt utente → streaming della risposta, con memoria (`conversationId`) e tool. Il ciclo tool → risultato → passo successivo lo esegue Spring AI. |
 | `ApprovalService` | I tool che modificano qualcosa chiedono conferma all'utente e attendono la risposta (con timeout: nessuna risposta = negato). |
 | `tools/` | `SystemTools` (sola lettura) e `NoteTools` (scrittura in una cartella sandbox, previa approvazione). Esempi del pattern da seguire per tutti i tool futuri. |
-| `SpeechToText` / `TextToSpeech` | Interfacce, implementate da `OpenAiAudioClient` (solo `java.net.http`) verso l'API audio OpenAI o verso Speaches in locale, che espone la stessa API. `VoiceConfig` sceglie il motore per direzione da `jarvis.voice.stt` / `jarvis.voice.tts` (`local` · `openai` · `browser` · `off`); con `browser` il server non interviene e il client usa la Web Speech API. |
+| `SpeechToText` / `TextToSpeech` | Interfacce, implementate da `OpenAiAudioClient` (solo `java.net.http`) verso l'API audio OpenAI o verso whisper.cpp in locale, che espone la stessa API; la voce locale è `PiperTts`, entrambi avviati da `LocalVoice`. `VoiceConfig` sceglie il motore per direzione da `jarvis.voice.stt` / `jarvis.voice.tts` (`local` · `openai` · `browser` · `off`); con `browser` il server non interviene e il client usa la Web Speech API. |
 | `SentenceChunker` | Spezza lo stream di token in frasi complete, così il TTS parte alla prima frase invece di aspettare la risposta intera. |
 | `TurnService` | Collega tutto per un turno: stato → token → frasi → audio ordinato → fine. Gestisce l'annullamento (barge-in). Gli errori diventano frasi brevi in italiano (`ErrorMessages`), pronunciate se il turno è vocale; il dettaglio resta nei log. |
 | `InterruptedTurns` | Chiude la coda di una conversazione interrotta: risultato fittizio per le chiamate ai tool rimaste aperte e risposta parziale marcata come interrotta. Gira all'annullamento e all'inizio di ogni turno, così copre anche i crash. |
 
 ## Flusso vocale
 
-1. L'utente tiene premuto il tasto microfono (o la barra spaziatrice): il browser registra con `MediaRecorder` e l'orb va in `listening` seguendo il livello del microfono.
-2. Al rilascio, l'audio (webm/opus) parte come frame **binario** sul WebSocket.
+1. L'utente tiene premuto il tasto microfono (o la barra spaziatrice): il browser registra i campioni del microfono (`capture.js`, con gli ultimi 600 ms prima dell'inizio) e l'orb va in `listening` seguendo il livello del microfono.
+2. Al rilascio, l'audio (WAV mono a 16 kHz, il formato di Whisper e l'unico che whisper.cpp legge senza ffmpeg) parte come frame **binario** sul WebSocket.
 3. Il backend lo trascrive (`SpeechToText`) e rimanda `transcript`.
 4. `AgentService` avvia lo streaming verso il provider selezionato; l'orb va in `thinking`.
 5. Ogni token va al client (`token`) e al `SentenceChunker`.
@@ -60,7 +60,7 @@ Il frontend gestisce tutto ciò che è audio e grafica; il backend coordina tutt
 
 ### Valutazione: trascrizione in streaming e modelli speech-to-speech
 
-- **STT in streaming.** Oggi l'audio parte a frase finita. Trascrivere mentre parli sovrappone i circa 2 s di Whisper alla frase stessa: è il guadagno più grande disponibile senza cambiare modello. Speaches offre trascrizione in streaming e una Realtime API; servirebbe inviare l'audio a pezzi durante la registrazione (PCM via WebSocket) invece di un file a fine frase. È il prossimo passo consigliato.
+- **STT in streaming.** Oggi l'audio parte a frase finita. Trascrivere mentre parli sovrappone i circa 2 s di Whisper alla frase stessa: è il guadagno più grande disponibile senza cambiare modello. whisper.cpp ha un esempio di trascrizione in streaming; servirebbe inviare l'audio a pezzi durante la registrazione (PCM via WebSocket) invece di un file a fine frase. È il prossimo passo consigliato.
 - **Speech-to-speech realtime** (per esempio la Realtime API di OpenAI). Pro: latenza sotto il secondo, prosodia naturale, interruzioni gestite dal modello. Contro: un solo fornitore e un solo modello per tutto, cioè niente Claude come orchestratore, e la squadra, i tool e le approvazioni andrebbero riportati su un'altra API; l'audio va sempre in cloud; costo al minuto di audio più alto di STT + testo + TTS. Conclusione: la pipeline attuale resta la base; un modello realtime ha senso come "voce veloce" opzionale per le risposte brevi, che passa la mano a Jarvis quando servono strumenti o specialisti. Da rivalutare dopo lo streaming STT.
 
 Latenza percepita ≈ trascrizione + primo token + TTS della prima frase. Le leve principali sono un modello più veloce per la voce, frasi iniziali brevi e, più avanti, STT in streaming.
@@ -76,7 +76,7 @@ Trascrizione (STT):
 | OpenAI `gpt-4o-mini-transcribe` · `gpt-4o-transcribe` | **già integrato** (`jarvis.voice.openai.stt-model`) | Il salto più semplice da Whisper `base`; pochi centesimi per ora di parlato. Mai provato dal vivo (account senza credito): primo passo quando c'è credito |
 | Groq, `whisper-large-v3-turbo` | quasi nulla: API compatibile OpenAI, basta cambiare `jarvis.voice.openai.base-url` e modello (oggi non è nelle Impostazioni) | Il Whisper più grande, molto veloce ed economico |
 | Deepgram, AssemblyAI, ElevenLabs Scribe, Azure Speech | client nuovo per ciascuno | Ottimo italiano e trascrizione in streaming: da valutare insieme allo STT in streaming |
-| Whisper `small` locale (Speaches) | solo configurazione | Gratis e privato, molto meno errori di `base`, ma circa 5,5 s invece di 2 s per frase su questo portatile; con una GPU `large-v3-turbo` |
+| Whisper `small` locale (whisper.cpp) | **fatto**, è il predefinito (Impostazioni → Voce → Trascrizione sul tuo PC) | Gratis e privato, molto meno errori di `base`, ma circa 5 s invece di 1 s per una frase di 3 s su questo portatile; con una GPU `large-v3-turbo` (binari CUDA di whisper.cpp) |
 
 Voce (TTS):
 
@@ -85,7 +85,9 @@ Voce (TTS):
 | OpenAI `gpt-4o-mini-tts` | **già integrato** (voce `onyx`, `tts-instructions` per il tono) | Molto più naturale di Piper, costo basso; mai provato dal vivo |
 | ElevenLabs | client nuovo | La qualità migliore, buone voci italiane, il più caro |
 | Azure Neural (es. Isabella, Diego) | client nuovo | Ottimo italiano, economico |
-| Kokoro locale (Speaches) | solo configurazione | Gratis, più naturale di Piper, circa 5 volte più lento su CPU |
+| Kokoro locale | da integrare (non c'è in Piper) | Gratis, più naturale di Piper, circa 5 volte più lento su CPU |
+
+Prova dell'utente (22/10/2026), con la voce vera: Whisper `small` locale capisce molto meglio di `base`, ma impiega qualche secondo; "Browser" (Chrome/Edge) è molto veloce e capisce bene, però manda l'audio a Google o Microsoft e non funziona nell'app desktop. La scelta definitiva è rimandata.
 
 Ordine consigliato: (1) credito OpenAI e prova di entrambe le direzioni, misurando latenza e qualità con le stesse frasi; (2) se la trascrizione non basta, Groq, che entra a costo quasi zero (eventualmente rendere `base-url` e modelli selezionabili nelle Impostazioni); (3) i servizi con client proprio solo insieme allo STT in streaming. Per l'app desktop (Fase 5) la voce locale inclusa resta whisper.cpp + Piper; i motori cloud sono un'alternativa a pagamento scelta nelle Impostazioni.
 
@@ -254,7 +256,8 @@ Jarvis va installato su un PC, dove un file `.env` non è una soluzione: le impo
 - **Voce nella finestra desktop:** WebView2 ha l'interfaccia del riconoscimento vocale ma non il servizio online dietro, e fallisce sempre con `network`: la pagina riconosce la finestra desktop (`window.chrome.webview`) e non offre la trascrizione "Browser", spiegando cosa scegliere. La sintesi "Browser" funziona, con le voci installate nel sistema.
 - **Rilascio:** `npx tauri build` produce l'eseguibile ottimizzato e l'installer NSIS (circa 180 MB); come e quando rigenerarli è nel `README.md`.
 - **Sviluppo:** `JARVIS_BACKEND_URL=http://localhost:8080` collega la shell a un backend già acceso (`./mvnw spring-boot:run`) invece di avviare quello incluso.
-- **Prossimi passi della fase:** voce locale nativa, installer NSIS completo, RAG.
+- **Voce locale:** whisper.cpp e Piper li avvia il backend (`LocalVoice`), quindi la shell passa solo la cartella (`JARVIS_VOICE_HOME`, `src-tauri/resources/voice`: circa 430 MB, quasi tutti modelli: Whisper `small` quantizzato e `base`, voce Paola).
+- **Prossimi passi della fase:** installer NSIS completo, RAG.
 
 ### Multipiattaforma
 
@@ -267,6 +270,7 @@ Ogni funzione va pensata per Windows, macOS e Linux; oggi è provata solo su Win
 | Build del backend | `prepare-backend.ps1` | script equivalente (bash) o build Maven |
 | Postgres incluso | binari EDB + pgvector con Visual Studio (`prepare-postgres.ps1`) | binari per macOS e Linux (EDB per macOS, o una build portabile) e pgvector con `make`; `database.rs` è già comune |
 | Installer | NSIS | `.dmg` (macOS), AppImage / `.deb` (Linux), da Tauri |
+| Voce locale | whisper.cpp (binari ufficiali per Windows) e Piper (`prepare-voice.ps1`) | Piper ha binari per macOS e Linux; whisper.cpp per macOS e Linux va compilato con `cmake` (gli eseguibili si chiamano uguali, senza `.exe`: `LocalVoice` lo gestisce) |
 | Server MCP con npx | `npx.cmd` (`MailTemplates`) | `npx` (già previsto) |
 | Avvio automatico | registro di Windows (plugin autostart) | LaunchAgent macOS, `.desktop` Linux (stesso plugin) |
 
@@ -278,14 +282,14 @@ iOS (e Android) non possono eseguire il backend: sarebbero un'app client collega
 - **Posta e Organizer:** connessione MCP, tool di lettura e scrittura e lo specialista `organizer` (descrizione, modello, tool, system prompt) li definisce `MailTemplates` e li scrive nel DB quando si sceglie la casella; cambiandola si riscrivono.
 - **App del desktop:** scheda App, una riga per app (nome, programma, argomenti separati da spazi, `{target}` per il file o la cartella). Salvate come JSON in una riga, al caricamento diventano `jarvis.desktop.apps.<id>.command[i]` (`SettingsRows.expandApps`, id dal nome); `DesktopTools` non cambia.
 - **Programmatore senza cartelle:** finché non c'è una cartella dei repository lo specialista `coder` resta spento, con un avviso nel log, invece di bloccare l'avvio.
-- `application.yml` usa variabili d'ambiente solo per ciò che serve prima del database o non è nelle Impostazioni: connessione al database, porta, modelli, indirizzo di Speaches. In sviluppo si possono mettere in `jarvis-local.yml` o `.env` (in `.gitignore`, importati con `spring.config.import`).
+- `application.yml` usa variabili d'ambiente solo per ciò che serve prima del database o non è nelle Impostazioni: connessione al database, porta, modelli, cartella della voce locale (`JARVIS_VOICE_HOME`). In sviluppo si possono mettere in `jarvis-local.yml` o `.env` (in `.gitignore`, importati con `spring.config.import`).
 - Una chiave non ancora salvata vale `not-configured`, così Spring AI parte e il wizard può comparire; le Impostazioni la mostrano come non impostata.
 
 ## Decisioni
 
 1. **Spring Boot 4.1 + Spring AI 2.0.** Astrazione multi-provider, tool calling, memoria come advisor e supporto MCP maturo.
 2. **Audio nel browser, non in Java.** Web Audio API per cattura, riproduzione e analisi del livello; il backend riceve e invia solo byte.
-3. **STT/TTS con HTTP diretto** invece delle API audio di Spring AI. Il modulo OpenAI è stato riscritto nella 2.0; tenere l'audio dietro interfacce nostre con il solo JDK riduce le dipendenze. I motori locali passano da Speaches, che espone l'API audio OpenAI: stesso client, cambia solo l'indirizzo.
+3. **STT/TTS con HTTP diretto** invece delle API audio di Spring AI. Il modulo OpenAI è stato riscritto nella 2.0; tenere l'audio dietro interfacce nostre con il solo JDK riduce le dipendenze. La trascrizione locale passa da whisper.cpp, che espone l'API audio OpenAI: stesso client, cambia solo l'indirizzo; la voce locale (Piper) ha una classe sua.
 4. **Approvazione dentro i tool.** Funziona con il ciclo automatico di Spring AI e mette la regola di sicurezza accanto al codice che la richiede.
 5. **TTS sequenziale per turno.** Ordine garantito senza complessità; la parallelizzazione con riordino lato client è un'ottimizzazione successiva (il campo `seq` è già previsto).
 6. **Orchestrazione: delega come tool.** Un solo tool `startTask` con l'id dello specialista, invece di un tool per specialista: stesso effetto, nessun `ToolCallback` generato a runtime. Gli specialisti partono con un contesto pulito, delegano su un solo livello, e chi legge contenuti non fidati non può scrivere. Tutti i lavori delegati girano in background, così la conversazione vocale non si blocca mai.

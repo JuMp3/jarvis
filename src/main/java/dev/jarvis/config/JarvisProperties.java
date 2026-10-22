@@ -110,15 +110,15 @@ public record JarvisProperties(Providers providers, Agent agent, Voice voice, Ta
      *
      * @param language ISO 639-1 code passed to the engines (e.g. "it")
      * @param openai   OpenAI audio API
-     * @param local    OpenAI-compatible server on this machine (Speaches, see compose.yaml)
+     * @param local    engines run by Jarvis on this machine (whisper.cpp and Piper, see LocalVoice)
      */
-    public record Voice(Engine stt, Engine tts, String language, AudioEndpoint openai, AudioEndpoint local,
+    public record Voice(Engine stt, Engine tts, String language, AudioEndpoint openai, Local local,
                         String wakeWord) {
 
         public enum Engine {
             /** OpenAI audio API, needs an API key with credit. */
             OPENAI,
-            /** Local OpenAI-compatible server. */
+            /** whisper.cpp and Piper on this machine. */
             LOCAL,
             /** Web Speech API in the browser: the server is not involved. */
             BROWSER,
@@ -132,6 +132,15 @@ public record JarvisProperties(Providers providers, Agent agent, Voice voice, Ta
          */
         public record AudioEndpoint(String baseUrl, String apiKey, String sttModel, String ttsModel,
                                     String ttsVoice, String ttsInstructions) {
+        }
+
+        /**
+         * @param home     folder with whisper/, piper/ and models/ (desktop/prepare-voice.ps1)
+         * @param sttModel "small" (more precise) or "base" (faster)
+         * @param ttsVoice Piper voice, a file of models/ without .onnx
+         * @param threads  for whisper.cpp; null: 4 (or fewer processors)
+         */
+        public record Local(String home, String sttModel, String ttsVoice, Integer threads) {
         }
     }
 }

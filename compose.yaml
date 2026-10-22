@@ -1,5 +1,6 @@
-# Local services. Started automatically by `mvn spring-boot:run` (Spring Boot Docker Compose support);
-# with `java -jar` run `docker compose up -d` first.
+# Local services for development. Started automatically by `mvn spring-boot:run` (Spring Boot Docker Compose
+# support); with `java -jar` run `docker compose up -d` first. The desktop app needs none of this: it ships its own
+# PostgreSQL, and the local voice (whisper.cpp, Piper) is run by Jarvis itself.
 services:
   postgres:
     image: pgvector/pgvector:pg18
@@ -13,30 +14,5 @@ services:
     volumes:
       - jarvis-pgdata:/var/lib/postgresql
 
-  # Local speech-to-text and text-to-speech with an OpenAI-compatible API (jarvis.voice.stt/tts = local)
-  speaches:
-    image: ghcr.io/speaches-ai/speaches:latest-cpu
-    environment:
-      ENABLE_UI: "false"
-      # Models named in application.yml (jarvis.voice.local); downloaded once into the volume
-      PRELOAD_MODELS: '["Systran/faster-whisper-base","speaches-ai/piper-it_IT-paola-medium"]'
-      # Keep models in memory: reloading them would add seconds to the first sentence
-      STT_MODEL_TTL: "-1"
-      TTS_MODEL_TTL: "-1"
-      # Corporate networks that inspect TLS: put a CA bundle in .certs/ (git-ignored) and set
-      # SPEACHES_CA_BUNDLE=/certs/<file> in .env. Xet downloads ignore that bundle, so they are disabled.
-      HF_HUB_DISABLE_XET: "1"
-      REQUESTS_CA_BUNDLE: ${SPEACHES_CA_BUNDLE:-}
-    ports:
-      - "127.0.0.1:8000:8000"
-    volumes:
-      - speaches-models:/home/ubuntu/.cache/huggingface/hub
-      - ./.certs:/certs:ro
-    labels:
-      # Jarvis starts without waiting: model downloads can take minutes the first time
-      org.springframework.boot.readiness-check.tcp.disable: "true"
-
 volumes:
   jarvis-pgdata:
-  speaches-models:
-    name: jarvis-hf-cache

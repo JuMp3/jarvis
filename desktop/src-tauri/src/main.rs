@@ -129,6 +129,8 @@ fn start_backend(app: &AppHandle, window: &WebviewWindow) -> Result<(), String> 
         .env("JARVIS_DB_URL", format!("jdbc:postgresql://127.0.0.1:{}/{}", database::PORT, database::NAME))
         .env("JARVIS_DB_USER", database::USER)
         .env("JARVIS_DB_PASSWORD", password)
+        // The backend runs whisper.cpp and Piper itself (LocalVoice): it only needs where they are
+        .env("JARVIS_VOICE_HOME", resources.join("voice"))
         .stdin(Stdio::null())
         .stdout(console.try_clone().map_err(|e| e.to_string())?)
         .stderr(console);
