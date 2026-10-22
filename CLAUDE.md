@@ -36,7 +36,6 @@ Jarvis orchestra una squadra di specialisti in background (sezione "Orchestrazio
 Ordine proposto: 1 → 2 → 3 → 5 → 6, poi 4 con una prova di qualità.
 
 Altro rimasto aperto:
-- Disco virtuale di Docker (Rancher Desktop, `distro-data/ext4.vhdx`, 43 GB per 19 GB usati): il trim è fatto ma il disco non è sparse e senza amministratore non si compatta. Strada possibile senza admin: `wsl --export rancher-desktop-data` → verifica del backup → `--unregister` → `--import` (dentro ci sono anche i database dell'altro progetto: solo con un backup verificato). Non urgente: Docker riusa lo spazio libero.
 - Prova dell'installer da parte dell'utente; rigenerarlo per avere anche il Node incluso.
 
 Da verificare con l'utente:
