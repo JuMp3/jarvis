@@ -44,6 +44,12 @@ select {
   color: inherit;
 }
 
+/* Thin scrollbars in the palette: the desktop window (WebView2) would show the wide system ones */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--line) transparent;
+}
+
 :focus-visible {
   outline: 2px solid var(--lamp);
   outline-offset: 3px;

@@ -1,6 +1,7 @@
 package dev.jarvis.agent;
 
 import java.util.List;
+import java.util.Optional;
 
 import org.springframework.ai.chat.memory.ChatMemoryRepository;
 import org.springframework.ai.chat.messages.AssistantMessage;
@@ -71,6 +72,16 @@ public class PostgresChatMemoryRepository implements ChatMemoryRepository {
                             toolCalls(message), toolResponses(message))
                     .update();
         }
+    }
+
+    /** The conversation with the most recent message, to resume it in a page that has none yet. */
+    public Optional<String> latestConversationId() {
+        return jdbc.sql("SELECT conversation_id FROM chat_archive ORDER BY id DESC LIMIT 1").query(String.class).optional();
+    }
+
+    public boolean hasMessages(String conversationId) {
+        return jdbc.sql("SELECT EXISTS (SELECT 1 FROM chat_archive WHERE conversation_id = ?)")
+                .param(conversationId).query(Boolean.class).single();
     }
 
     /** Appends messages to the permanent archive of the conversation. */

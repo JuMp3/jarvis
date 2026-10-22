@@ -1,0 +1,24 @@
+[package]
+name = "jarvis-desktop"
+version = "0.5.0"
+description = "Jarvis desktop shell: starts the backend and shows it in a window, with a tray icon"
+edition = "2021"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-single-instance = "2"
+tauri-plugin-autostart = "2"
+
+# The backend and everything it starts die with the shell: a job object on Windows, a process group elsewhere
+[target.'cfg(windows)'.dependencies]
+win32job = "2"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[profile.release]
+strip = true
+lto = true

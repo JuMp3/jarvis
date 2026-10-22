@@ -40,8 +40,9 @@ public final class Protocol {
      * @param language ISO 639-1 code for the browser engines
      */
     /** @param setupRequired true until the wizard has been completed once */
+    /** @param conversation the conversation of this connection: the page keeps it for the next ones */
     public record Hello(String type, List<String> providers, String defaultProvider, String stt, String tts,
-                        String language, String wakeWord, boolean setupRequired) {
+                        String language, String wakeWord, boolean setupRequired, String conversation) {
     }
 
     public record Settings(String type, List<SettingsService.View> settings, boolean setupRequired) {
@@ -127,8 +128,8 @@ public final class Protocol {
     }
 
     public static Hello hello(List<String> providers, String defaultProvider, String stt, String tts,
-                              String language, String wakeWord, boolean setupRequired) {
-        return new Hello("hello", providers, defaultProvider, stt, tts, language, wakeWord, setupRequired);
+                              String language, String wakeWord, boolean setupRequired, String conversation) {
+        return new Hello("hello", providers, defaultProvider, stt, tts, language, wakeWord, setupRequired, conversation);
     }
 
     public static Settings settings(List<SettingsService.View> settings, boolean setupRequired) {

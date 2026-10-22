@@ -75,6 +75,16 @@ class PostgresChatMemoryRepositoryTest extends BaseTest {
     }
 
     @Test
+    void theLatestConversationIsTheOneWithTheMostRecentMessage() {
+        chatMemory.add("conv-older", turnWithTool());
+        chatMemory.add("conv-newer", List.of(UserMessage.builder().text("Ciao").build()));
+
+        assertThat(repository.latestConversationId()).contains("conv-newer");
+        assertThat(repository.hasMessages("conv-older")).isTrue();
+        assertThat(repository.hasMessages("conv-never-used")).isFalse();
+    }
+
+    @Test
     void theArchiveKeepsWhatTheWindowDropsAndWhatClearingRemoves() {
         for (int turn = 0; turn < 10; turn++) {
             chatMemory.add("conv-archive", turnWithTool()); // 40 messages, more than the window keeps

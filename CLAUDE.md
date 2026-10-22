@@ -4,7 +4,7 @@ Assistente AI personale: backend Java (Spring Boot 4.1, Spring AI 2.0), frontend
 
 ## Stato attuale — leggere per primo
 
-Fasi 0 e 1 chiuse e verificate end-to-end con Claude: streaming, tool, approvazioni, memoria su PostgreSQL + pgvector, errori leggibili, turni interrotti e riconnessione, log strutturati. Voce: locale (Speaches: Whisper + Piper) e browser verificate end-to-end; OpenAI non provata (account senza credito). Ollama non provato. Fase 2 (squadra di agenti) fatta. Fase 3 fatta: approvazioni per conversazione, Programmatore (`coder`, Claude Code, push su autorizzazione), MCP (GitHub), Documenti, azioni desktop. Fase 3b fatta: wizard e Impostazioni su DB (segreti cifrati), riavvio interno, Organizer su Outlook.com verificato (anche invio email ed evento reali, 22/10/2026). Fase 4 fatta: mani libere (VAD nel browser), interruzione automatica, wake word. Prossima: Fase 5 (app desktop).
+Fasi 0 e 1 chiuse e verificate end-to-end con Claude: streaming, tool, approvazioni, memoria su PostgreSQL + pgvector, errori leggibili, turni interrotti e riconnessione, log strutturati. Voce: locale (Speaches: Whisper + Piper) e browser verificate end-to-end; OpenAI non provata (account senza credito). Ollama non provato. Fase 2 (squadra di agenti) fatta. Fase 3 fatta: approvazioni per conversazione, Programmatore (`coder`, Claude Code, push su autorizzazione), MCP (GitHub), Documenti, azioni desktop. Fase 3b fatta: wizard e Impostazioni su DB (segreti cifrati), riavvio interno, Organizer su Outlook.com verificato (anche invio email ed evento reali, 22/10/2026). Fase 4 fatta: mani libere (VAD nel browser), interruzione automatica, wake word. Fase 5 in corso: shell desktop Tauri fatta e verificata su Windows (backend incluso con runtime jlink, tray, istanza unica, job object); prossimi passi Postgres portatile, voce nativa, installer, RAG. Requisito: tutto deve funzionare anche su macOS e Linux (tabella "Multipiattaforma" in `docs/ARCHITECTURE.md`).
 
 Cose verificate su Spring AI 2.0.1, da non rifare:
 
@@ -41,6 +41,11 @@ Prossima fase: **Fase 5, app desktop** (Tauri con il backend come sidecar, tray,
 ./mvnw verify                    # build + test (Testcontainers: serve Docker)
 ./mvnw spring-boot:run           # avvio su http://localhost:8080, avvia anche Postgres da compose.yaml
 node --test src/test/js/*.test.mjs     # test della logica pura del browser (voce, registrazione)
+
+# App desktop (desktop/, Tauri 2): backend incluso, poi la shell
+cd desktop && npm install && npm run backend -- -JavaHome <JDK 25>   # jar + runtime jlink in src-tauri/resources/backend
+cd desktop/src-tauri && cargo build && ./target/debug/jarvis-desktop.exe   # oppure: cd desktop && npx tauri dev
+JARVIS_BACKEND_URL=http://localhost:8080 ./target/debug/jarvis-desktop.exe # shell collegata al backend di sviluppo
 ```
 
 Configurazione: chiavi, fornitori, voce, cartelle e posta solo nel database, dal wizard e dalle Impostazioni (`SettingsCatalog`); `application.yml` ha per queste voci solo i default, senza variabili d'ambiente. `.env` e `jarvis-local.yml` (ignorati da git) restano per lo sviluppo: database, porta, modelli, Speaches, e `compose.yaml`.
@@ -70,6 +75,8 @@ src/main/java/dev/jarvis/
 src/main/resources/static/   index.html, style.css, app.js, orb.js, settings.js, vad.js, capture.js, markdown.js (ES modules, nessun build step)
 src/main/resources/schema.sql  schema idempotente (estensione vector, chat_message)
 src/test/java/               test JUnit 5 della logica pura + integrazione su Postgres (Testcontainers)
+desktop/                     shell Tauri 2 (src-tauri/src/main.rs: backend, finestra, tray, job object), splash/,
+                             prepare-backend.ps1 (jar + runtime jlink)
 ```
 
 ## Convenzioni

@@ -7,3 +7,9 @@ jarvis-local.yml
 .DS_Store
 .env*
 .certs/
+
+# Desktop shell: dependencies, Rust build output, the backend prepared by prepare-backend.ps1
+desktop/node_modules/
+desktop/src-tauri/target/
+desktop/src-tauri/gen/
+desktop/src-tauri/resources/backend/

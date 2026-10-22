@@ -3,6 +3,7 @@ package dev.jarvis.ws;
 import java.nio.ByteBuffer;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.regex.Pattern;
@@ -22,6 +23,7 @@ import org.springframework.web.socket.handler.ConcurrentWebSocketSessionDecorato
 import org.springframework.web.util.UriComponentsBuilder;
 
 import dev.jarvis.agent.ApprovalService;
+import dev.jarvis.agent.PostgresChatMemoryRepository;
 import dev.jarvis.llm.ProviderRouter;
 import dev.jarvis.JarvisApplication;
 import dev.jarvis.mcp.McpTools;
@@ -57,10 +59,12 @@ public class JarvisWebSocketHandler extends AbstractWebSocketHandler implements 
     private final SettingsService settings;
     private final McpTools mcp;
     private final JsonMapper json;
+    private final PostgresChatMemoryRepository archive;
 
     public JarvisWebSocketHandler(SessionRegistry sessions, TurnService turns, ApprovalService approvals,
                                   ProviderRouter router, VoiceServices voice, ChatMemory memory,
-                                  TaskService tasks, SettingsService settings, McpTools mcp, JsonMapper json) {
+                                  TaskService tasks, SettingsService settings, McpTools mcp, JsonMapper json,
+                                  PostgresChatMemoryRepository archive) {
         this.sessions = sessions;
         this.turns = turns;
         this.approvals = approvals;
@@ -71,6 +75,7 @@ public class JarvisWebSocketHandler extends AbstractWebSocketHandler implements 
         this.settings = settings;
         this.mcp = mcp;
         this.json = json;
+        this.archive = archive;
     }
 
     @Override
@@ -78,7 +83,8 @@ public class JarvisWebSocketHandler extends AbstractWebSocketHandler implements 
         WebSocketSession socket = new ConcurrentWebSocketSessionDecorator(session, SEND_TIME_LIMIT_MS, SEND_BUFFER_LIMIT);
         SessionState state = sessions.register(socket, conversationIdOf(session), router.defaultProvider());
         sessions.send(state.id(), Protocol.hello(router.availableIds(), router.defaultProvider().id(),
-                voice.sttMode(), voice.ttsMode(), voice.language(), voice.wakeWord(), settings.setupRequired()));
+                voice.sttMode(), voice.ttsMode(), voice.language(), voice.wakeWord(), settings.setupRequired(),
+                state.conversationId()));
         sessions.send(state.id(), Protocol.history(historyOf(state.conversationId())));
         sessions.send(state.id(), Protocol.tasks(tasks.recent(state.conversationId())));
         // Tasks may have asked for approval while no tab was open
@@ -245,16 +251,20 @@ public class JarvisWebSocketHandler extends AbstractWebSocketHandler implements 
         workers.shutdownNow();
     }
 
-    /** The client keeps a conversation id across reconnects (?conversation=...). */
-    private static String conversationIdOf(WebSocketSession session) {
+    /**
+     * The client keeps a conversation id across reconnects (?conversation=...). A page without one, or with one that
+     * never got a message (a new browser, the desktop window), resumes the latest conversation: one user, one
+     * ongoing conversation. A cleared conversation keeps its messages in the archive, so it stays the same.
+     */
+    private String conversationIdOf(WebSocketSession session) {
         if (session.getUri() != null) {
             String requested = UriComponentsBuilder.fromUri(session.getUri()).build()
                     .getQueryParams().getFirst("conversation");
-            if (requested != null && CONVERSATION_ID.matcher(requested).matches()) {
+            if (requested != null && CONVERSATION_ID.matcher(requested).matches() && archive.hasMessages(requested)) {
                 return requested;
             }
         }
-        return session.getId();
+        return archive.latestConversationId().orElseGet(() -> UUID.randomUUID().toString());
     }
 
     private static byte[] toBytes(ByteBuffer buffer) {

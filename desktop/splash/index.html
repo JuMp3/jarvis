@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <title>Jarvis</title>
+  <style>
+    html, body { height: 100%; margin: 0; }
+    body {
+      display: grid; place-items: center; gap: 1.5rem; align-content: center;
+      background: radial-gradient(120% 80% at 30% 20%, #16263d, #0f1b2d 60%);
+      color: #ede7da; font: 400 1rem/1.5 "Figtree", system-ui, sans-serif;
+    }
+    .orb {
+      width: 7rem; height: 7rem; border-radius: 50%;
+      background: radial-gradient(circle at 40% 35%, #ffe2a6, #f0b44c 45%, #8a5a1c 100%);
+      box-shadow: 0 0 4rem #f0b44c55; animation: breathe 2.4s ease-in-out infinite;
+    }
+    @keyframes breathe { 50% { transform: scale(0.92); opacity: 0.75; } }
+    p { margin: 0; color: #9fb8c8; text-align: center; max-width: 36rem; padding: 0 1.5rem; }
+    .error .orb { animation: none; filter: grayscale(0.8); }
+    .error p { color: #e07a6f; white-space: pre-line; }
+  </style>
+</head>
+<body>
+  <div class="orb" aria-hidden="true"></div>
+  <p id="status" role="status">Avvio di Jarvis…</p>
+  <script>
+    // Called by the shell if the backend does not start
+    window.showError = (message) => {
+      document.body.classList.add('error');
+      document.getElementById('status').textContent = message;
+    };
+  </script>
+</body>
+</html>

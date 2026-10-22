@@ -804,18 +804,19 @@ setInterval(() => {
 
 // ---- WebSocket --------------------------------------------------------------------------
 
+/** The conversation this page keeps; none yet: the server resumes the latest one and says which in hello. */
 function conversationId() {
-  const fresh = () => crypto.randomUUID();
   try {
-    let id = localStorage.getItem('jarvis.conversation');
-    if (!id) {
-      id = fresh();
-      localStorage.setItem('jarvis.conversation', id);
-    }
-    return id;
+    return localStorage.getItem('jarvis.conversation');
   } catch {
-    return fresh();
+    return null;
   }
+}
+
+function keepConversation(id) {
+  try {
+    if (id) localStorage.setItem('jarvis.conversation', id);
+  } catch { /* storage disabled: the server resumes the latest conversation at each connection */ }
 }
 
 let socket;
@@ -823,7 +824,8 @@ let retryDelay = 500;
 
 function connect() {
   const scheme = location.protocol === 'https:' ? 'wss' : 'ws';
-  socket = new WebSocket(`${scheme}://${location.host}/ws?conversation=${conversationId()}`);
+  const conversation = conversationId();
+  socket = new WebSocket(`${scheme}://${location.host}/ws${conversation ? `?conversation=${encodeURIComponent(conversation)}` : ''}`);
 
   socket.onopen = () => {
     retryDelay = 500;
@@ -858,6 +860,7 @@ function handle(msg) {
   if (settingsPanel.handle(msg)) return;
   switch (msg.type) {
     case 'hello':
+      keepConversation(msg.conversation);
       ui.wakeWord = msg.wakeWord || 'jarvis';
       el.wake.nextElementSibling.textContent = `Solo se dico «${ui.wakeWord.charAt(0).toUpperCase() + ui.wakeWord.slice(1)}»`;
       if (el.handsfree.checked) sendVoiceMode(); // a new connection starts without it

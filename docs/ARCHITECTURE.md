@@ -112,7 +112,7 @@ Server → client
 
 | Tipo | Campi |
 |---|---|
-| `hello` | `providers`, `defaultProvider`, `stt`, `tts` (`server` · `browser` · `off`), `language`, `wakeWord`, `setupRequired` |
+| `hello` | `providers`, `defaultProvider`, `stt`, `tts` (`server` · `browser` · `off`), `language`, `wakeWord`, `setupRequired`, `conversation` (la conversazione della connessione: la pagina la conserva; se non ne aveva, il server riprende l'ultima dell'archivio) |
 | `history` | `messages` (`role`: `user` · `assistant`, `text`): ultimi scambi della conversazione, inviati dopo `hello`. Il client li mostra solo se il log è vuoto (pagina ricaricata) |
 | `history-cleared` | — | La conversazione è stata cancellata: il client svuota il log |
 | `state` | `state` (`idle` · `thinking` · `speaking`) |
@@ -239,6 +239,33 @@ Jarvis va installato su un PC, dove un file `.env` non è una soluzione: le impo
 - **Sicurezza:** tutto passa dal WebSocket, che accetta solo pagine della stessa origine. L'elenco delle impostazioni non contiene mai i segreti: la pagina sa solo se sono impostati e da dove (impostazioni, variabile d'ambiente, file). Il valore in chiaro arriva solo premendo l'occhio accanto al campo, una chiave alla volta (`settings-reveal`). "Verifica" prova la chiave contro il servizio senza salvarla.
 - **Posta e calendario:** scegliere `outlook` scrive un modello (`MailTemplates`): la connessione MCP a `@softeria/ms-365-mcp-server` (versione fissata, tenant `consumers` per gli account personali), i tool esposti (lettura all'Organizer, invii e modifiche a Jarvis con approvazione, nessuna cancellazione) e lo specialista `organizer`. L'accesso è un login Microsoft con codice (pulsanti "Collega l'account" e "Ho fatto l'accesso"); i token li conserva il server MCP, cifrati, con la chiave nel Credential Manager di Windows. I server si collegano in background, quindi Jarvis non aspetta nessuno di loro all'avvio: i tool compaiono appena il server è pronto, perché specialisti e Jarvis li leggono al momento d'uso. Un server stdio ha fino a 60 s per rispondere (un `npx` a freddo, dietro Netskope, ne ha impiegati 60); se non risponde viene riprovato ogni 15 secondi per qualche minuto, ogni volta con un client nuovo. I client stdio li crea `McpTools` con `TreeClosingStdioTransport`, che alla chiusura termina anche i processi figli: su Windows l'SDK chiude solo `cmd.exe`, e `npx` con il server restavano vivi a ogni riavvio.
 - **Altri provider di posta:** `microsoft365` usa lo stesso server con l'autorità `organizations` (account di lavoro o scuola; il tenant può richiedere il consenso dell'amministratore). `imap` usa i tool di posta integrati in Jarvis (`MailClient`, Jakarta Mail): indirizzo e *password per le app*, cifrata come gli altri segreti; i server IMAP e SMTP si ricavano dall'indirizzo per Gmail, iCloud, Yahoo, Libero, Fastmail e GMX (`MailServers`), altrimenti si indicano come host o host:porta. Connessioni sempre cifrate (TLS o STARTTLS obbligatorio); la lettura usa IMAP PEEK, quindi non segna i messaggi come letti. Lettura (`listRecentEmails`, `searchEmails`, `readEmail`) all'Organizer, invio e risposta (`sendEmail`, `replyToEmail`) solo a Jarvis, dopo l'approvazione del messaggio esatto. Solo posta: il calendario per questi provider (CalDAV) è un passo successivo.
+
+## App desktop (Fase 5)
+
+`desktop/` è una shell Tauri 2: avvia il backend, ne mostra la pagina in una finestra e resta nella tray. Nessun frontend duplicato: la finestra carica la stessa pagina servita dal backend.
+
+- **Backend incluso:** `prepare-backend.ps1` costruisce il jar e un runtime Java ridotto con jlink (moduli da `jdeps`, più quelli caricati solo a runtime: dati di localizzazione per le date in italiano, JNDI, charset, zipfs, archivio certificati di Windows), in `src-tauri/resources/backend` (circa 195 MB). La shell lo avvia con `~/.jarvis` come cartella di lavoro e la console in `~/.jarvis/logs/backend-console.log`.
+- **Porta fissa 47321**, non casuale: la pagina mantiene la sua origine e quindi il suo `localStorage`. La 8080 resta per lo sviluppo. Una pagina senza conversazione (finestra nuova, browser nuovo) riprende l'ultima dell'archivio.
+- **Certificati:** jlink prende `cacerts` dai jmods, quindi un CA aggiunto al JDK di sviluppo si perde. La shell fa usare a Java l'archivio del sistema (`-Djavax.net.ssl.trustStoreType=Windows-ROOT`), dove l'IT installa i CA aziendali (ispezione TLS come Netskope).
+- **Processi:** su Windows il backend entra in un job object con "kill on close": chiudendo la shell, anche in crash o con un kill forzato, terminano Java e tutto ciò che ha avviato (`npx`, server MCP). Verificato.
+- **Finestra e tray:** splash finché il backend non risponde (con il messaggio d'errore se si chiude), poi la pagina; chiudere la finestra la nasconde nella tray ("Apri Jarvis", "Avvia con il sistema", "Esci"); una sola istanza (un secondo avvio porta in primo piano la prima); con l'avvio automatico parte nascosta (`--hidden`). Su schermi più piccoli della finestra si apre massimizzata.
+- **Sviluppo:** `JARVIS_BACKEND_URL=http://localhost:8080` collega la shell a un backend già acceso (`./mvnw spring-boot:run`) invece di avviare quello incluso.
+- **Prossimi passi della fase:** Postgres portatile (oggi il backend incluso usa ancora quello di `compose.yaml`), voce locale nativa, installer NSIS, RAG.
+
+### Multipiattaforma
+
+Ogni funzione va pensata per Windows, macOS e Linux; oggi è provata solo su Windows. Le parti specifiche del sistema e il loro equivalente:
+
+| Parte | Windows (fatto) | macOS / Linux (da estendere) |
+|---|---|---|
+| Fine dei processi con la shell | job object, anche in crash | gruppo di processi chiuso all'uscita (già nel codice, da provare); in crash resterebbe acceso: serve un watchdog nel backend |
+| Certificati di sistema | `Windows-ROOT` | macOS `KeychainStore-ROOT` (nel codice, da provare); Linux il bundle CA della distribuzione |
+| Build del backend | `prepare-backend.ps1` | script equivalente (bash) o build Maven |
+| Installer | NSIS | `.dmg` (macOS), AppImage / `.deb` (Linux), da Tauri |
+| Server MCP con npx | `npx.cmd` (`MailTemplates`) | `npx` (già previsto) |
+| Avvio automatico | registro di Windows (plugin autostart) | LaunchAgent macOS, `.desktop` Linux (stesso plugin) |
+
+iOS (e Android) non possono eseguire il backend: sarebbero un'app client collegata a un Jarvis acceso altrove. Tauri 2 li supporta, ma è un progetto a parte.
 
 ## Configurazione e segreti
 
