@@ -63,6 +63,10 @@ public final class Protocol {
     public record SettingsSecret(String type, String name, String value) {
     }
 
+    /** Every tab of the conversation empties its log. */
+    public record HistoryCleared(String type) {
+    }
+
     public record History(String type, List<HistoryEntry> messages) {
     }
 
@@ -157,6 +161,10 @@ public final class Protocol {
 
     public static TaskUpdate taskUpdate(AgentTask task) {
         return new TaskUpdate("task-update", TaskView.of(task));
+    }
+
+    public static HistoryCleared historyCleared() {
+        return new HistoryCleared("history-cleared");
     }
 
     public static Tasks tasks(List<AgentTask> tasks) {

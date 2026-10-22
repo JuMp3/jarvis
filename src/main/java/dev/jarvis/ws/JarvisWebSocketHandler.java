@@ -26,6 +26,7 @@ import dev.jarvis.llm.ProviderRouter;
 import dev.jarvis.JarvisApplication;
 import dev.jarvis.mcp.McpTools;
 import dev.jarvis.settings.SettingsService;
+import dev.jarvis.task.AgentTask;
 import dev.jarvis.task.TaskService;
 import dev.jarvis.voice.AudioFormats;
 import dev.jarvis.voice.SpeechToText;
@@ -131,6 +132,13 @@ public class JarvisWebSocketHandler extends AbstractWebSocketHandler implements 
             }
             case "approval" -> approvals.resolve(state.conversationId(), msg.id(), Boolean.TRUE.equals(msg.approved()));
             case "cancel-task" -> tasks.cancel(state.conversationId(), msg.id());
+            case "clear-history" -> clearHistory(state);
+            case "clear-tasks" -> {
+                tasks.clearFinished(state.conversationId());
+                List<AgentTask> remaining = tasks.recent(state.conversationId());
+                sessions.ofConversation(state.conversationId())
+                        .forEach(tab -> sessions.send(tab.id(), Protocol.tasks(remaining)));
+            }
             case "settings-get" -> sessions.send(state.id(), Protocol.settings(settings.view(), settings.setupRequired()));
             case "settings-save" -> workers.submit(() -> saveSettings(state, msg));
             case "settings-reveal" -> {
@@ -148,6 +156,20 @@ public class JarvisWebSocketHandler extends AbstractWebSocketHandler implements 
                     Protocol.accountResult(msg.server(), mcp.adminCall(msg.server(), "verify-login"))));
             default -> sessions.send(state.id(), Protocol.error("Tipo di messaggio sconosciuto: " + type));
         }
+    }
+
+    /**
+     * Forgets the conversation, in every open tab. Not during a turn: closing an interrupted turn writes to the
+     * memory, and could do it right after the deletion. Running tasks go on and report to the empty conversation.
+     */
+    private void clearHistory(SessionState state) {
+        List<SessionState> tabs = sessions.ofConversation(state.conversationId());
+        if (!tabs.stream().allMatch(SessionState::idle)) {
+            sessions.send(state.id(), Protocol.error("Aspetta che Jarvis finisca di rispondere, poi riprova."));
+            return;
+        }
+        memory.clear(state.conversationId());
+        tabs.forEach(tab -> sessions.send(tab.id(), Protocol.historyCleared()));
     }
 
     /** Saved settings take effect with a restart of the application; the pages reconnect by themselves. */

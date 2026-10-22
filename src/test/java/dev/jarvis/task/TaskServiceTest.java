@@ -223,4 +223,25 @@ class TaskServiceTest extends BaseTest {
         assertThat(after.status()).isEqualTo(Status.INTERRUPTED);
         assertThat(after.error()).contains("riavviato");
     }
+
+    @Test
+    void clearingHidesOnlyTheFinishedTasksOfTheConversationAndKeepsThem() {
+        TaskService tasks = service(2, Duration.ofMinutes(1)); // first: at startup it ends the tasks left running
+        AgentTask working = AgentTask.queued(UUID.randomUUID().toString(), conversation, "researcher", "A", "a", null, null)
+                .running();
+        AgentTask done = AgentTask.queued(UUID.randomUUID().toString(), conversation, "writer", "B", "b", null, null)
+                .running().completed(new Specialists.Result("Fatto.", 1, 1, null));
+        AgentTask failed = AgentTask.queued(UUID.randomUUID().toString(), conversation, "writer", "C", "c", null, null)
+                .ended(Status.FAILED, "no");
+        AgentTask elsewhere = AgentTask.queued(UUID.randomUUID().toString(), "other-" + conversation, "writer", "D", "d",
+                null, null).ended(Status.CANCELLED, null);
+        List.of(working, done, failed, elsewhere).forEach(repository::save);
+
+        int removed = tasks.clearFinished(conversation);
+
+        assertThat(removed).isEqualTo(2);
+        assertThat(tasks.recent(conversation)).extracting(AgentTask::id).containsExactly(working.id());
+        assertThat(tasks.recent("other-" + conversation)).extracting(AgentTask::id).containsExactly(elsewhere.id());
+        assertThat(repository.find(done.id()).orElseThrow().result()).isEqualTo("Fatto.");
+    }
 }

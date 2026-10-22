@@ -15,6 +15,26 @@ CREATE TABLE IF NOT EXISTS chat_message (
     PRIMARY KEY (conversation_id, seq)
 );
 
+-- Every message ever exchanged, append only: chat_message keeps just the window the model sees and rewrites it
+-- at each turn, and clearing the conversation empties it. The archive is the source of long-term memory (RAG).
+CREATE TABLE IF NOT EXISTS chat_archive (
+    id              BIGSERIAL   PRIMARY KEY,
+    conversation_id VARCHAR(64) NOT NULL,
+    type            VARCHAR(16) NOT NULL,
+    content         TEXT,
+    tool_calls      JSONB,
+    tool_responses  JSONB,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS chat_archive_conversation_idx ON chat_archive (conversation_id, id);
+
+-- Once, when the archive is introduced: what is still in the windows is all that is left of the past
+INSERT INTO chat_archive (conversation_id, type, content, tool_calls, tool_responses)
+SELECT conversation_id, type, content, tool_calls, tool_responses FROM chat_message
+WHERE NOT EXISTS (SELECT 1 FROM chat_archive)
+ORDER BY conversation_id, seq;
+
 -- Background tasks delegated to specialists (see TaskService)
 CREATE TABLE IF NOT EXISTS agent_task (
     id              VARCHAR(36) PRIMARY KEY,
@@ -39,6 +59,8 @@ CREATE INDEX IF NOT EXISTS agent_task_conversation_idx ON agent_task (conversati
 ALTER TABLE agent_task ADD COLUMN IF NOT EXISTS workspace TEXT;
 ALTER TABLE agent_task ADD COLUMN IF NOT EXISTS progress  TEXT;
 ALTER TABLE agent_task ADD COLUMN IF NOT EXISTS cost_usd  DOUBLE PRECISION;
+-- Finished tasks the user took off the Squadra panel: kept, their results serve long-term memory
+ALTER TABLE agent_task ADD COLUMN IF NOT EXISTS hidden    BOOLEAN NOT NULL DEFAULT false;
 
 -- Phase 3b: settings saved by the wizard and the Settings section; secrets encrypted (AES-256-GCM, key outside
 -- the database). Read at startup by SettingsEnvironmentPostProcessor, before application.yml and .env.

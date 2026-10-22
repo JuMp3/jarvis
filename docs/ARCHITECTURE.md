@@ -52,6 +52,8 @@ Il frontend gestisce tutto ciò che è audio e grafica; il backend coordina tutt
 ### Mani libere (Fase 4)
 
 - **Rilevamento della voce** (`static/vad.js`, logica pura con test in `src/test/js`): il livello del microfono, campionato ogni 30 ms, confrontato con un rumore di fondo che si adatta alla stanza e impara solo dai momenti di silenzio. La frase inizia dopo 150 ms sopra soglia e finisce dopo 0,9 s di pausa (massimo 30 s). Al posto del tasto premuto, avvia e ferma la registrazione. In mani libere l'audio non passa da `MediaRecorder`: `static/capture.js` tiene sempre gli ultimi 600 ms del microfono e li mette in testa alla frase, perché il rilevatore scatta dopo la prima sillaba ("cosa puoi fare" diventava "sta poi faga"); il browser invia un WAV mono a 16 kHz, il formato su cui lavora Whisper.
+- **Risposte scritte** (`static/markdown.js`, logica pura con test): il Markdown delle risposte e dei risultati dei task (titoli, elenchi anche annidati, tabelle, codice, citazioni, link solo http/https) diventa nodi DOM, mai HTML, anche durante lo streaming. Le *schede* sono blocchi ```` ```card ```` con un oggetto JSON; la prima è il meteo (`weather`: luogo, condizioni attuali, giorni con minime, massime e probabilità di pioggia). Il modello sa a ogni turno se la risposta sarà letta a voce o sullo schermo (`AgentService.SPOKEN` / `WRITTEN`, aggiunti al system prompt): a voce frasi semplici, sullo schermo Markdown e schede.
+- **Cancellazione:** il cestino nell'header svuota la conversazione sullo schermo e la finestra di memoria del modello, che riparte da zero; "Togli i lavori finiti" nasconde dal pannello Squadra i task conclusi. Entrambi chiedono conferma e nessuno dei due cancella dati: messaggi (`chat_archive`) e task (`agent_task.hidden`) restano per la memoria a lungo termine.
 - **Interruzione automatica:** se inizi a parlare mentre Jarvis pensa o risponde, la registrazione parte e il turno in corso viene annullato, come con il tasto. Contro l'eco delle casse: cancellazione d'eco, soppressione del rumore e guadagno automatico del browser, più una soglia 2,5 volte più alta finché Jarvis parla. Con le cuffie il problema non esiste.
 - **Wake word** (`jarvis.voice.wake-word`, "Jarvis"): con "Solo se dico «Jarvis»" attivo, il client lo comunica (`voice-mode`) e il server passa al modello solo le frasi che hanno il nome tra le prime tre parole (`WakeWord`, tollerante alle grafie della trascrizione: "Giarvis", "Jervis"); le altre tornano come `transcript-ignored` e restano sul PC se la trascrizione è locale. Il nome viene anche suggerito a Whisper (`prompt`): senza, il modello `base` lo trascrive spesso male. Con la trascrizione del browser lo stesso controllo lo fa il client.
 - **Latenza misurata** su questo portatile, dalla fine della frase al primo audio: circa 0,9 s di pausa + 2 s di Whisper `base` + 2 s di Haiku ≈ 5 s.
@@ -74,6 +76,7 @@ Client → server
 | `set-provider` | `provider` | Provider per i turni successivi |
 | `voice-mode` | `wake` | Mani libere con wake word: le frasi registrate non rivolte a Jarvis vengono scartate |
 | `cancel` | — | Interrompe il turno in corso |
+| `clear-history` | — | Svuota la conversazione (schermo e finestra del modello, non l'archivio), in tutte le schede; rifiutato con `error` durante un turno |
 | `approval` | `id`, `approved` | Risposta a una richiesta di approvazione |
 | `settings-get` | — | Chiede le impostazioni |
 | `settings-save` | `values`, `cleared` | Salva (i segreti vuoti restano come sono) e riavvia |
@@ -87,6 +90,7 @@ Server → client
 |---|---|
 | `hello` | `providers`, `defaultProvider`, `stt`, `tts` (`server` · `browser` · `off`), `language`, `wakeWord`, `setupRequired` |
 | `history` | `messages` (`role`: `user` · `assistant`, `text`): ultimi scambi della conversazione, inviati dopo `hello`. Il client li mostra solo se il log è vuoto (pagina ricaricata) |
+| `history-cleared` | — | La conversazione è stata cancellata: il client svuota il log |
 | `state` | `state` (`idle` · `thinking` · `speaking`) |
 | `transcript` | `text` |
 | `transcript-ignored` | `text`: frase in mani libere non rivolta a Jarvis, non inviata al modello |
@@ -187,6 +191,7 @@ Isolamento: `--bare` salta hook e plugin dell'utente e si autentica **solo** con
 | server → client | `tasks` | `tasks`: elenco recente della conversazione, inviato dopo `history` |
 | server → client | `task-update` | `task`: `id`, `agent`, `title`, `instructions`, `workspace`, `status` (`queued` · `running` · `waiting_approval` · `completed` · `failed` · `cancelled` · `interrupted`), `progress`, `result`, `error`, `inputTokens`, `outputTokens`, `costUsd`, `createdAt`, `startedAt`, `finishedAt` (epoch ms) |
 | client → server | `cancel-task` | `id` |
+| client → server | `clear-tasks` | — Nasconde i task finiti della conversazione (restano nel database; quelli al lavoro restano anche sul pannello); ogni scheda riceve di nuovo `tasks` |
 
 Un messaggio di stato completo, invece di eventi separati per inizio, avanzamento e fine, rende banale il client (sostituisce per `id`) e la riconnessione (basta `tasks`).
 
@@ -194,6 +199,7 @@ Un messaggio di stato completo, invece di eventi separati per inizio, avanzament
 
 - PostgreSQL 18 con pgvector (`compose.yaml`, porta 5433 su loopback). `./mvnw spring-boot:run` avvia il container grazie al supporto Docker Compose di Spring Boot; con `java -jar` va avviato prima con `docker compose up -d`.
 - Lo schema è in `schema.sql`, idempotente ed eseguito a ogni avvio. Alla prima modifica incompatibile si passa a Flyway.
+- **Archivio:** la finestra di `chat_message` (gli ultimi `memory-max-messages`, quelli che il modello vede) viene riscritta a ogni turno da `MessageWindowChatMemory`, che scarta i messaggi più vecchi. Ogni messaggio aggiunto alla memoria va anche in `chat_archive`, solo in aggiunta e mai svuotato: è la sorgente della memoria a lungo termine, insieme ai risultati dei task (anche quelli nascosti).
 - L'estensione `vector` è già attiva: servirà alla memoria a lungo termine e al RAG (Fase 5), con un modello di embedding OpenAI o Ollama, perché Anthropic non ne offre.
 - I test d'integrazione usano Testcontainers con la stessa immagine.
 

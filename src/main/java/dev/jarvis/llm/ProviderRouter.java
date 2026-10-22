@@ -27,6 +27,7 @@ public class ProviderRouter {
     private final Map<ProviderId, ChatModel> models = new EnumMap<>(ProviderId.class);
     private final ProviderId defaultProvider;
     private final Map<String, String> voiceModels;
+    private final String systemPrompt;
 
     public ProviderRouter(Map<String, ChatModel> chatModels, ChatMemory chatMemory, JarvisProperties properties) {
         Map<String, String> beanClasses = new LinkedHashMap<>();
@@ -39,7 +40,7 @@ public class ProviderRouter {
                     + beanClasses.keySet() + ")");
         }
 
-        String systemPrompt = properties.agent().systemPrompt() + specialistCatalog(properties);
+        this.systemPrompt = properties.agent().systemPrompt() + specialistCatalog(properties);
         Map<ProviderId, ChatClient> built = new EnumMap<>(ProviderId.class);
         selected.forEach((provider, beanName) -> models.put(provider, chatModels.get(beanName)));
         models.forEach((provider, model) -> built.put(provider,
@@ -80,6 +81,11 @@ public class ProviderRouter {
     }
 
     /** Resolves a provider id coming from the client, falling back to the default one. */
+    /** Jarvis' system prompt, the default of every client. */
+    public String systemPrompt() {
+        return systemPrompt;
+    }
+
     public ProviderId resolve(String requested) {
         return ProviderId.parse(requested).filter(clients::containsKey).orElse(defaultProvider);
     }

@@ -11,6 +11,7 @@ import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.ToolResponseMessage;
 import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.jdbc.core.simple.JdbcClient;
 
 import dev.jarvis.BaseTest;
 
@@ -21,6 +22,9 @@ class PostgresChatMemoryRepositoryTest extends BaseTest {
 
     @Autowired
     ChatMemory chatMemory;
+
+    @Autowired
+    JdbcClient jdbc;
 
     private static final AssistantMessage.ToolCall CALL =
             new AssistantMessage.ToolCall("call-1", "function", "currentDateTime", "{}");
@@ -68,5 +72,23 @@ class PostgresChatMemoryRepositoryTest extends BaseTest {
 
         assertThat(repository.findByConversationId("conv-memory")).hasSize(4);
         assertThat(chatMemory.get("conv-memory")).hasSize(4);
+    }
+
+    @Test
+    void theArchiveKeepsWhatTheWindowDropsAndWhatClearingRemoves() {
+        for (int turn = 0; turn < 10; turn++) {
+            chatMemory.add("conv-archive", turnWithTool()); // 40 messages, more than the window keeps
+        }
+        assertThat(chatMemory.get("conv-archive")).hasSizeLessThan(40);
+
+        chatMemory.clear("conv-archive");
+
+        assertThat(chatMemory.get("conv-archive")).isEmpty();
+        assertThat(jdbc.sql("SELECT count(*) FROM chat_archive WHERE conversation_id = 'conv-archive'")
+                .query(Integer.class).single()).isEqualTo(40);
+        assertThat(jdbc.sql("""
+                        SELECT tool_calls ->> 0 IS NOT NULL FROM chat_archive
+                        WHERE conversation_id = 'conv-archive' ORDER BY id LIMIT 1 OFFSET 1""")
+                .query(Boolean.class).single()).isTrue();
     }
 }

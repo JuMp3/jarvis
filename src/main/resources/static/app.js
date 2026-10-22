@@ -2,6 +2,7 @@ import { Orb } from './orb.js';
 import { createSettings } from './settings.js';
 import { VoiceDetector } from './vad.js';
 import { SpeechCapture } from './capture.js';
+import { parseMarkdown, weatherIcon } from './markdown.js';
 
 // Message types must match dev.jarvis.ws.Protocol and docs/ARCHITECTURE.md.
 
@@ -31,6 +32,8 @@ const el = {
   teamClose: document.getElementById('team-close'),
   team: document.getElementById('team'),
   tasks: document.getElementById('tasks'),
+  tasksClear: document.getElementById('tasks-clear'),
+  historyClear: document.getElementById('history-clear'),
   announcer: document.getElementById('team-announcer'),
 };
 
@@ -399,6 +402,8 @@ function sendAudio(buffer) {
 // ---- conversation -----------------------------------------------------------------------
 
 let streamingItem = null;
+let streamingText = '';
+let renderPending = false;
 
 function addItem(className, text) {
   const item = document.createElement('li');
@@ -416,9 +421,17 @@ function note(text, isError = false) {
 function appendToken(text) {
   if (!streamingItem) {
     streamingItem = addItem('turn-jarvis streaming', '');
+    streamingText = '';
   }
-  streamingItem.textContent += text;
-  el.conversation.scrollTop = el.conversation.scrollHeight;
+  streamingText += text;
+  if (renderPending) return;
+  renderPending = true; // at most one Markdown render per frame
+  requestAnimationFrame(() => {
+    renderPending = false;
+    if (!streamingItem) return;
+    renderMarkdown(streamingItem, streamingText);
+    el.conversation.scrollTop = el.conversation.scrollHeight;
+  });
 }
 
 /** Renders **bold** and http(s) links through the DOM, never innerHTML: model and agent output is untrusted. */
@@ -442,9 +455,120 @@ function richText(node, text) {
   return node;
 }
 
+// ---- Markdown and cards: built through the DOM from markdown.js, never innerHTML ---------------
+
+function renderMarkdown(node, text) {
+  node.replaceChildren(...parseMarkdown(text).map(markdownBlock));
+  return node;
+}
+
+function inlineNodes(parent, nodes) {
+  for (const node of nodes) {
+    if (node.type === 'text') parent.append(node.text);
+    else if (node.type === 'code') parent.append(element('code', null, node.text));
+    else if (node.type === 'link') {
+      const link = element('a', null, node.text);
+      link.href = node.href; // http(s) only, checked by the parser
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      parent.append(link);
+    } else parent.append(inlineNodes(element(node.type === 'strong' ? 'strong' : 'em'), node.children));
+  }
+  return parent;
+}
+
+function markdownBlock(block) {
+  switch (block.type) {
+    case 'heading': return inlineNodes(element(`h${Math.min(block.level + 2, 6)}`, 'md-heading'), block.inline);
+    case 'paragraph': return inlineNodes(element('p'), block.inline);
+    case 'quote': return inlineNodes(element('blockquote'), block.inline);
+    case 'rule': return element('hr');
+    case 'code': {
+      const pre = element('pre');
+      pre.append(element('code', null, block.text));
+      return pre;
+    }
+    case 'list': {
+      const list = element(block.ordered ? 'ol' : 'ul');
+      if (block.ordered && block.start > 1) list.start = block.start;
+      for (const item of block.items) {
+        const li = inlineNodes(element('li'), item.inline);
+        if (item.list) li.append(markdownBlock(item.list));
+        list.append(li);
+      }
+      return list;
+    }
+    case 'table': {
+      const table = element('table');
+      const head = element('tr');
+      block.header.forEach((cell) => head.append(inlineNodes(element('th'), cell)));
+      table.append(element('thead'), element('tbody'));
+      table.tHead.append(head);
+      for (const row of block.rows) {
+        const tr = element('tr');
+        block.header.forEach((_, i) => tr.append(inlineNodes(element('td'), row[i] ?? [])));
+        table.tBodies[0].append(tr);
+      }
+      const scroll = element('div', 'md-table');
+      scroll.append(table);
+      return scroll;
+    }
+    case 'pending-card': return element('div', 'card pending', 'Preparo la scheda…');
+    case 'card': return card(block.card);
+    default: return element('p', null, '');
+  }
+}
+
+/** Cards the model can add to a written answer (AgentService.WRITTEN); an unknown one is shown as data. */
+function card(data) {
+  if (data.type === 'weather') return weatherCard(data);
+  const pre = element('pre');
+  pre.append(element('code', null, JSON.stringify(data, null, 2)));
+  return pre;
+}
+
+const degrees = (value) => (Number.isFinite(Number(value)) && value !== '' && value != null ? `${Math.round(Number(value))}°` : '');
+
+function weatherCard(data) {
+  const box = element('figure', 'card weather');
+  const now = data.now ?? {};
+  const head = element('div', 'weather-now');
+  head.append(element('span', 'weather-icon', weatherIcon(now.condition)));
+  const where = element('div', 'weather-where');
+  where.append(element('span', 'weather-place', data.place ?? 'Meteo'));
+  if (now.condition) where.append(element('span', 'weather-condition', now.condition));
+  head.append(where, element('span', 'weather-temp', degrees(now.temp)));
+  box.append(head);
+
+  const details = [
+    now.feels != null && `percepita ${degrees(now.feels)}`,
+    now.humidity != null && `umidità ${Math.round(now.humidity)}%`,
+    now.wind != null && `vento ${Math.round(now.wind)} km/h`,
+  ].filter(Boolean);
+  if (details.length) box.append(element('p', 'weather-details', details.join(' · ')));
+
+  if (Array.isArray(data.days) && data.days.length) {
+    const days = element('div', 'weather-days'); // not ol/li: the list styles of the answer do not apply
+    days.setAttribute('role', 'list');
+    for (const day of data.days.slice(0, 7)) {
+      const tile = element('div', 'weather-day');
+      tile.setAttribute('role', 'listitem');
+      tile.append(element('span', 'weather-day-name', day.day ?? ''),
+        element('span', 'weather-icon', weatherIcon(day.condition)),
+        element('span', 'weather-range', `${degrees(day.max)} ${degrees(day.min)}`.trim()));
+      if (day.rain != null) tile.append(element('span', 'weather-rain', `💧 ${Math.round(day.rain)}%`));
+      tile.title = day.condition ?? '';
+      days.append(tile);
+    }
+    box.append(days);
+  }
+  box.setAttribute('aria-label', [data.place, now.condition, degrees(now.temp)].filter(Boolean).join(', '));
+  return box;
+}
+
 function finishStreaming() {
   if (streamingItem) {
-    richText(streamingItem, streamingItem.textContent);
+    renderMarkdown(streamingItem, streamingText);
     streamingItem.classList.remove('streaming');
     streamingItem = null;
   }
@@ -561,7 +685,7 @@ function renderTask(task) {
   });
   details.append(element('summary', null, task.result ? 'Risultato e istruzioni' : 'Istruzioni'));
   const body = element('div', 'task-body');
-  if (task.result) body.append(element('h3', null, 'Risultato'), richText(element('p'), task.result));
+  if (task.result) body.append(element('h3', null, 'Risultato'), renderMarkdown(element('div', 'task-result'), task.result));
   if (task.error) body.append(element('h3', null, 'Motivo'), element('p', null, task.error));
   body.append(element('h3', null, 'Istruzioni'), element('p', null, task.instructions));
   if (task.workspace) body.append(element('h3', null, 'Repository'), element('p', null, task.workspace));
@@ -598,6 +722,7 @@ function renderTeam() {
   const summary = parts.join(', ');
   el.teamSummary.textContent = summary ? summary.charAt(0).toUpperCase() + summary.slice(1) : 'Squadra a riposo';
   el.teamToggle.dataset.busy = String(working.length > 0);
+  el.tasksClear.hidden = working.length === team.tasks.size;
   el.teamDots.replaceChildren(...working.map((task) => {
     const dot = element('i', task.status === 'running' ? null : task.status);
     dot.style.setProperty('--agent', agentInfo(task.agent).color);
@@ -649,6 +774,17 @@ el.teamToggle.addEventListener('click', () => {
   setTeamOpen(!document.body.classList.contains('team-open'));
 });
 el.teamClose.addEventListener('click', () => { setTeamOpen(false); el.teamToggle.focus(); });
+
+// Both only take things off the screen (the database keeps them for long-term memory), and ask first.
+// Work in progress is never removed.
+el.tasksClear.addEventListener('click', () => {
+  if (confirm('Togliere dalla Squadra i lavori finiti? Non li vedrai più qui.')) send({ type: 'clear-tasks' });
+});
+el.historyClear.addEventListener('click', () => {
+  if (confirm('Cancellare la conversazione dallo schermo? Jarvis riparte da zero; quanto vi siete detti resta nel suo archivio.')) {
+    send({ type: 'clear-history' });
+  }
+});
 document.addEventListener('keydown', (event) => {
   if (event.key === 'Escape' && document.body.classList.contains('team-open')) {
     setTeamOpen(false);
@@ -741,9 +877,13 @@ function handle(msg) {
       if (el.log.children.length === 0) {
         for (const m of msg.messages) {
           const item = addItem(m.role === 'user' ? 'turn-user' : 'turn-jarvis', m.text);
-          if (m.role !== 'user') richText(item, m.text);
+          if (m.role !== 'user') renderMarkdown(item, m.text);
         }
       }
+      break;
+    case 'history-cleared':
+      streamingItem = null;
+      el.log.replaceChildren();
       break;
     case 'tasks':
       team.tasks = new Map(msg.tasks.map((task) => [task.id, task]));
@@ -807,6 +947,7 @@ function setControlsEnabled(enabled) {
   el.send.disabled = !enabled;
   el.provider.disabled = !enabled;
   el.mic.disabled = !enabled || ui.stt === 'off';
+  el.historyClear.disabled = !enabled;
 }
 
 // Approvals: Jarvis and several agents may ask at the same time, and requests of agents come back after a

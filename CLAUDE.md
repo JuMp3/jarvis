@@ -11,6 +11,7 @@ Cose verificate su Spring AI 2.0.1, da non rifare:
 - `ChatClient` registra da solo un `ToolCallingAdvisor`, che in streaming esegue i tool su `Schedulers.boundedElastic()`: `ApprovalService.requestApproval` può bloccare.
 - `MessageChatMemoryAdvisor` deve avere un ordine maggiore di `ToolCallingAdvisor.DEFAULT_ORDER` (vedi `ProviderRouter`), altrimenti la memoria perde chiamate e risultati dei tool e il modello, al turno dopo, "dimentica" di averli usati.
 - `JdbcChatMemoryRepository` di Spring AI scarta i messaggi dei tool: per questo c'è `agent/PostgresChatMemoryRepository`.
+- `MessageWindowChatMemory` riscrive a ogni turno la conversazione con i soli ultimi messaggi: i più vecchi spariscono da `chat_message`. Per questo `AgentConfig` scrive ogni messaggio anche in `chat_archive` (solo in aggiunta), e il cestino dell'interfaccia svuota solo la finestra. Il RAG della Fase 5 legge l'archivio e i task, anche quelli nascosti dal pannello.
 - Un turno interrotto (barge-in, `cancel`, disconnessione, crash) lascia in memoria una domanda senza risposta o una chiamata a un tool senza risultato: il modello risponderebbe alla vecchia domanda, e Anthropic rifiuta con 400 ogni turno successivo. `InterruptedTurns` chiude la coda della conversazione, sia all'annullamento sia all'inizio di ogni turno.
 - Rete aziendale con Netskope: Speaches scarica i modelli solo con `SPEACHES_CA_BUNDLE` (vedi README), e su Git Bash i path dei container vanno passati con `MSYS_NO_PATHCONV=1`.
 - Claude Code come processo: `--bare` (niente hook o plugin dell'utente, auth solo con `ANTHROPIC_API_KEY`) più `--restricted`; il prompt passa da stdin e il system prompt da file, per evitare il quoting degli argomenti su Windows. Con `--allowedTools` le regole sono pattern `Bash(cmd:*)`; i comandi non consentiti vengono negati senza chiedere.
@@ -66,7 +67,7 @@ src/main/java/dev/jarvis/
                 ClaudeCodeSpecialist (+ ClaudeCodeEvents, WorkspacePolicy), TaskTools
   ws/           WebSocketConfig, JarvisWebSocketHandler, SessionRegistry, SessionState,
                 TurnService, Turn, Protocol, TaskNotifier (aggiornamenti e annunci dei task), ErrorMessages
-src/main/resources/static/   index.html, style.css, app.js, orb.js, settings.js, vad.js, capture.js (ES modules, nessun build step)
+src/main/resources/static/   index.html, style.css, app.js, orb.js, settings.js, vad.js, capture.js, markdown.js (ES modules, nessun build step)
 src/main/resources/schema.sql  schema idempotente (estensione vector, chat_message)
 src/test/java/               test JUnit 5 della logica pura + integrazione su Postgres (Testcontainers)
 ```

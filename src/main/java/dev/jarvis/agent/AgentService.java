@@ -50,12 +50,30 @@ public class AgentService {
         this.mcpWriteTools = mcpTools.writeTools();
     }
 
+    // The model cannot tell how its answer reaches the user: the screen renders Markdown and cards (static/markdown.js)
+    static final String SPOKEN = """
+
+            Questa risposta verrà letta ad alta voce: frasi brevi, niente markdown, elenchi, tabelle o schede.""";
+    static final String WRITTEN = """
+
+            Questa risposta verrà letta sullo schermo, che mostra il Markdown. Quando rende la risposta più chiara usa \
+            elenchi puntati o numerati, tabelle per i confronti, **grassetto** per i punti chiave e titoli brevi (##) \
+            solo nelle risposte lunghe; una risposta breve resta una frase.
+            Per il meteo aggiungi una scheda: un blocco di codice con linguaggio card che contiene solo JSON, per esempio
+            ```card
+            {"type":"weather","place":"Milano","now":{"temp":18,"condition":"poco nuvoloso","feels":17,"humidity":65,\
+            "wind":12},"days":[{"day":"ven","min":11,"max":19,"condition":"pioggia","rain":70}]}
+            ```
+            Temperature in °C, vento in km/h, rain è la probabilità di pioggia in percentuale. Ometti i campi che non \
+            conosci, non inventare dati, e accompagna la scheda con una frase di commento.""";
+
     /** @param spoken the answer will be read aloud: use the provider's voice model, if configured */
     public Flux<String> stream(ProviderId provider, String conversationId, String sessionId, String userText,
                                boolean spoken) {
         // The previous turn may have died with the process (crash, kill) without being closed
         closeInterruptedTurn(conversationId, "");
         ChatClient.ChatClientRequestSpec request = router.client(provider).prompt();
+        request.system(router.systemPrompt() + (spoken ? SPOKEN : WRITTEN));
         if (spoken) {
             router.voiceModel(provider).ifPresent(model -> request.options(ChatOptions.builder().model(model)));
         }

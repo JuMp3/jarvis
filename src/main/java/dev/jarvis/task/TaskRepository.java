@@ -46,12 +46,21 @@ public class TaskRepository {
     /** Most recent tasks of a conversation, oldest first. */
     List<AgentTask> recent(String conversationId, int limit) {
         return jdbc.sql("""
-                        SELECT * FROM (SELECT * FROM agent_task WHERE conversation_id = ?
+                        SELECT * FROM (SELECT * FROM agent_task WHERE conversation_id = ? AND NOT hidden
                                        ORDER BY created_at DESC LIMIT ?) recent
                         ORDER BY created_at""")
                 .params(conversationId, limit)
                 .query(TaskRepository::map)
                 .list();
+    }
+
+    /** Off the Squadra panel, still in the database: their results serve long-term memory. */
+    int hideFinished(String conversationId) {
+        return jdbc.sql("""
+                        UPDATE agent_task SET hidden = true
+                        WHERE conversation_id = ? AND status NOT IN ('QUEUED', 'RUNNING', 'WAITING_APPROVAL')""")
+                .param(conversationId)
+                .update();
     }
 
     /** Tasks that were queued or running when the application stopped can no longer finish. */

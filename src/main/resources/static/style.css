@@ -871,3 +871,248 @@ select:disabled {
     display: none;
   }
 }
+
+/* Markdown and cards in written answers (markdown.js) ------------------------------------- */
+
+.turn-jarvis:has(> p, > ul, > ol, > div, > figure, > pre, > blockquote, > h3, > h4, > h5, > h6) {
+  white-space: normal;
+}
+
+.turn-jarvis > *,
+.task-result > * {
+  margin: 0;
+}
+
+.turn-jarvis > * + *,
+.task-result > * + * {
+  margin-top: 0.7em;
+}
+
+.turn-jarvis p,
+.turn-jarvis li,
+.turn-jarvis blockquote,
+.task-result p,
+.task-result li {
+  white-space: pre-line;
+}
+
+.md-heading {
+  font: 600 var(--step-0) / 1.35 var(--ui);
+  letter-spacing: 0.01em;
+  color: color-mix(in srgb, var(--paper) 75%, var(--lamp));
+}
+
+.turn-jarvis > .md-heading + * {
+  margin-top: 0.35em;
+}
+
+.turn-jarvis ul,
+.turn-jarvis ol,
+.task-result ul,
+.task-result ol {
+  padding-left: 1.3em;
+}
+
+.turn-jarvis li + li,
+.task-result li + li {
+  margin-top: 0.25em;
+}
+
+.turn-jarvis > ul,
+.task-result > ul {
+  list-style-type: disc; /* inside the log's own list the browser would pick circles */
+}
+
+.turn-jarvis ul > li::marker,
+.task-result ul > li::marker {
+  color: var(--lamp);
+}
+
+.turn-jarvis ol > li::marker,
+.task-result ol > li::marker {
+  color: var(--mist);
+  font: 500 0.85em var(--ui);
+}
+
+.turn-jarvis li > ul,
+.turn-jarvis li > ol {
+  margin-top: 0.25em;
+}
+
+.turn-jarvis blockquote {
+  padding-left: 0.9em;
+  border-left: 2px solid var(--lamp);
+  color: var(--mist);
+}
+
+.turn-jarvis hr {
+  border: 0;
+  border-top: 1px solid var(--line);
+}
+
+.turn-jarvis code,
+.task-result code {
+  font: 0.85em ui-monospace, "Cascadia Code", Consolas, monospace;
+  padding: 0.1em 0.35em;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--deep) 70%, black);
+}
+
+.turn-jarvis pre,
+.task-result pre {
+  overflow-x: auto;
+  padding: 0.75rem 0.9rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--ink) 80%, black);
+  white-space: pre;
+}
+
+.turn-jarvis pre code,
+.task-result pre code {
+  padding: 0;
+  background: none;
+}
+
+.md-table {
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.md-table table {
+  width: 100%;
+  border-collapse: collapse;
+  font: 400 var(--step--1) / 1.45 var(--ui);
+}
+
+.md-table th,
+.md-table td {
+  padding: 0.45rem 0.75rem;
+  text-align: left;
+  vertical-align: top;
+}
+
+.md-table th {
+  font-weight: 600;
+  color: var(--mist);
+  background: var(--deep);
+  border-bottom: 1px solid var(--line);
+}
+
+.md-table tr + tr td {
+  border-top: 1px solid color-mix(in srgb, var(--line) 60%, transparent);
+}
+
+.card {
+  font-family: var(--ui);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: linear-gradient(160deg, color-mix(in srgb, var(--deep) 85%, var(--lamp)), var(--deep) 55%);
+}
+
+.card.pending {
+  padding: 0.8rem 1rem;
+  font-size: var(--step--1);
+  color: var(--mist);
+  animation: breathe 1.6s ease-in-out infinite;
+}
+
+.weather {
+  max-width: 30rem;
+  padding: 1rem 1.1rem 0.9rem;
+}
+
+.weather-now {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+}
+
+.weather-now .weather-icon {
+  font-size: 2.6rem;
+  line-height: 1;
+}
+
+.weather-where {
+  display: grid;
+  margin-right: auto;
+}
+
+.weather-place {
+  font-weight: 600;
+}
+
+.weather-condition,
+.weather-details {
+  font-size: var(--step--1);
+  color: var(--mist);
+}
+
+.weather-condition::first-letter {
+  text-transform: uppercase;
+}
+
+.weather-temp {
+  font: 400 var(--step-2) / 1 var(--read);
+  color: color-mix(in srgb, var(--paper) 70%, var(--lamp));
+}
+
+.weather-details {
+  margin: 0.55rem 0 0;
+}
+
+.weather-days {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(3.6rem, 1fr));
+  gap: 0.4rem;
+  margin-top: 0.8rem;
+  padding-top: 0.8rem;
+  border-top: 1px solid var(--line);
+}
+
+.weather-day {
+  display: grid;
+  justify-items: center;
+  gap: 0.15rem;
+  padding: 0.4rem 0.2rem;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--ink) 55%, transparent);
+  font-size: var(--step--1);
+}
+
+.weather-day-name {
+  color: var(--mist);
+  text-transform: capitalize;
+}
+
+.weather-day .weather-icon {
+  font-size: 1.4rem;
+}
+
+.weather-range {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.weather-rain {
+  font-size: 0.75rem;
+  color: var(--mist);
+}
+
+.team-clear {
+  align-self: flex-start;
+  margin: 0 0 0.75rem;
+  padding: 0.2rem 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: transparent;
+  font-size: var(--step--1);
+  color: var(--mist);
+  cursor: pointer;
+}
+
+.icon-button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}

@@ -110,6 +110,11 @@ public class TaskService implements DisposableBean {
         return (int) ids.stream().filter(id -> cancel(conversationId, id)).count();
     }
 
+    /** Takes the tasks of the conversation that have ended off the panel; the ones still at work stay. */
+    public int clearFinished(String conversationId) {
+        return repository.hideFinished(conversationId);
+    }
+
     public List<AgentTask> recent(String conversationId) {
         return repository.recent(conversationId, RECENT_LIMIT);
     }

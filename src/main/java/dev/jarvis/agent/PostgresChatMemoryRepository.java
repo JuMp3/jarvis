@@ -21,6 +21,9 @@ import tools.jackson.databind.json.JsonMapper;
  *
  * <p>Unlike Spring AI's JdbcChatMemoryRepository it keeps tool calls and tool results: without them
  * the model forgets, in the next turn, which tools it used and what they returned.
+ *
+ * <p>The window of {@code chat_message} is rewritten at each turn; {@link #archive} appends to {@code chat_archive},
+ * which is never trimmed nor cleared.
  */
 @Repository
 public class PostgresChatMemoryRepository implements ChatMemoryRepository {
@@ -65,6 +68,18 @@ public class PostgresChatMemoryRepository implements ChatMemoryRepository {
                             INSERT INTO chat_message (conversation_id, seq, type, content, tool_calls, tool_responses)
                             VALUES (?, ?, ?, ?, CAST(? AS JSONB), CAST(? AS JSONB))""")
                     .params(conversationId, seq, message.getMessageType().name(), message.getText(),
+                            toolCalls(message), toolResponses(message))
+                    .update();
+        }
+    }
+
+    /** Appends messages to the permanent archive of the conversation. */
+    public void archive(String conversationId, List<Message> messages) {
+        for (Message message : messages) {
+            jdbc.sql("""
+                            INSERT INTO chat_archive (conversation_id, type, content, tool_calls, tool_responses)
+                            VALUES (?, ?, ?, CAST(? AS JSONB), CAST(? AS JSONB))""")
+                    .params(conversationId, message.getMessageType().name(), message.getText(),
                             toolCalls(message), toolResponses(message))
                     .update();
         }
