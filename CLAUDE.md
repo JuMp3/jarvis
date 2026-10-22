@@ -24,11 +24,12 @@ Jarvis orchestra una squadra di specialisti in background (sezione "Orchestrazio
 ## Prossima sessione (aggiornato il 22/10/2026)
 
 Da verificare con l'utente:
-- Mani libere con il microfono vero: tarare in `static/vad.js` `minLevel`, `ratio`, `endMs` e, in `app.js`, `ECHO_SENSITIVITY` (eco delle casse durante le risposte).
+- Mani libere con il microfono vero: dopo il pre-roll di `capture.js` l'utente lo trova "un po' meglio". Se serve ancora, tarare con `?vad` in `static/vad.js` `minLevel`, `ratio`, `endMs` e, in `app.js`, `ECHO_SENSITIVITY` (eco delle casse durante le risposte).
 - Organizer: un invio email e un evento di calendario reali su Hotmail (richiesta di approvazione con i dati esatti).
 - Posta `imap` con un provider reale (Gmail o altro, password per le app): finora provata solo con GreenMail.
 
 Valutazioni aperte (dettagli in `docs/ARCHITECTURE.md`, sezione "Valutazione: trascrizione in streaming e modelli speech-to-speech"):
+- **Qualità di trascrizione e voce** (l'utente vuole completarla più avanti): confronto dei motori e ordine consigliato in `docs/ARCHITECTURE.md`, sezione "Valutazione: motori di trascrizione e di voce". Primo passo: credito OpenAI e prova di `openai` in entrambe le direzioni (mai provato dal vivo); poi Groq per la trascrizione.
 - Trascrizione in streaming durante la frase (Speaches): il prossimo guadagno di latenza, circa 2 s su 5.
 - Modello realtime speech-to-speech solo come "voce veloce" opzionale, non al posto di Claude come orchestratore.
 - Calendario per le caselle `imap` (CalDAV); Google con OAuth completo solo quando Jarvis avrà una propria app Google verificata.

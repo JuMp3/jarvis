@@ -65,6 +65,30 @@ Il frontend gestisce tutto ciò che è audio e grafica; il backend coordina tutt
 
 Latenza percepita ≈ trascrizione + primo token + TTS della prima frase. Le leve principali sono un modello più veloce per la voce, frasi iniziali brevi e, più avanti, STT in streaming.
 
+### Valutazione: motori di trascrizione e di voce (22/10/2026, da completare)
+
+La qualità attuale non basta: Whisper `base` sbaglia parole e nomi (anche senza i tagli d'inizio frase, corretti con il pre-roll di `capture.js`), e Piper suona meccanico. Il cambio di motore esiste già, separato per direzione (Impostazioni → Voce: `local` · `openai` · `browser` · `off`, più la chiave OpenAI); le impostazioni restano `local` finché non si sceglie. Prezzi e classifiche cambiano spesso: vanno ricontrollati al momento della scelta.
+
+Trascrizione (STT):
+
+| Opzione | Integrazione | Note |
+|---|---|---|
+| OpenAI `gpt-4o-mini-transcribe` · `gpt-4o-transcribe` | **già integrato** (`jarvis.voice.openai.stt-model`) | Il salto più semplice da Whisper `base`; pochi centesimi per ora di parlato. Mai provato dal vivo (account senza credito): primo passo quando c'è credito |
+| Groq, `whisper-large-v3-turbo` | quasi nulla: API compatibile OpenAI, basta cambiare `jarvis.voice.openai.base-url` e modello (oggi non è nelle Impostazioni) | Il Whisper più grande, molto veloce ed economico |
+| Deepgram, AssemblyAI, ElevenLabs Scribe, Azure Speech | client nuovo per ciascuno | Ottimo italiano e trascrizione in streaming: da valutare insieme allo STT in streaming |
+| Whisper `small` locale (Speaches) | solo configurazione | Gratis e privato, molto meno errori di `base`, ma circa 5,5 s invece di 2 s per frase su questo portatile; con una GPU `large-v3-turbo` |
+
+Voce (TTS):
+
+| Opzione | Integrazione | Note |
+|---|---|---|
+| OpenAI `gpt-4o-mini-tts` | **già integrato** (voce `onyx`, `tts-instructions` per il tono) | Molto più naturale di Piper, costo basso; mai provato dal vivo |
+| ElevenLabs | client nuovo | La qualità migliore, buone voci italiane, il più caro |
+| Azure Neural (es. Isabella, Diego) | client nuovo | Ottimo italiano, economico |
+| Kokoro locale (Speaches) | solo configurazione | Gratis, più naturale di Piper, circa 5 volte più lento su CPU |
+
+Ordine consigliato: (1) credito OpenAI e prova di entrambe le direzioni, misurando latenza e qualità con le stesse frasi; (2) se la trascrizione non basta, Groq, che entra a costo quasi zero (eventualmente rendere `base-url` e modelli selezionabili nelle Impostazioni); (3) i servizi con client proprio solo insieme allo STT in streaming. Per l'app desktop (Fase 5) la voce locale inclusa resta whisper.cpp + Piper; i motori cloud sono un'alternativa a pagamento scelta nelle Impostazioni.
+
 ## Protocollo WebSocket
 
 Client → server
