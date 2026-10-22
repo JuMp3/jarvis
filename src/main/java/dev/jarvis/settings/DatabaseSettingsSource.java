@@ -101,6 +101,7 @@ final class DatabaseSettingsSource extends EnumerablePropertySource<Object> {
                 SettingsRows.expand(rows.getString("name"), rows.getString("kind"), rows.getString("value"), box, settings);
             }
         }
+        SettingsRows.expandApps(SettingsCatalog.APPS, settings);
         // Under the configuration keys too: application.yml no longer refers to the names
         for (SettingsCatalog.Definition definition : SettingsCatalog.ALL) {
             Object value = settings.get(definition.name());

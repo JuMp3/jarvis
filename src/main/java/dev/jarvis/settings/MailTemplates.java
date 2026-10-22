@@ -52,7 +52,7 @@ public final class MailTemplates {
 
     private static Map<String, Row> microsoft(boolean windows, String extraCaCerts, String tenant) {
         Map<String, Row> rows = new LinkedHashMap<>();
-        String connection = PREFIXES.get(0);
+        String connection = PREFIXES.getFirst();
         rows.put(connection + "command", text(windows ? "npx.cmd" : "npx"));
         rows.put(connection + "args", list("-y", MS365_PACKAGE, "--preset", "outlook"));
         rows.put(connection + "env.MS365_MCP_TENANT_ID", text(tenant));

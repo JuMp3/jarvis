@@ -1,6 +1,8 @@
 package dev.jarvis.settings;
 
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -12,7 +14,8 @@ import java.util.Optional;
  */
 public final class SettingsCatalog {
 
-    public enum Kind { TEXT, SECRET, LIST, CHOICE, MULTI_CHOICE }
+    /** APPS: the programs Jarvis may start, saved as JSON (see SettingsRows.expandApps). */
+    public enum Kind { TEXT, SECRET, LIST, CHOICE, MULTI_CHOICE, APPS }
 
     /**
      * @param group tab of the Settings section and step of the wizard, in order of first appearance
@@ -31,6 +34,9 @@ public final class SettingsCatalog {
     }
 
     public static final String MAIL = "JARVIS_MAIL";
+    public static final String APPS = "jarvis.desktop.apps";
+    /** A key not saved yet: lets Spring AI start; the Settings show it as not set. */
+    public static final String UNSET = "not-configured";
 
     public static final List<Definition> ALL = List.of(
             new Definition("JARVIS_PROVIDERS", "jarvis.providers.enabled", "Modelli", "Fornitori da usare",
@@ -38,6 +44,10 @@ public final class SettingsCatalog {
                     List.of(new Choice("anthropic", "Claude", "Anthropic: il modello principale di Jarvis."),
                             new Choice("openai", "OpenAI", "Modelli GPT, con una chiave a pagamento."),
                             new Choice("ollama", "Ollama", "Modelli locali sul tuo PC, se hai Ollama installato.")), null),
+            new Definition("jarvis.providers.default-provider", "jarvis.providers.default-provider", "Modelli",
+                    "Fornitore predefinito", "Quello scelto all'apertura di Jarvis; si cambia anche dall'header.",
+                    Kind.CHOICE, List.of(new Choice("anthropic", "Claude", null), new Choice("openai", "OpenAI", null),
+                            new Choice("ollama", "Ollama", null)), null),
             new Definition("ANTHROPIC_API_KEY", "spring.ai.anthropic.api-key", "Modelli", "Chiave API di Claude",
                     "Da console.anthropic.com, sezione API keys.", Kind.SECRET, List.of(), "anthropic"),
             new Definition("spring.ai.anthropic.custom-headers.anthropic-workspace-id",
@@ -86,7 +96,28 @@ public final class SettingsCatalog {
                     Kind.LIST, List.of(), null),
             new Definition("jarvis.agents.coder.workspaces", "jarvis.agents.coder.workspaces", "Cartelle",
                     "Cartelle dei repository", "Una per riga. Il Programmatore lavora solo sui repository git qui dentro.",
-                    Kind.LIST, List.of(), null));
+                    Kind.LIST, List.of(), null),
+            new Definition(APPS, APPS, "App", "App che Jarvis può avviare",
+                    "Sempre dopo la tua conferma. Negli argomenti {target} è il file o la cartella che Jarvis passa "
+                            + "all'app; argomenti separati da spazi. Link e cartelle si aprono anche senza elenco.",
+                    Kind.APPS, List.of(), null));
+
+    /**
+     * Values in use until the user saves a setting: the lowest property source (SettingsDefaultsSource), so that
+     * application.yml holds none of them. The keys are placeholders that let Spring AI start before the wizard.
+     */
+    public static Map<String, Object> defaults() {
+        Map<String, Object> defaults = new LinkedHashMap<>();
+        defaults.put("jarvis.providers.enabled", "anthropic");
+        defaults.put("jarvis.providers.default-provider", "anthropic");
+        defaults.put("spring.ai.anthropic.api-key", UNSET);
+        defaults.put("spring.ai.openai.api-key", UNSET);
+        defaults.put("spring.ai.ollama.base-url", "http://localhost:11434");
+        defaults.put("jarvis.voice.stt", "local");
+        defaults.put("jarvis.voice.tts", "local");
+        defaults.put("jarvis.documents.folders[0]", System.getProperty("user.home") + "/.jarvis/documents");
+        return defaults;
+    }
 
     private SettingsCatalog() {
     }

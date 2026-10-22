@@ -25,6 +25,7 @@ import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import dev.jarvis.config.JarvisProperties;
 import dev.jarvis.mail.MailClient;
 import dev.jarvis.mail.MailServers;
 import dev.jarvis.settings.SettingsCatalog.Definition;
@@ -65,9 +66,6 @@ public class SettingsService {
         return !environment.getProperty(SETUP_COMPLETED, Boolean.class, false);
     }
 
-    /** The placeholder of application.yml that lets Spring AI start before the wizard saves a key. */
-    static final String UNSET = "not-configured";
-
     public List<View> view() {
         return SettingsCatalog.ALL.stream().map(this::view).toList();
     }
@@ -80,10 +78,13 @@ public class SettingsService {
                     .bind(definition.property(), Bindable.listOf(String.class)).orElse(List.of());
             case TEXT, CHOICE -> environment.getProperty(definition.property(),
                     definition.kind() == Kind.CHOICE ? definition.values().getFirst() : "");
+            case APPS -> Binder.get(environment)
+                    .bind(definition.property(), Bindable.mapOf(String.class, JarvisProperties.DesktopApp.class))
+                    .map(SettingsRows::appRows).orElse(List.of());
         };
         boolean set = definition.kind() == Kind.SECRET
                 ? !environment.getProperty(definition.property(), "").isBlank()
-                        && !UNSET.equals(environment.getProperty(definition.property()))
+                        && !SettingsCatalog.UNSET.equals(environment.getProperty(definition.property()))
                 : value != null;
         return new View(definition.name(), definition.group(), definition.label(), definition.help(),
                 definition.kind().name().toLowerCase(Locale.ROOT), definition.choices(), value, set, origin,
@@ -95,6 +96,9 @@ public class SettingsService {
         for (PropertySource<?> source : environment.getPropertySources()) {
             if (ConfigurationPropertySources.isAttachedConfigurationPropertySource(source)) {
                 continue; // Spring Boot's view over all the others: it would answer first for every key
+            }
+            if (source.getName().equals(SettingsDefaultsSource.NAME)) {
+                return null; // not chosen by anyone yet
             }
             Object found = source.getProperty(property);
             if (found == null && source instanceof EnumerablePropertySource<?> enumerable) {
@@ -168,6 +172,11 @@ public class SettingsService {
                     throw new IllegalArgumentException(label + ": scegli almeno uno tra " + definition.values() + ".");
                 }
                 yield () -> upsert(definition.name(), SettingsRows.TEXT, String.join(",", chosen));
+            }
+            case APPS -> {
+                String apps = SettingsRows.appsJson(raw);
+                yield apps.equals("[]") ? () -> delete(definition.name())
+                        : () -> upsert(definition.name(), SettingsRows.TEXT, apps);
             }
             case LIST -> {
                 List<String> folders = items(raw, false);

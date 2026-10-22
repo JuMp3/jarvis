@@ -16,6 +16,10 @@ public class SettingsEnvironmentPostProcessor implements EnvironmentPostProcesso
 
     @Override
     public void postProcessEnvironment(ConfigurableEnvironment environment, SpringApplication application) {
+        // Always, tests included: application.yml has no value for the settings
+        if (!environment.getPropertySources().contains(SettingsDefaultsSource.NAME)) {
+            environment.getPropertySources().addLast(new SettingsDefaultsSource());
+        }
         if (!environment.getProperty("jarvis.settings.enabled", Boolean.class, true)
                 || environment.getPropertySources().contains(DatabaseSettingsSource.NAME)) {
             return;

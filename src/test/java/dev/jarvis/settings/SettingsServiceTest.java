@@ -74,6 +74,19 @@ class SettingsServiceTest extends BaseTest {
     }
 
     @Test
+    void appsAreSavedAsJsonAndReadBackAsCommands() {
+        settings.save(Map.of(SettingsCatalog.APPS, List.of(
+                Map.of("name", "Outlook", "program", "C:/Office/OUTLOOK.EXE", "arguments", ""))), List.of());
+
+        DatabaseSettingsSource next = nextStart();
+        assertThat(next.getProperty("jarvis.desktop.apps.outlook.command[0]")).isEqualTo("C:/Office/OUTLOOK.EXE");
+        assertThat(next.getProperty(SettingsCatalog.APPS)).isNull();
+
+        settings.save(Map.of(SettingsCatalog.APPS, List.of()), List.of());
+        assertThat(nextStart().getProperty("jarvis.desktop.apps.outlook.command[0]")).isNull();
+    }
+
+    @Test
     void theOpenAiKeyFeedsBothChatAndVoice() {
         settings.save(Map.of("OPENAI_API_KEY", "sk-proj-1"), List.of());
         DatabaseSettingsSource next = nextStart();

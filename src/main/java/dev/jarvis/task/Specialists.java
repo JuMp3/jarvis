@@ -10,6 +10,8 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.boot.context.properties.bind.Bindable;
 import org.springframework.boot.context.properties.bind.Binder;
 import org.springframework.core.env.Environment;
@@ -41,6 +43,8 @@ public class Specialists {
     public record Result(String text, Integer inputTokens, Integer outputTokens, Double costUsd) {
     }
 
+    private static final Logger log = LoggerFactory.getLogger(Specialists.class);
+
     private final Map<String, SpecialistRunner> runners;
     private final Map<String, Duration> timeouts;
 
@@ -51,6 +55,11 @@ public class Specialists {
         Map<String, SpecialistRunner> built = new LinkedHashMap<>();
         Map<String, Duration> limits = new LinkedHashMap<>();
         specs.forEach((id, spec) -> {
+            // Repository folders come from Settings: before the wizard there are none
+            if ("claude-code".equals(spec.type()) && new WorkspacePolicy(spec.workspaces()).roots().isEmpty()) {
+                log.warn("Specialist {} is off: no repository folder yet (Settings → Cartelle)", id);
+                return;
+            }
             built.put(id, "claude-code".equals(spec.type())
                     ? new ClaudeCodeSpecialist(id, spec, claudeCodeEnvironment(environment), json)
                     : new ChatSpecialist(id, spec, router, systemTools, documentTools, mcpTools, mailTools));

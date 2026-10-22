@@ -140,6 +140,40 @@ export function createSettings({ send }) {
         fields.set(setting.name, { read: () => area.value });
         break;
       }
+      case 'apps': {
+        // One row per app: name, program, arguments; an empty row is ignored when saving
+        label.removeAttribute('for');
+        const rows = node('div', 'apps');
+        const addRow = (app = {}) => {
+          const row = node('div', 'app-row');
+          const inputs = [['name', 'Nome', 'Visual Studio Code'], ['program', 'Programma', 'C:/…/Code.exe'],
+            ['arguments', 'Argomenti', 'facoltativi']].map(([key, text, example]) => {
+            const input = node('input');
+            Object.assign(input, { type: 'text', value: app[key] ?? '', placeholder: example, spellcheck: false });
+            input.dataset.key = key;
+            input.setAttribute('aria-label', text);
+            return input;
+          });
+          const remove = node('button', 'secondary small', 'Togli');
+          remove.type = 'button';
+          remove.addEventListener('click', () => row.remove());
+          row.append(...inputs, remove);
+          rows.append(row);
+        };
+        const head = node('div', 'app-row app-head');
+        head.setAttribute('aria-hidden', 'true');
+        head.append(node('span', null, 'Nome'), node('span', null, 'Programma'), node('span', null, 'Argomenti'));
+        (shown(setting) ?? []).forEach(addRow);
+        const add = node('button', 'secondary small', 'Aggiungi un\'app');
+        add.type = 'button';
+        add.addEventListener('click', () => addRow());
+        wrapper.append(help, head, rows, add);
+        fields.set(setting.name, {
+          read: () => [...rows.children].map((row) => Object.fromEntries(
+            [...row.querySelectorAll('input')].map((input) => [input.dataset.key, input.value.trim()]))),
+        });
+        break;
+      }
       case 'choice':
       case 'multi_choice': {
         const group = node('div', 'setting-choices');

@@ -242,7 +242,10 @@ Jarvis va installato su un PC, dove un file `.env` non è una soluzione: le impo
 
 ## Configurazione e segreti
 
-- Tutto ciò che è nelle Impostazioni (chiavi, fornitori, voce, cartelle, posta, GitHub) si salva e si legge solo dal database: `application.yml` ne contiene i default, senza riferimenti a variabili d'ambiente.
+- **Tutto ciò che è nelle Impostazioni** (chiavi, fornitori e fornitore predefinito, voce, cartelle, posta, GitHub, app del desktop) si salva e si legge solo dal database. `application.yml` non ne contiene nulla: i valori iniziali, in uso finché l'utente non salva, sono in `SettingsCatalog.defaults()`, pubblicati da `SettingsDefaultsSource` sotto tutte le altre sorgenti (anche nei test). Le Impostazioni non danno un'origine a un valore di default.
+- **Posta e Organizer:** connessione MCP, tool di lettura e scrittura e lo specialista `organizer` (descrizione, modello, tool, system prompt) li definisce `MailTemplates` e li scrive nel DB quando si sceglie la casella; cambiandola si riscrivono.
+- **App del desktop:** scheda App, una riga per app (nome, programma, argomenti separati da spazi, `{target}` per il file o la cartella). Salvate come JSON in una riga, al caricamento diventano `jarvis.desktop.apps.<id>.command[i]` (`SettingsRows.expandApps`, id dal nome); `DesktopTools` non cambia.
+- **Programmatore senza cartelle:** finché non c'è una cartella dei repository lo specialista `coder` resta spento, con un avviso nel log, invece di bloccare l'avvio.
 - `application.yml` usa variabili d'ambiente solo per ciò che serve prima del database o non è nelle Impostazioni: connessione al database, porta, modelli, indirizzo di Speaches. In sviluppo si possono mettere in `jarvis-local.yml` o `.env` (in `.gitignore`, importati con `spring.config.import`).
 - Una chiave non ancora salvata vale `not-configured`, così Spring AI parte e il wizard può comparire; le Impostazioni la mostrano come non impostata.
 

@@ -1219,3 +1219,36 @@ select:disabled {
   opacity: 0.4;
   cursor: default;
 }
+
+/* Settings: desktop apps ----------------------------------------------------------------- */
+
+.app-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr) minmax(0, 0.8fr) auto;
+  gap: 0.4rem;
+  align-items: center;
+  margin-top: 0.4rem;
+}
+
+.app-row input {
+  width: 100%;
+  min-width: 0;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--ink);
+}
+
+.app-head {
+  margin-top: 0.8rem;
+  font-size: var(--step--1);
+  color: var(--mist);
+}
+
+.app-head span:last-child {
+  grid-column: 3;
+}
+
+.kind-apps > .small {
+  margin-top: 0.6rem;
+}
