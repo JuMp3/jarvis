@@ -27,8 +27,11 @@ public record JarvisProperties(Providers providers, Agent agent, Voice voice, Ta
     public record Mail(boolean enabled, String address, String password, String imapServer, String smtpServer) {
     }
 
-    /** @param servers MCP servers Jarvis uses, by connection name of spring.ai.mcp.client */
-    public record Mcp(Map<String, McpServer> servers) {
+    /**
+     * @param servers  MCP servers Jarvis uses, by connection name of spring.ai.mcp.client
+     * @param nodeHome the Node of the desktop app with the npx servers already installed (NpxCommand); blank: npx
+     */
+    public record Mcp(Map<String, McpServer> servers, String nodeHome) {
     }
 
     /**

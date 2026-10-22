@@ -31,7 +31,8 @@
       "resources/backend/": "backend/",
       "resources/postgres/": "postgres/",
       "resources/voice/": "voice/",
-      "resources/memory/": "memory/"
+      "resources/memory/": "memory/",
+      "resources/node/": "node/"
     }
   }
 }

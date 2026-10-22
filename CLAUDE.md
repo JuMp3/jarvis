@@ -34,7 +34,7 @@ Valutazioni aperte (dettagli in `docs/ARCHITECTURE.md`, sezione "Valutazione: tr
 - Modello realtime speech-to-speech solo come "voce veloce" opzionale, non al posto di Claude come orchestratore.
 - Calendario per le caselle `imap` (CalDAV); Google con OAuth completo solo quando Jarvis avrà una propria app Google verificata.
 
-Fase 5 quasi chiusa (dettagli in `docs/ARCHITECTURE.md`, "App desktop" e "Memoria a lungo termine"). Resta da fare: la prova dell'installer da parte dell'utente; **Node portatile con il server MCP di Outlook nell'installer** (deciso, non ancora fatto: oggi l'app installata usa `npx` del PC); firma del codice; gli script e i binari per macOS e Linux. Prossima fase: **Fase 6, autonomia controllata** (roadmap in `docs/ARCHITECTURE.md`).
+Fase 5 quasi chiusa (dettagli in `docs/ARCHITECTURE.md`, "App desktop" e "Memoria a lungo termine"). Resta da fare: la prova dell'installer da parte dell'utente (con il Node incluso va rigenerato); firma del codice; gli script e i binari per macOS e Linux. Prossima fase: **Fase 6, autonomia controllata** (roadmap in `docs/ARCHITECTURE.md`).
 
 ## Comandi
 
@@ -48,6 +48,7 @@ cd desktop && npm install && npm run backend -- -JavaHome <JDK 25>   # jar + run
 powershell -ExecutionPolicy Bypass -File desktop/prepare-postgres.ps1   # PostgreSQL + pgvector in src-tauri/resources/postgres (una volta)
 powershell -ExecutionPolicy Bypass -File desktop/prepare-voice.ps1      # whisper.cpp + Piper + modelli (JARVIS_VOICE_HOME in .env)
 powershell -ExecutionPolicy Bypass -File desktop/prepare-memory.ps1     # modello di embedding della memoria (JARVIS_MEMORY_HOME in .env)
+powershell -ExecutionPolicy Bypass -File desktop/prepare-node.ps1       # Node + server MCP di Outlook (JARVIS_NODE_HOME, facoltativo in sviluppo)
 cd desktop/src-tauri && cargo build && ./target/debug/jarvis-desktop.exe   # oppure: cd desktop && npx tauri dev
 JARVIS_BACKEND_URL=http://localhost:8080 ./target/debug/jarvis-desktop.exe # shell collegata al backend di sviluppo
 ```

@@ -258,7 +258,8 @@ Jarvis va installato su un PC, dove un file `.env` non è una soluzione: le impo
 - **Sviluppo:** `JARVIS_BACKEND_URL=http://localhost:8080` collega la shell a un backend già acceso (`./mvnw spring-boot:run`) invece di avviare quello incluso.
 - **Voce locale:** whisper.cpp e Piper li avvia il backend (`LocalVoice`), quindi la shell passa solo la cartella (`JARVIS_VOICE_HOME`, `src-tauri/resources/voice`: circa 430 MB, quasi tutti modelli: Whisper `small` quantizzato e `base`, voce Paola).
 - **Memoria a lungo termine:** il modello di embedding sta in `src-tauri/resources/memory` (`prepare-memory.ps1`, circa 130 MB), passato con `JARVIS_MEMORY_HOME`.
-- **Prossimi passi della fase:** installer NSIS completo con voce e memoria.
+- **Node per i server MCP** (`prepare-node.ps1`, circa 150 MB): `node.exe` 24 LTS con il pacchetto di Outlook già installato, alla versione letta da `MailTemplates.java`. Le impostazioni restano nella forma `npx -y pacchetto@versione …`; al momento di avviare il server `NpxCommand` la traduce nel Node incluso (`JARVIS_NODE_HOME`) se c'è quel pacchetto a quella versione, altrimenti resta `npx` (sviluppo). Nessun percorso d'installazione finisce nel database. Node gira con `--use-system-ca`: i certificati di sistema, come la JVM. `keytar` (Credential Manager) è un modulo nativo installato per il sistema su cui gira lo script. Verificato: Outlook collegato con il Node incluso, login letto.
+- **Prossimi passi della fase:** firma del codice; macOS e Linux.
 
 ## Memoria a lungo termine (Fase 5)
 
@@ -285,7 +286,7 @@ Ogni funzione va pensata per Windows, macOS e Linux; oggi è provata solo su Win
 | Postgres incluso | binari EDB + pgvector con Visual Studio (`prepare-postgres.ps1`) | binari per macOS e Linux (EDB per macOS, o una build portabile) e pgvector con `make`; `database.rs` è già comune |
 | Installer | NSIS | `.dmg` (macOS), AppImage / `.deb` (Linux), da Tauri |
 | Voce locale | whisper.cpp (binari ufficiali per Windows) e Piper (`prepare-voice.ps1`) | Piper ha binari per macOS e Linux; whisper.cpp per macOS e Linux va compilato con `cmake` (gli eseguibili si chiamano uguali, senza `.exe`: `LocalVoice` lo gestisce) |
-| Server MCP con npx | `npx.cmd` (`MailTemplates`) | `npx` (già previsto) |
+| Server MCP con npx | Node incluso (`prepare-node.ps1`, `NpxCommand`), `npx.cmd` in sviluppo | Node per quel sistema (`node` senza `.exe`, già previsto in `NpxCommand`) e `keytar` installato lì |
 | Avvio automatico | registro di Windows (plugin autostart) | LaunchAgent macOS, `.desktop` Linux (stesso plugin) |
 
 iOS (e Android) non possono eseguire il backend: sarebbero un'app client collegata a un Jarvis acceso altrove. Tauri 2 li supporta, ma è un progetto a parte.

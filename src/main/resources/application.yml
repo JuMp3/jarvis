@@ -93,6 +93,8 @@ jarvis:
       devono essere complete, perché non vede la conversazione. Dopo aver avviato i task rispondi
       subito con una frase, senza aspettare i risultati. Per fermare un task usa cancelTask.
   mcp:
+    # The desktop app's Node with the npx servers preinstalled (desktop/prepare-node.ps1, NpxCommand); empty: npx
+    node-home: ${JARVIS_NODE_HOME:}
     # MCP servers by connection name (spring.ai.mcp.client.*). Only the tools listed here are exposed:
     # read-tools to the specialists that declare mcp:<server>, write-tools to Jarvis, each call after your approval.
     servers:

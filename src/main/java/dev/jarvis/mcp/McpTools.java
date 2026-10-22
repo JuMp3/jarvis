@@ -57,6 +57,7 @@ public class McpTools {
     private final ObjectProvider<McpStdioClientProperties> stdio;
     private final ObjectProvider<McpClientCommonProperties> common;
     private volatile boolean closed;
+    private final String nodeHome;
 
     public McpTools(JarvisProperties properties, ObjectProvider<List<McpSyncClient>> clients,
                     ApprovalService approvals, ObjectProvider<McpStdioClientProperties> stdio,
@@ -66,6 +67,7 @@ public class McpTools {
         Map<String, McpServer> servers = properties.mcp() == null || properties.mcp().servers() == null
                 ? Map.of() : properties.mcp().servers();
         this.configured = Collections.unmodifiableSet(servers.keySet());
+        this.nodeHome = properties.mcp() == null ? null : properties.mcp().nodeHome();
         List<McpSyncClient> available = clients.getIfAvailable(List::of);
         servers.forEach((name, server) -> {
             McpSyncClient client = stdioParameters(name) != null ? stdioClient(name) : available.stream()
@@ -153,7 +155,7 @@ public class McpTools {
 
     private ServerParameters stdioParameters(String name) {
         McpStdioClientProperties properties = stdio.getIfAvailable();
-        return properties == null ? null : properties.toServerParameters().get(name);
+        return properties == null ? null : NpxCommand.resolve(properties.toServerParameters().get(name), nodeHome);
     }
 
     @PreDestroy

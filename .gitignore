@@ -17,3 +17,4 @@ desktop/.cache/
 desktop/src-tauri/resources/postgres/
 desktop/src-tauri/resources/voice/
 desktop/src-tauri/resources/memory/
+desktop/src-tauri/resources/node/

@@ -132,6 +132,8 @@ fn start_backend(app: &AppHandle, window: &WebviewWindow) -> Result<(), String> 
         // The backend runs whisper.cpp and Piper itself (LocalVoice): it only needs where they are
         .env("JARVIS_VOICE_HOME", resources.join("voice"))
         .env("JARVIS_MEMORY_HOME", resources.join("memory"))
+        // npx MCP servers (Outlook) run with the bundled Node and their preinstalled package (NpxCommand)
+        .env("JARVIS_NODE_HOME", resources.join("node"))
         .stdin(Stdio::null())
         .stdout(console.try_clone().map_err(|e| e.to_string())?)
         .stderr(console);

@@ -37,6 +37,7 @@ L'app desktop (`desktop/`, Tauri 2) contiene il backend, un Java ridotto e Postg
 | Versione di PostgreSQL o di pgvector | `powershell -ExecutionPolicy Bypass -File desktop/prepare-postgres.ps1` (parametri `-PostgresVersion`, `-PgvectorVersion`): circa un minuto, i download restano in `desktop/.cache` |
 | Binari o modelli della voce locale | `powershell -ExecutionPolicy Bypass -File desktop/prepare-voice.ps1` (parametri `-WhisperBuild`, `-PiperVersion`, `-Voice`) |
 | Modello della memoria a lungo termine | `powershell -ExecutionPolicy Bypass -File desktop/prepare-memory.ps1` (parametro `-Model`) |
+| Node o versione del server MCP di Outlook (`MailTemplates.MS365_PACKAGE`) | `powershell -ExecutionPolicy Bypass -File desktop/prepare-node.ps1` (parametro `-NodeVersion`) |
 | Shell (`desktop/src-tauri/src`, `tauri.conf.json`, icone) | niente di più: la ricompila il passo dopo |
 
 Poi, a seconda di cosa serve:
