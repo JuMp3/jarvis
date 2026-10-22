@@ -34,7 +34,7 @@ Valutazioni aperte (dettagli in `docs/ARCHITECTURE.md`, sezione "Valutazione: tr
 - Modello realtime speech-to-speech solo come "voce veloce" opzionale, non al posto di Claude come orchestratore.
 - Calendario per le caselle `imap` (CalDAV); Google con OAuth completo solo quando Jarvis avrà una propria app Google verificata.
 
-Prossima fase: **Fase 5, app desktop** (Tauri con il backend come sidecar, tray, avvio automatico; poi memoria a lungo termine e RAG su pgvector, che richiede un modello di embedding OpenAI o Ollama). Deciso il 22/10/2026 per l'installazione su PC, senza Docker: PostgreSQL portatile con pgvector compilato una volta, nell'installer, avviato dal sidecar con i dati in `~/.jarvis`; voce locale inclusa con whisper.cpp e Piper nativi dietro un adattatore all'API audio OpenAI (`OpenAiAudioClient` resta invariato), modelli nell'installer. Server MCP di Outlook: Node portatile e pacchetto alla versione fissata già nell'installer. Embedding per il RAG: modello ONNX multilingue locale nel backend (Spring AI Transformers). Ordine: shell Tauri, Postgres portatile, voce nativa, installer NSIS, RAG.
+Fase 5 quasi chiusa (dettagli in `docs/ARCHITECTURE.md`, "App desktop" e "Memoria a lungo termine"). Resta da fare: la prova dell'installer da parte dell'utente; **Node portatile con il server MCP di Outlook nell'installer** (deciso, non ancora fatto: oggi l'app installata usa `npx` del PC); firma del codice; gli script e i binari per macOS e Linux. Prossima fase: **Fase 6, autonomia controllata** (roadmap in `docs/ARCHITECTURE.md`).
 
 ## Comandi
 
