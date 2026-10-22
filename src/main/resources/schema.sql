@@ -67,6 +67,13 @@ CREATE TABLE IF NOT EXISTS memory_vector (
 
 CREATE INDEX IF NOT EXISTS memory_vector_embedding_idx ON memory_vector USING hnsw (embedding vector_cosine_ops);
 
+-- The documents indexed, with the modification time seen and how many passages they gave (to replace them)
+CREATE TABLE IF NOT EXISTS memory_document (
+    path     TEXT    PRIMARY KEY,
+    modified BIGINT  NOT NULL,
+    passages INT     NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS memory_progress (
     source   VARCHAR(16) PRIMARY KEY,
     position BIGINT      NOT NULL

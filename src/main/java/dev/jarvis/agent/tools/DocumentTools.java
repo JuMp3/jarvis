@@ -10,13 +10,16 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import org.springframework.ai.document.Document;
 import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.ai.tool.annotation.ToolParam;
 import org.springframework.stereotype.Component;
 
 import dev.jarvis.config.JarvisProperties;
+import dev.jarvis.memory.LongTermMemory;
 
 /**
  * Read-only access to the user's documents under {@code jarvis.documents.folders}: list, search, read.
@@ -34,9 +37,15 @@ public class DocumentTools {
     private static final DateTimeFormatter DAY = DateTimeFormatter.ofPattern("d MMM yyyy", Locale.ITALIAN)
             .withZone(ZoneId.systemDefault());
 
-    private final AllowedFolders folders;
+    /** Indexed by the long-term memory: beyond it, the plain searches still find them. */
+    private static final int MAX_INDEXED = 2_000;
+    private static final int MEANING_RESULTS = 8;
 
-    public DocumentTools(JarvisProperties properties) {
+    private final AllowedFolders folders;
+    private final LongTermMemory memory;
+
+    public DocumentTools(JarvisProperties properties, LongTermMemory memory) {
+        this.memory = memory;
         List<String> configured = properties.documents() == null || properties.documents().folders() == null
                 ? List.of() : properties.documents().folders();
         configured.forEach(DocumentTools::createIfMissing);
@@ -73,6 +82,25 @@ public class DocumentTools {
             snippet(file, needle).ifPresent(snippet -> found.add(file + "\n  …" + snippet + "…"));
         }
         return found.isEmpty() ? "Nessun documento contiene \"" + query + "\"." : String.join("\n", found);
+    }
+
+    @Tool(description = "Cerca nei documenti consentiti per significato, non per parole esatte: restituisce i passaggi "
+            + "più vicini alla domanda con il percorso del file. Utile quando non sai le parole usate nel documento.")
+    public String searchDocumentsByMeaning(@ToolParam(description = "La domanda o l'argomento, in parole tue") String query) {
+        if (!memory.enabled()) {
+            return "La ricerca per significato non è attiva su questo PC: usa searchDocuments.";
+        }
+        List<Document> found = memory.search(query, MEANING_RESULTS, "source == 'document'");
+        if (found.isEmpty()) {
+            return "Nessun passaggio dei documenti è vicino a questa domanda (i documenti nuovi entrano nella ricerca "
+                    + "entro qualche minuto): prova searchDocuments.";
+        }
+        return found.stream().map(document -> "- " + document.getText()).collect(Collectors.joining("\n"));
+    }
+
+    /** The documents the long-term memory indexes, in the allowed folders. */
+    public List<Path> indexable() {
+        return documents(folders.roots()).limit(MAX_INDEXED).toList();
     }
 
     @Tool(description = "Legge il testo di un documento consentito (testo, PDF, Word).")

@@ -13,7 +13,10 @@ import org.springframework.stereotype.Component;
 
 import dev.jarvis.memory.LongTermMemory;
 
-/** Read only: searches the long-term memory (dev.jarvis.memory). */
+/**
+ * Read only: searches the long-term memory (dev.jarvis.memory), conversations and tasks only. Jarvis can act, so the
+ * passages of the user's documents (untrusted content) are left to the documents specialist (DocumentTools).
+ */
 @Component
 public class MemoryTools {
 
@@ -32,7 +35,7 @@ public class MemoryTools {
         if (!memory.enabled()) {
             return "La memoria a lungo termine non è attiva su questo PC.";
         }
-        List<Document> found = memory.search(query, RESULTS);
+        List<Document> found = memory.search(query, RESULTS, "source != 'document'");
         if (found.isEmpty()) {
             return "Nella memoria non c'è nulla su questo.";
         }

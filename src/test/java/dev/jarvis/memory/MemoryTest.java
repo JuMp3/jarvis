@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.FileTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -21,6 +22,8 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.simple.JdbcClient;
 
 import dev.jarvis.BaseTest;
+import dev.jarvis.agent.tools.DocumentTools;
+import dev.jarvis.agent.tools.MemoryTools;
 import dev.jarvis.config.JarvisProperties;
 
 class MemoryTest extends BaseTest {
@@ -77,9 +80,9 @@ class MemoryTest extends BaseTest {
     }
 
     @Test
-    void messagesAndTaskResultsAreIndexedOnceAndFound() {
+    void messagesAndTaskResultsAreIndexedOnceAndFound() throws Exception {
         LongTermMemory memory = new LongTermMemory(jdbcTemplate, new WordEmbeddings(), 0.1);
-        MemoryIndexer indexer = new MemoryIndexer(memory, jdbc);
+        MemoryIndexer indexer = new MemoryIndexer(memory, jdbc, documentsIn(Files.createTempDirectory("jarvis-docs-"), memory));
         String conversation = "memtest-" + UUID.randomUUID();
         jdbc.sql("INSERT INTO chat_archive (conversation_id, type, content) VALUES (?, 'USER', ?), (?, 'TOOL', ?)")
                 .params(conversation, "Ad agosto andrò in vacanza in Sardegna, a Cagliari", conversation, "tool traffic")
@@ -97,12 +100,42 @@ class MemoryTest extends BaseTest {
         }
         assertThat(indexer.indexOnce()).isZero();
 
-        assertThat(memory.search("vacanza Sardegna Cagliari", 3)).extracting(Document::getText)
+        assertThat(memory.search("vacanza Sardegna Cagliari", 3, null)).extracting(Document::getText)
                 .anyMatch(text -> text.contains("L'utente ha detto: Ad agosto andrò in vacanza in Sardegna"));
-        assertThat(memory.search("treno Frecciarossa Napoli", 3)).extracting(Document::getText)
+        assertThat(memory.search("treno Frecciarossa Napoli", 3, null)).extracting(Document::getText)
                 .anyMatch(text -> text.contains("lavoro «Treni» (researcher): Il treno Frecciarossa"));
-        assertThat(memory.search("tool traffic", 3)).extracting(Document::getText)
+        assertThat(memory.search("tool traffic", 3, null)).extracting(Document::getText)
                 .noneMatch(text -> text.contains("tool traffic"));
+    }
+
+    @Test
+    void documentsAreIndexedReplacedWhenChangedRemovedWhenDeletedAndHiddenFromJarvis() throws Exception {
+        LongTermMemory memory = new LongTermMemory(jdbcTemplate, new WordEmbeddings(), 0.1);
+        Path folder = Files.createTempDirectory("jarvis-docs-");
+        DocumentTools tools = documentsIn(folder, memory);
+        MemoryIndexer indexer = new MemoryIndexer(memory, jdbc, tools);
+        Path contract = folder.resolve("contratto.txt");
+        Files.writeString(contract, "Il contratto di affitto scade a marzo, disdetta con sei mesi di preavviso");
+
+        assertThat(indexer.indexDocuments()).isEqualTo(1);
+        assertThat(indexer.indexDocuments()).isZero(); // unchanged
+        assertThat(tools.searchDocumentsByMeaning("contratto affitto disdetta")).contains("contratto.txt", "scade a marzo");
+        assertThat(new MemoryTools(memory).searchMemory("contratto affitto disdetta")).doesNotContain("scade a marzo");
+
+        Files.writeString(contract, "Il contratto di affitto è stato rinnovato fino a dicembre");
+        Files.setLastModifiedTime(contract, FileTime.fromMillis(System.currentTimeMillis() + 5_000));
+        assertThat(indexer.indexDocuments()).isEqualTo(1);
+        assertThat(tools.searchDocumentsByMeaning("contratto affitto")).contains("rinnovato").doesNotContain("scade a marzo");
+
+        Files.delete(contract);
+        indexer.indexDocuments();
+        assertThat(memory.search("contratto affitto rinnovato", 5, "source == 'document'"))
+                .noneMatch(found -> found.getText().contains(contract.toString()));
+    }
+
+    private static DocumentTools documentsIn(Path folder, LongTermMemory memory) {
+        return new DocumentTools(new JarvisProperties(null, null, null, null, null,
+                new JarvisProperties.Documents(List.of(folder.toString())), null, null, null, null), memory);
     }
 
     /** The real model: runs only where it is prepared (desktop/prepare-memory.ps1). */
@@ -119,11 +152,11 @@ class MemoryTest extends BaseTest {
                 passage(marker, "Jarvis ha risposto: ho mandato l'email a Marco con il preventivo"),
                 passage(marker, "lavoro «Meteo Milano»: domani a Milano pioggia, minima 9 e massima 14 gradi")));
 
-        List<Document> holidays = memory.search("dove andrò in vacanza quest'estate?", 3);
+        List<Document> holidays = memory.search("dove andrò in vacanza quest'estate?", 3, null);
         assertThat(holidays).isNotEmpty();
         assertThat(holidays.getFirst().getText()).contains("Sardegna");
-        assertThat(memory.search("che tempo farà a Milano?", 3).getFirst().getText()).contains("Meteo Milano");
-        assertThat(memory.search("ricetta della carbonara con il guanciale", 3))
+        assertThat(memory.search("che tempo farà a Milano?", 3, null).getFirst().getText()).contains("Meteo Milano");
+        assertThat(memory.search("ricetta della carbonara con il guanciale", 3, null))
                 .noneMatch(found -> found.getText().contains(marker));
     }
 

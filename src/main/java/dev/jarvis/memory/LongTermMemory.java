@@ -32,8 +32,11 @@ public class LongTermMemory {
 
     private static final Logger log = LoggerFactory.getLogger(LongTermMemory.class);
     static final int DIMENSIONS = 384;
-    /** Below this cosine similarity e5 matches are mostly noise. */
-    static final double MIN_SIMILARITY = 0.78;
+    /**
+     * e5 similarities sit in a narrow band. Measured: the right memory 0.85-0.88, other memories 0.77-0.83, the
+     * best match of an unrelated question 0.77-0.79. At 0.80 the unrelated ones go, the right one always stays.
+     */
+    static final double MIN_SIMILARITY = 0.80;
 
     private final VectorStore store;
     private final TransformersEmbeddingModel model;
@@ -64,13 +67,26 @@ public class LongTermMemory {
         }
     }
 
-    /** The memories closest in meaning to the query, most similar first. */
-    public List<Document> search(String query, int max) {
+    void delete(List<String> ids) {
+        if (store != null && !ids.isEmpty()) {
+            store.delete(ids);
+        }
+    }
+
+    /**
+     * The memories closest in meaning to the query, most similar first.
+     *
+     * @param filter on the metadata, e.g. {@code source == 'document'}; null for all
+     */
+    public List<Document> search(String query, int max, String filter) {
         if (store == null || query == null || query.isBlank()) {
             return List.of();
         }
-        return store.similaritySearch(SearchRequest.builder().query(query).topK(max)
-                .similarityThreshold(minSimilarity).build());
+        SearchRequest.Builder request = SearchRequest.builder().query(query).topK(max).similarityThreshold(minSimilarity);
+        if (filter != null) {
+            request.filterExpression(filter);
+        }
+        return store.similaritySearch(request.build());
     }
 
     private static VectorStore store(JdbcTemplate jdbc, EmbeddingModel embeddings) {
