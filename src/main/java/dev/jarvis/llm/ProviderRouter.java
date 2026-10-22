@@ -40,7 +40,8 @@ public class ProviderRouter {
                     + beanClasses.keySet() + ")");
         }
 
-        this.systemPrompt = properties.agent().systemPrompt() + specialistCatalog(properties);
+        this.systemPrompt = properties.agent().systemPrompt() + userLine(properties.agent().userName())
+                + specialistCatalog(properties);
         Map<ProviderId, ChatClient> built = new EnumMap<>(ProviderId.class);
         selected.forEach((provider, beanName) -> models.put(provider, chatModels.get(beanName)));
         models.forEach((provider, model) -> built.put(provider,
@@ -65,6 +66,11 @@ public class ProviderRouter {
     }
 
     /** The orchestrator chooses specialists by reading their descriptions. */
+    /** The name of the user, from Settings: nothing at all when not given, rather than an empty phrase. */
+    private static String userLine(String userName) {
+        return userName == null || userName.isBlank() ? "" : "\nL'utente si chiama " + userName.strip() + ".";
+    }
+
     private static String specialistCatalog(JarvisProperties properties) {
         if (properties.agents() == null || properties.agents().isEmpty()) {
             return "";

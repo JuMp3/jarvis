@@ -105,8 +105,10 @@ public record JarvisProperties(Providers providers, Agent agent, Voice voice, Ta
      * @param approvalTimeout   how long a tool waits for the user's approval before it is denied
      * @param notesDir          sandbox folder for the note tools
      * @param systemPrompt      system prompt shared by every provider
+     * @param userName          how the user wants to be called (Settings → Profilo); may be blank
      */
-    public record Agent(int memoryMaxMessages, Duration approvalTimeout, String notesDir, String systemPrompt) {
+    public record Agent(int memoryMaxMessages, Duration approvalTimeout, String notesDir, String systemPrompt,
+                        String userName) {
     }
 
     /**

@@ -39,6 +39,8 @@ public final class SettingsCatalog {
     public static final String UNSET = "not-configured";
 
     public static final List<Definition> ALL = List.of(
+            new Definition("jarvis.agent.user-name", "jarvis.agent.user-name", "Profilo", "Il tuo nome",
+                    "Jarvis ti chiama così.", Kind.TEXT, List.of(), null),
             new Definition("JARVIS_PROVIDERS", "jarvis.providers.enabled", "Modelli", "Fornitori da usare",
                     "Claude è il principale; gli altri sono facoltativi.", Kind.MULTI_CHOICE,
                     List.of(new Choice("anthropic", "Claude", "Anthropic: il modello principale di Jarvis."),
