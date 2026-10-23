@@ -1,10 +1,10 @@
 # Jarvis — istruzioni per Claude Code
 
-Assistente AI personale: backend Java (Spring Boot 4.1, Spring AI 2.0), frontend web statico servito dal backend, comunicazione via WebSocket. Architettura completa in `docs/ARCHITECTURE.md`: leggila prima di modifiche strutturali.
+Assistente AI personale: backend Java (Spring Boot 4.1, Spring AI 2.0), frontend web statico servito dal backend, comunicazione via WebSocket. Architettura completa in `docs/ARCHITECTURE.md`: leggila prima di modifiche strutturali. Preferenze dell'utente, decisioni già prese e ambiente di sviluppo in `docs/MEMORIA.md`.
 
 ## Stato attuale — leggere per primo
 
-Fasi 0 e 1 chiuse e verificate end-to-end con Claude: streaming, tool, approvazioni, memoria su PostgreSQL + pgvector, errori leggibili, turni interrotti e riconnessione, log strutturati. Voce: locale (whisper.cpp + Piper avviati da Jarvis, prima Speaches) e browser verificate end-to-end; OpenAI non provata (account senza credito). Ollama non provato. Fase 2 (squadra di agenti) fatta. Fase 3 fatta: approvazioni per conversazione, Programmatore (`coder`, Claude Code, push su autorizzazione), MCP (GitHub), Documenti, azioni desktop. Fase 3b fatta: wizard e Impostazioni su DB (segreti cifrati), riavvio interno, Organizer su Outlook.com verificato (anche invio email ed evento reali, 22/10/2026). Fase 4 fatta: mani libere (VAD nel browser), interruzione automatica, wake word. Fase 5 in corso: shell desktop Tauri fatta e verificata su Windows (backend incluso con runtime jlink, tray, istanza unica, job object), Postgres 18 + pgvector inclusi senza Docker (primo avvio con wizard verificato), voce locale nativa (whisper.cpp + Piper avviati da Jarvis), memoria a lungo termine (embedding e5 locali, tool `searchMemory`); prossimo passo: rigenerare l'app desktop e l'installer con voce e memoria, poi i documenti nella memoria. Requisito: tutto deve funzionare anche su macOS e Linux (tabella "Multipiattaforma" in `docs/ARCHITECTURE.md`).
+Fasi 0 e 1 chiuse e verificate end-to-end con Claude: streaming, tool, approvazioni, memoria su PostgreSQL + pgvector, errori leggibili, turni interrotti e riconnessione, log strutturati. Voce: locale (whisper.cpp + Piper avviati da Jarvis, prima Speaches) e browser verificate end-to-end; OpenAI non provata (account senza credito). Ollama non provato. Fase 2 (squadra di agenti) fatta. Fase 3 fatta: approvazioni per conversazione, Programmatore (`coder`, Claude Code, push su autorizzazione), MCP (GitHub), Documenti, azioni desktop. Fase 3b fatta: wizard e Impostazioni su DB (segreti cifrati), riavvio interno, Organizer su Outlook.com verificato (anche invio email ed evento reali, 22/10/2026). Fase 4 fatta: mani libere (VAD nel browser), interruzione automatica, wake word. Fase 5 in corso: shell desktop Tauri fatta e verificata su Windows (backend incluso con runtime jlink, tray, istanza unica, job object), Postgres 18 + pgvector inclusi senza Docker (primo avvio con wizard verificato), voce locale nativa (whisper.cpp + Piper avviati da Jarvis), memoria a lungo termine (embedding e5 locali con ONNX Runtime, tool `searchMemory`, documenti delle cartelle consentite), Node incluso per i server MCP `npx`, script `.sh` per Linux (provati in un container Ubuntu 22.04) e macOS (non provati); resta la prova dell'installer da parte dell'utente e la firma del codice. Requisito: tutto deve funzionare anche su macOS e Linux (tabella "Multipiattaforma" in `docs/ARCHITECTURE.md`).
 
 Cose verificate su Spring AI 2.0.1, da non rifare:
 
@@ -69,7 +69,7 @@ JARVIS_BACKEND_URL=http://localhost:8080 ./target/debug/jarvis-desktop.exe # she
 
 Rigenerare l'app desktop (cosa rifare quando cambia cosa, build di rilascio e installer): sezione "App desktop: come rigenerarla" del `README.md`.
 
-Configurazione: chiavi, fornitori, voce, cartelle e posta solo nel database, dal wizard e dalle Impostazioni (`SettingsCatalog`); `application.yml` ha per queste voci solo i default, senza variabili d'ambiente. `.env` e `jarvis-local.yml` (ignorati da git) restano per lo sviluppo: database, porta, modelli, cartella della voce locale (`JARVIS_VOICE_HOME`), e `compose.yaml`.
+Configurazione: chiavi, fornitori, voce, cartelle e posta solo nel database, dal wizard e dalle Impostazioni (`SettingsCatalog`); `application.yml` ha per queste voci solo i default, senza variabili d'ambiente. `.env` e `jarvis-local.yml` (ignorati da git) restano per lo sviluppo: database, porta, modelli, cartelle della voce, della memoria e del Node (`JARVIS_VOICE_HOME`, `JARVIS_MEMORY_HOME`, `JARVIS_NODE_HOME`), e `compose.yaml`.
 
 ## Struttura
 
@@ -81,13 +81,16 @@ src/main/java/dev/jarvis/
                 ApprovalChannel, ApprovalRequest, PostgresChatMemoryRepository
   agent/tools/  SystemTools (sola lettura), NoteTools (scrittura con approvazione), DesktopTools (link,
                 cartelle, catalogo app, sempre con conferma), DocumentTools + DocumentText (sola lettura),
+                MailTools (IMAP: lettura all'Organizer, invio solo a Jarvis), MemoryTools (searchMemory),
                 AllowedFolders, NoteStore e SafePaths (logica pura del filesystem)
-  mcp/          McpTools (tool MCP filtrati per server), ApprovalToolCallback, McpConfig (header per server)
+  mcp/          McpTools (tool MCP filtrati per server), ApprovalToolCallback, McpConfig (header per server),
+                TreeClosingStdioTransport (chiude anche i figli), NpxCommand (npx → Node incluso)
   settings/     SettingsService, SettingsCatalog, MailTemplates, SecretBox (AES-GCM), MasterKey,
-                DatabaseSettingsSource + SettingsEnvironmentPostProcessor (impostazioni su DB all'avvio)
+                DatabaseSettingsSource + SettingsEnvironmentPostProcessor (impostazioni su DB all'avvio),
+                SettingsDefaultsSource (default del catalogo), SettingsRows (app del desktop)
   mail/         MailClient (IMAP/SMTP, Jakarta Mail), MailServers (server dal dominio dell'indirizzo)
   memory/       LongTermMemory (embedding e5 locali, pgvector), MemoryIndexer (archivio e task in background),
-                E5Embeddings (prefissi query/passage); il tool è agent/tools/MemoryTools
+                E5Embeddings (prefissi query/passage), OnnxEmbeddings (ONNX Runtime); il tool è agent/tools/MemoryTools
   voice/        SpeechToText, TextToSpeech, OpenAiAudioClient (solo JDK HTTP, OpenAI o whisper.cpp), LocalVoice e
                 PiperTts (voce sul tuo PC),
                 SentenceChunker, AudioFormats, Multipart, Json, VoiceServices, VoiceConfig (motore per direzione)
@@ -100,7 +103,7 @@ src/main/resources/static/   index.html, style.css, app.js, orb.js, settings.js,
 src/main/resources/schema.sql  schema idempotente (estensione vector, chat_message)
 src/test/java/               test JUnit 5 della logica pura + integrazione su Postgres (Testcontainers)
 desktop/                     shell Tauri 2 (src-tauri/src/main.rs: backend, finestra, tray, job object; database.rs:
-                             Postgres incluso), splash/, prepare-backend.ps1 (jar + runtime jlink), prepare-postgres.ps1
+                             Postgres incluso), splash/, prepare-{backend,postgres,voice,memory,node}.ps1 per Windows e .sh per Linux e macOS
 ```
 
 ## Convenzioni

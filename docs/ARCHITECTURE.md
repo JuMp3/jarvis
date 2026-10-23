@@ -5,7 +5,7 @@ Assistente AI personale con backend Java (Spring Boot 4.1 + Spring AI 2.0), più
 ## Vista d'insieme
 
 ```
-┌──────────────────────────── Frontend (browser, poi Tauri) ─────────────────────────────┐
+┌────────────────────────────── Frontend (browser o Tauri) ──────────────────────────────┐
 │  orb.js      animazione canvas: idle · listening · thinking · speaking                 │
 │  app.js      WebSocket client · microfono (MediaRecorder) · coda di riproduzione audio │
 │              AnalyserNode sul microfono e sull'audio in uscita → livello per l'orb     │
@@ -32,7 +32,7 @@ Il frontend gestisce tutto ciò che è audio e grafica; il backend coordina tutt
 | `PostgresChatMemoryRepository` | Salva la conversazione su PostgreSQL (tabella `chat_message`), compresi chiamate e risultati dei tool, che il repository JDBC di Spring AI scarta. `MessageWindowChatMemory` ci applica sopra la finestra degli ultimi messaggi. |
 | `AgentService` | Un turno di conversazione: prompt utente → streaming della risposta, con memoria (`conversationId`) e tool. Il ciclo tool → risultato → passo successivo lo esegue Spring AI. |
 | `ApprovalService` | I tool che modificano qualcosa chiedono conferma all'utente e attendono la risposta (con timeout: nessuna risposta = negato). |
-| `tools/` | `SystemTools` (sola lettura) e `NoteTools` (scrittura in una cartella sandbox, previa approvazione). Esempi del pattern da seguire per tutti i tool futuri. |
+| `tools/` | `SystemTools` (sola lettura), `NoteTools` (scrittura in una cartella sandbox, previa approvazione), `DesktopTools` (link, cartelle, app del catalogo, sempre con conferma), `DocumentTools` (documenti delle cartelle consentite, sola lettura), `MailTools` (caselle IMAP: lettura all'Organizer, invio solo a Jarvis con approvazione), `MemoryTools` (`searchMemory`, sola lettura). |
 | `SpeechToText` / `TextToSpeech` | Interfacce, implementate da `OpenAiAudioClient` (solo `java.net.http`) verso l'API audio OpenAI o verso whisper.cpp in locale, che espone la stessa API; la voce locale è `PiperTts`, entrambi avviati da `LocalVoice`. `VoiceConfig` sceglie il motore per direzione da `jarvis.voice.stt` / `jarvis.voice.tts` (`local` · `openai` · `browser` · `off`); con `browser` il server non interviene e il client usa la Web Speech API. |
 | `SentenceChunker` | Spezza lo stream di token in frasi complete, così il TTS parte alla prima frase invece di aspettare la risposta intera. |
 | `TurnService` | Collega tutto per un turno: stato → token → frasi → audio ordinato → fine. Gestisce l'annullamento (barge-in). Gli errori diventano frasi brevi in italiano (`ErrorMessages`), pronunciate se il turno è vocale; il dettaglio resta nei log. |
@@ -137,9 +137,9 @@ Server → client
 
 - Il ciclo agente è quello di Spring AI: il modello chiede un tool, Spring AI lo esegue e rimanda il risultato finché il modello non risponde in testo.
 - **Regola:** ogni tool che scrive, invia, cancella o esegue passa da `ApprovalService`. I tool di sola lettura no.
-- I tool che toccano il filesystem lavorano solo dentro una cartella sandbox (`jarvis.agent.notes-dir`), con controllo anti path-traversal.
-- Contenuti esterni (email, pagine web, file) sono **dati, non istruzioni**: quando arriveranno i tool che li leggono, il system prompt e l'approvazione obbligatoria restano la difesa contro la prompt injection.
-- Shell e comandi di sistema arriveranno solo con allowlist esplicita, ed eventualmente in container.
+- I tool che toccano il filesystem lavorano solo dentro la cartella delle note (`jarvis.agent.notes-dir`) o le cartelle consentite delle Impostazioni (`SafePaths`, `AllowedFolders`), con controllo anti path-traversal.
+- Contenuti esterni (email, pagine web, file) sono **dati, non istruzioni**: li leggono specialisti senza tool di scrittura, e il system prompt e l'approvazione obbligatoria restano la difesa contro la prompt injection.
+- Niente shell libera: i comandi passano da elenchi espliciti (`allowed-commands` del Programmatore, catalogo delle app del desktop), senza shell e un argomento per voce.
 
 ## Orchestrazione degli agenti (Fase 2)
 
@@ -167,11 +167,10 @@ Specialisti configurati:
 |---|---|---|---|
 | `researcher` | Cerca sul web, confronta fonti, restituisce sintesi e link | `time`, `web-search` (ricerca lato Anthropic, `max-searches` come budget) | No |
 | `writer` | Scrive testi completi da istruzioni dettagliate | `time` | No |
-| `coder` | Lavora su un repository git locale con Claude Code | file, git locale, build e test consentiti | Solo dopo l'approvazione del piano, su un branch nuovo, mai push |
-
-| `documents` | Legge, cerca e riassume documenti (testo, PDF, Word) nelle cartelle di `jarvis.documents.folders` | `time`, `documents` | No |
+| `coder` | Lavora su un repository git locale con Claude Code | file, git locale, build e test consentiti | Solo dopo l'approvazione del piano, su un branch nuovo; il push lo fa Jarvis, se lo autorizzi |
+| `documents` | Legge, cerca (anche per significato, dalla memoria) e riassume documenti (testo, PDF, Word) nelle cartelle consentite | `time`, `documents` | No |
 | `github` | Legge repository, issue, PR, codice e commit tramite il server MCP di GitHub | `time`, `mcp:github` (tool di lettura) | No |
-| `organizer` | Legge posta e calendario (esempio in configurazione, da collegare al server MCP del proprio fornitore) | `time`, `mcp:mail`, `mcp:calendar` | No |
+| `organizer` | Legge posta e calendario della casella scelta nelle Impostazioni (lo definisce `MailTemplates`) | tool di lettura del server MCP di Outlook/Microsoft 365, o `MailTools` per IMAP | No |
 
 Le azioni che cambiano qualcosa all'esterno (creare una issue o una PR, inviare un'email, creare un evento) non sono mai degli specialisti: sono i `write-tools` dei server MCP, dati solo a Jarvis e ciascuno eseguito dopo la tua approvazione dei parametri esatti. Previsti più avanti: agenti esterni via A2A.
 
@@ -226,7 +225,7 @@ Un messaggio di stato completo, invece di eventi separati per inizio, avanzament
 - PostgreSQL 18 con pgvector (`compose.yaml`, porta 5433 su loopback). `./mvnw spring-boot:run` avvia il container grazie al supporto Docker Compose di Spring Boot; con `java -jar` va avviato prima con `docker compose up -d`.
 - Lo schema è in `schema.sql`, idempotente ed eseguito a ogni avvio. Alla prima modifica incompatibile si passa a Flyway.
 - **Archivio:** la finestra di `chat_message` (gli ultimi `memory-max-messages`, quelli che il modello vede) viene riscritta a ogni turno da `MessageWindowChatMemory`, che scarta i messaggi più vecchi. Ogni messaggio aggiunto alla memoria va anche in `chat_archive`, solo in aggiunta e mai svuotato: è la sorgente della memoria a lungo termine, insieme ai risultati dei task (anche quelli nascosti).
-- L'estensione `vector` è già attiva: servirà alla memoria a lungo termine e al RAG (Fase 5), con un modello di embedding OpenAI o Ollama, perché Anthropic non ne offre.
+- L'estensione `vector` serve alla memoria a lungo termine (tabella `memory_vector`), con embedding calcolati in locale (sezione "Memoria a lungo termine").
 - I test d'integrazione usano Testcontainers con la stessa immagine.
 
 ## Impostazioni (Fase 3b)
@@ -259,7 +258,7 @@ Jarvis va installato su un PC, dove un file `.env` non è una soluzione: le impo
 - **Voce locale:** whisper.cpp e Piper li avvia il backend (`LocalVoice`), quindi la shell passa solo la cartella (`JARVIS_VOICE_HOME`, `src-tauri/resources/voice`: circa 430 MB, quasi tutti modelli: Whisper `small` quantizzato e `base`, voce Paola).
 - **Memoria a lungo termine:** il modello di embedding sta in `src-tauri/resources/memory` (`prepare-memory.ps1`, circa 130 MB), passato con `JARVIS_MEMORY_HOME`.
 - **Node per i server MCP** (`prepare-node.ps1`, circa 150 MB): `node.exe` 24 LTS con il pacchetto di Outlook già installato, alla versione letta da `MailTemplates.java`. Le impostazioni restano nella forma `npx -y pacchetto@versione …`; al momento di avviare il server `NpxCommand` la traduce nel Node incluso (`JARVIS_NODE_HOME`) se c'è quel pacchetto a quella versione, altrimenti resta `npx` (sviluppo). Nessun percorso d'installazione finisce nel database. Node gira con `--use-system-ca`: i certificati di sistema, come la JVM. `keytar` (Credential Manager) è un modulo nativo installato per il sistema su cui gira lo script. Verificato: Outlook collegato con il Node incluso, login letto.
-- **Prossimi passi della fase:** firma del codice; macOS e Linux.
+- **Prossimi passi della fase:** prova dell'installer (da rigenerare con il Node incluso); firma del codice; prova su macOS e della finestra su Linux.
 
 ## Memoria a lungo termine (Fase 5)
 
@@ -298,7 +297,7 @@ iOS (e Android) non possono eseguire il backend: sarebbero un'app client collega
 - **Posta e Organizer:** connessione MCP, tool di lettura e scrittura e lo specialista `organizer` (descrizione, modello, tool, system prompt) li definisce `MailTemplates` e li scrive nel DB quando si sceglie la casella; cambiandola si riscrivono.
 - **App del desktop:** scheda App, una riga per app (nome, programma, argomenti separati da spazi, `{target}` per il file o la cartella). Salvate come JSON in una riga, al caricamento diventano `jarvis.desktop.apps.<id>.command[i]` (`SettingsRows.expandApps`, id dal nome); `DesktopTools` non cambia.
 - **Programmatore senza cartelle:** finché non c'è una cartella dei repository lo specialista `coder` resta spento, con un avviso nel log, invece di bloccare l'avvio.
-- `application.yml` usa variabili d'ambiente solo per ciò che serve prima del database o non è nelle Impostazioni: connessione al database, porta, modelli, cartella della voce locale (`JARVIS_VOICE_HOME`). In sviluppo si possono mettere in `jarvis-local.yml` o `.env` (in `.gitignore`, importati con `spring.config.import`).
+- `application.yml` usa variabili d'ambiente solo per ciò che serve prima del database o non è nelle Impostazioni: connessione al database, porta, modelli, cartelle della voce locale, della memoria e del Node (`JARVIS_VOICE_HOME`, `JARVIS_MEMORY_HOME`, `JARVIS_NODE_HOME`). In sviluppo si possono mettere in `jarvis-local.yml` o `.env` (in `.gitignore`, importati con `spring.config.import`).
 - Una chiave non ancora salvata vale `not-configured`, così Spring AI parte e il wizard può comparire; le Impostazioni la mostrano come non impostata.
 
 ## Decisioni
@@ -310,16 +309,16 @@ iOS (e Android) non possono eseguire il backend: sarebbero un'app client collega
 5. **TTS sequenziale per turno.** Ordine garantito senza complessità; la parallelizzazione con riordino lato client è un'ottimizzazione successiva (il campo `seq` è già previsto).
 6. **Orchestrazione: delega come tool.** Un solo tool `startTask` con l'id dello specialista, invece di un tool per specialista: stesso effetto, nessun `ToolCallback` generato a runtime. Gli specialisti partono con un contesto pulito, delegano su un solo livello, e chi legge contenuti non fidati non può scrivere. Tutti i lavori delegati girano in background, così la conversazione vocale non si blocca mai.
 7. **PostgreSQL + pgvector da subito.** Un solo database per conversazioni, task (Fase 2) e vettori (Fase 5), invece di un database su file da migrare più avanti.
-8. **Voce locale di default: Whisper `base` + Piper Paola**, misurati su CPU da portatile (Core Ultra 7 165U, senza GPU dedicata). Su una frase di 2,5 s: Whisper `base` circa 2 s, `small` circa 5,5 s; Piper circa 0,2 s per frase, Kokoro circa 5 volte più lento. Con una GPU conviene `small` o `large-v3-turbo` e l'immagine `latest-cuda`.
+8. **Voce locale: whisper.cpp + Piper Paola**, misurati su CPU da portatile (Core Ultra 7 165U, senza GPU dedicata). Su una frase di 3 s: Whisper `small` circa 5 s (il predefinito, capisce molto meglio), `base` circa 1 s; Piper circa 0,2 s per frase, Kokoro circa 5 volte più lento. Con una GPU conviene `large-v3-turbo` con i binari CUDA di whisper.cpp. Prima della Fase 5 la voce locale passava da Speaches in Docker.
 9. **Haiku per i turni parlati** (`jarvis.providers.voice-models`). Misurato: circa 2 s al primo audio contro 4–20 s di Sonnet, che resta il modello dei turni scritti. Vale anche quando la voce la produce il browser.
 
 ## Roadmap
 
-- **Fase 0 — questo scheletro.** Chat multi-provider in streaming, push-to-talk, TTS per frase, orb animato, tool d'esempio con approvazione.
+- **Fase 0 — scheletro (fatta).** Chat multi-provider in streaming, push-to-talk, TTS per frase, orb animato, tool d'esempio con approvazione.
 - **Fase 1 — base solida (fatta).** Build verde, Maven wrapper, test, gestione errori e riconnessione, persistenza su PostgreSQL + pgvector (i task arriveranno con la Fase 2), log strutturati (file JSON ECS in `~/.jarvis/logs/`).
 - **Fase 2 — task e orchestrazione (fatta).** Task in background in parallelo, eventi, pannello Squadra e satelliti nell'orb; delega come tool; specialisti `researcher` e `writer` in sola lettura; budget, timeout e annullamento. Le approvazioni per conversazione passano alla Fase 3, con i primi specialisti che scrivono.
 - **Fase 3 — tool reali e nuovi specialisti (fatta).** Approvazioni per conversazione; Programmatore (`coder`) con Claude Code e push su autorizzazione; client MCP con tool filtrati per server (lettura agli specialisti, scrittura a Jarvis con approvazione), GitHub collegato; specialisti `documents`, `github` e `organizer` (quest'ultimo da collegare al server MCP del proprio fornitore di posta e calendario); azioni desktop su catalogo.
 - **Fase 3b — installazione e impostazioni (fatta).** Wizard del primo avvio e sezione Impostazioni; valori su DB, segreti cifrati con AES-256-GCM e chiave master fuori dal DB; riavvio interno per applicarli; Organizer collegato a Outlook.com/Hotmail.
 - **Fase 4 — voce naturale (fatta).** Mani libere con rilevamento della voce nel browser, interruzione automatica, wake word "Jarvis" sulla trascrizione (suggerita anche a Whisper), valutazione di STT in streaming e modelli speech-to-speech. Prossimo passo vocale: trascrizione in streaming durante la frase.
-- **Fase 5 — app desktop.** Shell Tauri con il backend come sidecar, tray, avvio automatico; memoria a lungo termine e RAG sui documenti (pgvector).
+- **Fase 5 — app desktop (quasi fatta).** Shell Tauri con backend, Java ridotto, PostgreSQL + pgvector, voce locale e Node inclusi, tray, avvio automatico, installer NSIS; memoria a lungo termine su conversazioni, task e documenti (pgvector, embedding locali); script per Linux e macOS. Restano la prova dell'installer, la firma del codice e le prove su macOS.
 - **Fase 6 — autonomia controllata.** Routine pianificate (briefing del mattino), agenti esterni via A2A, specialista valutatore che verifica i risultati, eventuale delega su più livelli.

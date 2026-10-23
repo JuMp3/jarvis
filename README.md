@@ -1,6 +1,6 @@
 # Jarvis
 
-Assistente AI personale con voce: backend Java (Spring Boot 4.1 + Spring AI 2.0), provider Claude, OpenAI e Ollama, interfaccia web con un'animazione che reagisce mentre Jarvis ascolta, pensa e parla.
+Assistente AI personale con voce: backend Java (Spring Boot 4.1 + Spring AI 2.0), provider Claude, OpenAI e Ollama, interfaccia web con un'animazione che reagisce mentre Jarvis ascolta, pensa e parla. C'è anche un'app desktop (Tauri) che include tutto: database, voce locale e memoria, senza Java né Docker.
 
 ## Avvio rapido
 
@@ -79,10 +79,12 @@ Su Linux servono anche le librerie di sviluppo di Tauri (Debian/Ubuntu: `libwebk
 - Ciclo agente con tool d'esempio; le azioni che modificano qualcosa chiedono la tua approvazione.
 - Programmatore: su un repository delle cartelle consentite Jarvis fa lavorare Claude Code. Prima ti propone un piano, poi, se approvi, modifica il codice su un branch nuovo, lancia build e test e fa commit; il push lo fa solo se glielo autorizzi alla fine. Ha un tetto di spesa per task.
 - Posta e calendario: Outlook.com/Hotmail e Microsoft 365 (accesso Microsoft con un codice), oppure qualsiasi casella IMAP come Gmail, iCloud, Yahoo o Libero (con una password per le app). L'Organizer legge e riassume; gli invii li fa Jarvis dopo la tua conferma.
-- Documenti: uno specialista legge, cerca e riassume i file (testo, PDF, Word) delle cartelle che indichi in configurazione.
-- GitHub e altri servizi via MCP: si collegano in configurazione; la lettura la fanno gli specialisti, ogni azione (issue, PR, email) la fa Jarvis dopo la tua conferma.
+- Documenti: uno specialista legge, cerca (anche per significato) e riassume i file (testo, PDF, Word) delle cartelle che indichi nelle Impostazioni.
+- GitHub e altri servizi via MCP: GitHub con il token nelle Impostazioni, gli altri in configurazione; la lettura la fanno gli specialisti, ogni azione (issue, PR, email) la fa Jarvis dopo la tua conferma.
 - Desktop: Jarvis apre link, cartelle e i programmi del catalogo, sempre dopo la tua conferma.
 - Squadra di agenti: Jarvis affida ricerche e testi lunghi a specialisti che lavorano in parallelo in background; li vedi orbitare intorno alla lampada e nel pannello Squadra, e Jarvis ti riferisce i risultati.
+- Memoria a lungo termine: Jarvis ritrova ciò che vi siete detti e i risultati della Squadra, anche delle conversazioni cancellate dallo schermo (cancellare nasconde, non elimina). Gli embedding si calcolano sul tuo PC.
+- Risposte scritte in Markdown, con schede (per esempio il meteo).
 - Ascolto solo su `127.0.0.1` e WebSocket accettati solo dalla stessa origine.
 
 Architettura, protocollo e roadmap: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
