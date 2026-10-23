@@ -1,6 +1,6 @@
 [package]
 name = "jarvis-desktop"
-version = "0.5.0"
+version = "0.6.0"
 description = "Jarvis desktop shell: starts the backend and shows it in a window, with a tray icon"
 edition = "2021"
 

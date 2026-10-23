@@ -52,7 +52,7 @@ JARVIS_BACKEND_URL=http://localhost:8080 ./target/debug/jarvis-desktop.exe
 # Rilascio: eseguibile ottimizzato e installer
 cd desktop && npx tauri build
 #   → src-tauri/target/release/jarvis-desktop.exe
-#   → src-tauri/target/release/bundle/nsis/Jarvis_<versione>_x64-setup.exe   (circa 180 MB)
+#   → src-tauri/target/release/bundle/nsis/Jarvis_<versione>_x64-setup.exe   (circa 860 MB)
 ```
 
 La versione dell'app sta in `desktop/src-tauri/tauri.conf.json` e `Cargo.toml`: aumentala a ogni rilascio. La prima build di rilascio richiede circa 10 minuti (compilazione ottimizzata di Tauri), quelle dopo molto meno. I dati dell'utente non sono nell'installer: stanno in `~/.jarvis` (database in `pgdata`, chiave master, log) e restano tra un aggiornamento e l'altro.
