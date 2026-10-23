@@ -93,11 +93,17 @@ public record JarvisProperties(Providers providers, Agent agent, Voice voice, Ta
      * @param command         claude-code only: executable to run, default "claude"
      * @param routine         chat only: runs the routines, and nothing else (Jarvis does not delegate to it); may
      *                        get the tool groups "mcp:*" and "write", every write behind the user's approval
+     * @param reviewer        chat only: checks the results of the specialists with review: true, and nothing else
+     * @param review          its result is checked by the reviewer before Jarvis reports it; redone once if needed
+     * @param delegates       chat only: the read-only specialists it may ask for part of its work (one level)
+     * @param url             a2a only: the external agent's address (Settings → Agenti esterni)
+     * @param token           a2a only: sent as "Authorization: Bearer"; may be blank
      */
     public record Specialist(String type, String description, String provider, String model, String systemPrompt,
                              List<String> tools, Integer maxSearches, Integer maxTokens,
                              List<String> workspaces, Double maxBudgetUsd, List<String> allowedCommands,
-                             Duration timeout, String command, Boolean routine) {
+                             Duration timeout, String command, Boolean routine, Boolean reviewer, Boolean review,
+                             List<String> delegates, String url, String token) {
     }
 
     /**

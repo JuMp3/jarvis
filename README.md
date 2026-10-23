@@ -86,6 +86,8 @@ Su Linux servono anche le librerie di sviluppo di Tauri (Debian/Ubuntu: `libwebk
 - GitHub e altri servizi via MCP: GitHub con il token nelle Impostazioni, gli altri in configurazione; la lettura la fanno gli specialisti, ogni azione (issue, PR, email) la fa Jarvis dopo la tua conferma.
 - Desktop: Jarvis apre link, cartelle e i programmi del catalogo, sempre dopo la tua conferma.
 - Routine: Jarvis fa da solo, nei giorni e all'ora che scegli, lavori come un briefing del mattino (meteo, posta, calendario); le crei a voce o nelle Impostazioni, il risultato arriva nella conversazione con una notifica, e ogni azione che scrive aspetta la tua conferma.
+- Interfaccia "smart display", con tema notte, giorno o automatico: la lampada al centro, la risposta grande, le schede per meteo, impegni, email, numeri e fonti anche quando ti parla (la voce legge solo il testo), la Squadra come avatar con le fasi del lavoro.
+- Un revisore controlla testi e documenti prima che Jarvis te li riferisca; lo Scrittore può chiedere dati al Ricercatore; puoi collegare agenti esterni con il protocollo A2A (Impostazioni → Agenti esterni).
 - Squadra di agenti: Jarvis affida ricerche e testi lunghi a specialisti che lavorano in parallelo in background; li vedi orbitare intorno alla lampada e nel pannello Squadra, e Jarvis ti riferisce i risultati.
 - Memoria a lungo termine: Jarvis ritrova ciò che vi siete detti e i risultati della Squadra, anche delle conversazioni cancellate dallo schermo (cancellare nasconde, non elimina). Gli embedding si calcolano sul tuo PC.
 - Risposte scritte in Markdown, con schede (per esempio il meteo).

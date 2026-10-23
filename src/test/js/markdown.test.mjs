@@ -84,3 +84,15 @@ test('weather icons from Italian or English words', () => {
   assert.equal(weatherIcon('nuvoloso, possibile pioviggine'), '🌧️');
   assert.equal(weatherIcon(undefined), '🌡️');
 });
+
+test('the browser voice skips cards, code and tables, as the server does', async () => {
+  const { SpokenText, forSpeech } = await import('../../main/resources/static/markdown.js');
+  const answer = 'Domani sole.\n```card\n{"type":"weather"}\n```\n| a | b |\n|---|---|\nPorta l\'**ombrello**.';
+  for (const size of [1, 4, 100]) {
+    const filter = new SpokenText();
+    let out = '';
+    for (let i = 0; i < answer.length; i += size) out += filter.append(answer.slice(i, i + size));
+    out += filter.flush();
+    assert.equal(forSpeech(out), "Domani sole. Porta l'ombrello.");
+  }
+});

@@ -50,10 +50,11 @@ final class ChatSpecialist implements SpecialistRunner {
     private final McpTools mcpTools;
     private final boolean allMcp;
     private final boolean writes;
+    private final boolean delegates;
 
     ChatSpecialist(String id, Specialist spec, ProviderRouter router, SystemTools systemTools,
                    DocumentTools documentTools, McpTools mcpTools, MailTools mailTools, NoteTools noteTools,
-                   String language) {
+                   String language, String delegationPrompt) {
         String property = "jarvis.agents." + id;
         List<String> toolGroups = spec.tools() == null ? List.of() : spec.tools();
         boolean routine = Boolean.TRUE.equals(spec.routine());
@@ -92,7 +93,8 @@ final class ChatSpecialist implements SpecialistRunner {
             options.maxTokens(spec.maxTokens());
         }
         this.client = ChatClient.builder(model)
-                .defaultSystem((spec.systemPrompt() == null ? "" : spec.systemPrompt()) + Text.specialistLanguageLine(language))
+                .defaultSystem((spec.systemPrompt() == null ? "" : spec.systemPrompt()) + delegationPrompt
+                        + Text.specialistLanguageLine(language))
                 .defaultOptions(options)
                 .build();
         List<Object> granted = new ArrayList<>();
@@ -104,6 +106,10 @@ final class ChatSpecialist implements SpecialistRunner {
         }
         if (toolGroups.contains("mail") && mailTools.enabled()) {
             granted.add(mailTools.reader()); // reading only: sending is Jarvis', after approval
+        }
+        this.delegates = !delegationPrompt.isEmpty();
+        if (delegates) {
+            granted.add(new DelegationTools());
         }
         if (writes) {
             granted.add(noteTools);
@@ -135,10 +141,17 @@ final class ChatSpecialist implements SpecialistRunner {
         if (!mcpCallbacks.isEmpty()) {
             request.toolCallbacks(mcpCallbacks);
         }
+        Map<String, Object> toolContext = new java.util.HashMap<>();
         if (writes) {
             // Every write asks the user as this task does: the request waits for them, also across reconnections
             Predicate<String> approver = context::requestApproval;
-            request.toolContext(Map.of(ApprovalService.APPROVER_KEY, approver));
+            toolContext.put(ApprovalService.APPROVER_KEY, approver);
+        }
+        if (delegates) {
+            toolContext.put(DelegationTools.TASK_KEY, context);
+        }
+        if (!toolContext.isEmpty()) {
+            request.toolContext(toolContext);
         }
         ChatResponse response = request.call().chatResponse();
         if (response == null) {

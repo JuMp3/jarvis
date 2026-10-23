@@ -85,6 +85,8 @@ ALTER TABLE agent_task ADD COLUMN IF NOT EXISTS progress  TEXT;
 ALTER TABLE agent_task ADD COLUMN IF NOT EXISTS cost_usd  DOUBLE PRECISION;
 -- Finished tasks the user took off the Squadra panel: kept, their results serve long-term memory
 ALTER TABLE agent_task ADD COLUMN IF NOT EXISTS hidden    BOOLEAN NOT NULL DEFAULT false;
+-- Phase 6: a part of a task delegated by its specialist to another one
+ALTER TABLE agent_task ADD COLUMN IF NOT EXISTS parent_id VARCHAR(36);
 
 -- Phase 3b: settings saved by the wizard and the Settings section; secrets encrypted (AES-256-GCM, key outside
 -- the database). Read at startup by SettingsEnvironmentPostProcessor, before application.yml and .env.

@@ -93,6 +93,11 @@ public class SettingsService {
         return !environment.getProperty(SETUP_COMPLETED, Boolean.class, false);
     }
 
+    /** auto, night or day (Settings → Profilo). */
+    public String theme() {
+        return environment.getProperty("jarvis.ui.theme", "auto");
+    }
+
     /** The language in use (Settings → Profilo). */
     public String language() {
         return environment.getProperty(SettingsCatalog.LANGUAGE);
@@ -113,6 +118,7 @@ public class SettingsService {
             case TEXT, CHOICE -> environment.getProperty(definition.property(),
                     definition.kind() == Kind.CHOICE ? definition.values().getFirst() : "");
             case ROUTINES -> routines.all().stream().map(SettingsService::routineRow).toList();
+            case AGENTS -> SettingsRows.agentRows(environment.getProperty(definition.property()));
             case APPS -> Binder.get(environment)
                     .bind(definition.property(), Bindable.mapOf(String.class, JarvisProperties.DesktopApp.class))
                     .map(SettingsRows::appRows).orElse(List.of());
@@ -259,6 +265,12 @@ public class SettingsService {
                 List<Routine> edited = routines(raw, label, language);
                 yield () -> routines.replaceAll(edited);
             }
+            case AGENTS -> {
+                List<Map<String, Object>> agents = agents(raw, label, language);
+                yield agents.isEmpty() ? () -> delete(definition.name())
+                        : () -> upsert(definition.name(), SettingsRows.SECRET,
+                                box.encrypt(definition.name(), SettingsRows.json(agents)));
+            }
             case APPS -> {
                 String apps = SettingsRows.appsJson(raw);
                 yield apps.equals("[]") ? () -> delete(definition.name())
@@ -328,6 +340,54 @@ public class SettingsService {
                             : RoutineSchedule.initialLastRun(at, LocalDateTime.now())));
         }
         return edited;
+    }
+
+    /**
+     * The external agents of the form, checked: an http(s) address each, the token kept when left empty, the name and
+     * description read from the agent's card when it answers.
+     */
+    private List<Map<String, Object>> agents(Object raw, String label, String language) {
+        Map<String, String> tokens = new java.util.HashMap<>();
+        SettingsRows.rows(environment.getProperty(SettingsCatalog.AGENTS))
+                .forEach(row -> tokens.put(String.valueOf(row.get("url")), String.valueOf(row.getOrDefault("token", ""))));
+        List<Map<String, Object>> agents = new ArrayList<>();
+        for (Object item : raw instanceof Collection<?> rows ? rows : List.of()) {
+            if (!(item instanceof Map<?, ?> row)) {
+                continue;
+            }
+            String name = row.get("name") == null ? "" : row.get("name").toString().strip();
+            String url = row.get("url") == null ? "" : row.get("url").toString().strip();
+            if (name.isEmpty() && url.isEmpty()) {
+                continue;
+            }
+            java.net.URI address;
+            try {
+                address = dev.jarvis.task.A2aClient.address(url);
+            } catch (IllegalArgumentException e) {
+                throw new IllegalArgumentException(text("%s: «%s» non è un indirizzo http o https.",
+                        "%s: “%s” is not an http or https address.").in(language, label, url));
+            }
+            String typed = row.get("token") == null ? "" : row.get("token").toString().strip();
+            String token = typed.isEmpty() ? tokens.getOrDefault(url, "") : typed;
+            String description = "";
+            try {
+                var card = new dev.jarvis.task.A2aClient(token).card(address);
+                if (card.isPresent()) {
+                    description = card.get().description();
+                    name = name.isEmpty() ? card.get().name() : name;
+                }
+            } catch (java.io.IOException | RuntimeException e) {
+                // saved anyway: the agent may be off now
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+            if (name.isEmpty()) {
+                throw new IllegalArgumentException(text("%s: dai un nome all'agente di %s.", "%s: give the agent at %s a name.")
+                        .in(language, label, url));
+            }
+            agents.add(Map.of("name", name, "url", url, "token", token, "description", description));
+        }
+        return agents;
     }
 
     private void applyMail(String provider) {

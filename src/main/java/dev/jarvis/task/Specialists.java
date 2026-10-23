@@ -48,8 +48,12 @@ public class Specialists {
 
     private final Map<String, SpecialistRunner> runners;
     private final Map<String, Duration> timeouts;
-    /** The specialists that run the routines: Jarvis does not delegate to them. */
+    private final String language;
+    /** The specialists that run the routines, and the reviewer: Jarvis does not delegate to them. */
     private final Set<String> routines = new java.util.HashSet<>();
+    private final Set<String> reviewers = new java.util.HashSet<>();
+    private final Set<String> reviewed = new java.util.HashSet<>();
+    private final Map<String, List<String>> delegates = new java.util.HashMap<>();
 
     public Specialists(JarvisProperties properties, ProviderRouter router, SystemTools systemTools,
                        DocumentTools documentTools, McpTools mcpTools, MailTools mailTools, NoteTools noteTools,
@@ -63,17 +67,30 @@ public class Specialists {
                 log.warn("Specialist {} is off: no repository folder yet (Settings → Cartelle)", id);
                 return;
             }
-            built.put(id, "claude-code".equals(spec.type())
-                    ? new ClaudeCodeSpecialist(id, spec, claudeCodeEnvironment(environment), json, properties.language())
-                    : new ChatSpecialist(id, spec, router, systemTools, documentTools, mcpTools, mailTools, noteTools,
-                            properties.language()));
+            built.put(id, switch (spec.type() == null ? "chat" : spec.type()) {
+                case "claude-code" -> new ClaudeCodeSpecialist(id, spec, claudeCodeEnvironment(environment), json,
+                        properties.language());
+                case "a2a" -> new A2aSpecialist(id, spec, properties.language());
+                default -> new ChatSpecialist(id, spec, router, systemTools, documentTools, mcpTools, mailTools,
+                        noteTools, properties.language(), delegationPrompt(spec, specs));
+            });
             if (Boolean.TRUE.equals(spec.routine())) {
                 routines.add(id);
+            }
+            if (Boolean.TRUE.equals(spec.reviewer())) {
+                reviewers.add(id);
+            }
+            if (Boolean.TRUE.equals(spec.review())) {
+                reviewed.add(id);
+            }
+            if (spec.delegates() != null && !spec.delegates().isEmpty()) {
+                delegates.put(id, List.copyOf(spec.delegates()));
             }
             if (spec.timeout() != null) {
                 limits.put(id, spec.timeout());
             }
         });
+        this.language = properties.language();
         this.runners = Collections.unmodifiableMap(built);
         this.timeouts = Collections.unmodifiableMap(limits);
     }
@@ -86,7 +103,37 @@ public class Specialists {
     public Set<String> ids() {
         Set<String> ids = new java.util.LinkedHashSet<>(runners.keySet());
         ids.removeAll(routines);
+        ids.removeAll(reviewers);
         return ids;
+    }
+
+    /**
+     * A specialist asking another one for part of its work: only those in its delegates, read-only chat ones.
+     *
+     * @throws IllegalArgumentException with a message for the model
+     */
+    void validateDelegation(String from, String to) {
+        if (!delegates.getOrDefault(from, List.of()).contains(to) || !(runners.get(to) instanceof ChatSpecialist)
+                || routines.contains(to) || reviewers.contains(to)) {
+            throw new IllegalArgumentException("Non puoi delegare a " + to + ". Puoi chiedere a: "
+                    + delegates.getOrDefault(from, List.of()));
+        }
+    }
+
+    /** What a specialist that may delegate reads about the ones it may ask. */
+    private static String delegationPrompt(Specialist spec, Map<String, Specialist> all) {
+        if (spec.delegates() == null || spec.delegates().isEmpty()) {
+            return "";
+        }
+        StringBuilder prompt = new StringBuilder("\n\nCon askSpecialist puoi chiedere una parte del lavoro a:\n");
+        for (String id : spec.delegates()) {
+            Specialist other = all.get(id);
+            if (other == null || !"chat".equals(other.type() == null ? "chat" : other.type())) {
+                throw new IllegalStateException("delegates: " + id + " is not a chat specialist");
+            }
+            prompt.append("- ").append(id).append(": ").append(other.description().strip()).append('\n');
+        }
+        return prompt.toString();
     }
 
     /** The specialist that runs the routines, if configured and on. */
@@ -99,7 +146,7 @@ public class Specialists {
      * @throws IllegalArgumentException if the specialist does not exist or the workspace is not allowed
      */
     void validate(String agent, String workspace, boolean routine) {
-        if (!exists(agent) || routines.contains(agent) != routine) {
+        if (!exists(agent) || reviewers.contains(agent) || routines.contains(agent) != routine) {
             throw new IllegalArgumentException("Specialista sconosciuto: " + agent + ". Disponibili: " + ids());
         }
         runners.get(agent).validate(workspace);
@@ -110,7 +157,27 @@ public class Specialists {
         if (runner == null) {
             throw new IllegalArgumentException("Unknown specialist " + task.agent());
         }
-        return runner.run(task, context);
+        String reviewer = reviewers.stream().findFirst().orElse(null);
+        boolean checked = reviewer != null && reviewed.contains(task.agent());
+        if (checked) {
+            context.step(1, 2); // work, then review: a third step only if it is redone
+        }
+        Result result = runner.run(task, context);
+        if (!checked || result.text() == null || result.text().isBlank()) {
+            return result;
+        }
+        context.step(2, 2);
+        context.progress(Review.CHECKING.in(language));
+        Result verdict = runners.get(reviewer).run(Review.task(task, result.text()), context);
+        Review review = Review.of(verdict.text());
+        if (review.ok()) {
+            return Review.sum(result, verdict, result.text());
+        }
+        log.info("Reviewer asked to redo task {} ({})", task.id(), task.agent());
+        context.step(3, 3);
+        context.progress(Review.REDOING.in(language));
+        Result redone = runner.run(Review.redo(task, result.text(), review.notes()), context);
+        return Review.sum(Review.sum(result, verdict, null), redone, redone.text());
     }
 
     ProviderId provider(String agent) {

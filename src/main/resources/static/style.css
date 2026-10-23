@@ -1,12 +1,55 @@
-:root {
-  --ink: #0f1b2d;
-  --deep: #16263d;
-  --line: #24384f;
-  --lamp: #f0b44c;
-  --mist: #9fb8c8;
-  --paper: #ede7da;
-  --signal: #e07a6f;
+/* Jarvis as a smart display on the desk: the lamp at the top of the stage, the exchange in progress large in the
+   middle, the history on the left, the team and the microphone at the bottom. Two themes: night and day. */
 
+:root,
+html[data-theme="night"] {
+  --ink: #0b1424;      /* the room */
+  --deep: #111d33;     /* surfaces */
+  --rise: #172741;     /* what lies on the desk: cards */
+  --glass: rgb(20 33 56 / 0.72);
+  --line: #24385a;
+  --lamp: #f5b14a;
+  --glow: rgb(245 177 74);
+  --mist: #8fa9c0;
+  --paper: #f3ead8;
+  --signal: #e57a68;
+  --shade: rgb(0 0 0 / 0.6);
+  color-scheme: dark;
+}
+
+html[data-theme="day"] {
+  --ink: #f4efe6;
+  --deep: #ece4d6;
+  --rise: #fffaf2;
+  --glass: rgb(255 251 244 / 0.82);
+  --line: #dccfba;
+  --lamp: #c87a1c;
+  --glow: rgb(236 160 60);
+  --mist: #6f685d;
+  --paper: #23201b;
+  --signal: #b84a3a;
+  --shade: rgb(90 60 20 / 0.3);
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: light) {
+  html[data-theme="auto"] {
+    --ink: #f4efe6;
+    --deep: #ece4d6;
+    --rise: #fffaf2;
+    --glass: rgb(255 251 244 / 0.82);
+    --line: #dccfba;
+    --lamp: #c87a1c;
+    --glow: rgb(236 160 60);
+    --mist: #6f685d;
+    --paper: #23201b;
+    --signal: #b84a3a;
+    --shade: rgb(90 60 20 / 0.3);
+    color-scheme: light;
+  }
+}
+
+:root {
   --ui: "Figtree", system-ui, sans-serif;
   --read: "Literata", Georgia, serif;
 
@@ -14,8 +57,7 @@
   --step-0: 1rem;
   --step-1: 1.2rem;
   --step-2: 1.728rem;
-
-  color-scheme: dark;
+  --step-3: 2.488rem;
 }
 
 * {
@@ -30,9 +72,9 @@ body {
 body {
   margin: 0;
   display: grid;
-  grid-template-rows: auto 1fr auto;
-  grid-template-columns: minmax(0, 1fr);
-  background: radial-gradient(120% 80% at 30% 20%, var(--deep), var(--ink) 60%);
+  grid-template-columns: 17rem minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) auto;
+  background: var(--ink);
   color: var(--paper);
   font: 400 var(--step-0) / 1.5 var(--ui);
 }
@@ -55,6 +97,11 @@ select {
   outline-offset: 3px;
 }
 
+/* hidden wins over any display rule (chips, choice tiles, setting rows) */
+[hidden] {
+  display: none !important;
+}
+
 .visually-hidden {
   position: absolute;
   width: 1px;
@@ -64,31 +111,208 @@ select {
   white-space: nowrap;
 }
 
-/* Top bar ---------------------------------------------------------------------------- */
+/* The lamp's light -------------------------------------------------------------------- */
 
-.bar {
+.lamp-light {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(38vmax 30vmax at 58% 6%, rgb(from var(--glow) r g b / 0.3), transparent 70%),
+    radial-gradient(80vmax 60vmax at 58% 0%, rgb(from var(--glow) r g b / 0.1), transparent 70%);
+  opacity: 0.75;
+  transition: opacity 900ms ease;
+}
+
+body[data-state="listening"] .lamp-light,
+body[data-state="speaking"] .lamp-light {
+  opacity: 1;
+}
+
+body[data-state="thinking"] .lamp-light {
+  animation: lamp-breathe 2.4s ease-in-out infinite;
+}
+
+body[data-state="offline"] .lamp-light {
+  opacity: 0.3;
+}
+
+@keyframes lamp-breathe {
+  0%,
+  100% {
+    opacity: 0.75;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.rail,
+.stage,
+.dock {
+  position: relative;
+  z-index: 1;
+}
+
+/* History rail ----------------------------------------------------------------------- */
+
+.rail {
+  grid-row: 1 / 3;
+  grid-column: 1;
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem 1rem;
-  padding: 1rem clamp(1rem, 4vw, 2.5rem);
+  flex-direction: column;
+  gap: 0.8rem;
+  min-height: 0;
+  padding: 1.3rem 1rem 1.3rem 1.3rem;
+  border-right: 1px solid var(--line);
 }
 
 .name {
-  margin: 0;
-  font: 500 var(--step-1) / 1 var(--read);
-  letter-spacing: 0.01em;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin: 0 0 0.6rem;
+  font: 500 1.35rem / 1 var(--read);
 }
 
-.settings {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  align-items: center;
-  gap: 0.5rem 1.25rem;
+.name-lamp {
+  width: 0.6rem;
+  height: 0.6rem;
+  border-radius: 50%;
+  background: var(--lamp);
+  box-shadow: 0 0 0.8rem 0.15rem rgb(from var(--glow) r g b / 0.6);
+  transition: opacity 600ms ease, box-shadow 600ms ease;
+}
+
+body[data-state="offline"] .name-lamp {
+  opacity: 0.3;
+  box-shadow: none;
+}
+
+.rail-title {
+  margin: 0;
+  font: 600 var(--step--1) / 1.2 var(--ui);
+  color: var(--mist);
+}
+
+.history {
+  flex: 1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr); /* a long question ends with an ellipsis instead of widening the rail */
+  align-content: start;
+  gap: 0.15rem;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.history button {
+  display: block;
+  width: 100%;
+  padding: 0.5rem 0.7rem;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  background: none;
+  text-align: left;
+  font-size: 0.9rem;
+  color: var(--mist);
+  cursor: pointer;
+}
+
+.history button:hover {
+  color: var(--paper);
+}
+
+.history .current button {
+  border-color: var(--line);
+  background: var(--glass);
+  color: var(--paper);
+}
+
+.rail-empty {
+  flex: 1;
+  margin: 0;
   font-size: var(--step--1);
   color: var(--mist);
+}
+
+.history:not(:empty) + .rail-empty {
+  display: none;
+}
+
+.voice-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.chip {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.35rem 0.8rem 0.35rem 0.6rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-size: var(--step--1);
+  color: var(--mist);
+  cursor: pointer;
+  transition: border-color 160ms ease, background-color 160ms ease, color 160ms ease;
+}
+
+.chip input {
+  appearance: none;
+  flex: none;
+  width: 0.55rem;
+  height: 0.55rem;
+  margin: 0;
+  border-radius: 50%;
+  border: 1px solid var(--mist);
+}
+
+.chip input:checked {
+  border-color: var(--lamp);
+  background: var(--lamp);
+  box-shadow: 0 0 0.45rem rgb(from var(--glow) r g b / 0.6);
+}
+
+.chip:has(input:checked) {
+  border-color: color-mix(in srgb, var(--lamp) 55%, var(--line));
+  background: rgb(from var(--glow) r g b / 0.1);
+  color: var(--paper);
+}
+
+.chip:has(input:focus-visible) {
+  outline: 2px solid var(--lamp);
+  outline-offset: 2px;
+}
+
+.chip input:focus-visible {
+  outline: none;
+}
+
+/* Stage: the lamp and the exchange in progress ---------------------------------------- */
+
+.stage {
+  grid-column: 2;
+  grid-row: 1;
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  min-height: 0;
+}
+
+.topbar {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 1rem clamp(1rem, 3vw, 2rem) 0;
 }
 
 .field {
@@ -98,36 +322,22 @@ select {
 }
 
 select {
-  background: var(--deep);
+  padding: 0.35rem 0.8rem;
   border: 1px solid var(--line);
-  border-radius: 6px;
-  padding: 0.3rem 0.5rem;
-}
-
-.toggle {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  cursor: pointer;
-}
-
-.toggle input {
-  accent-color: var(--lamp);
-}
-
-/* Stage: lamp on the left, conversation on the right ----------------------------------- */
-
-.stage {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: minmax(220px, 38vh) 1fr;
-  min-height: 0;
+  border-radius: 999px;
+  background: var(--glass);
+  font-size: var(--step--1);
 }
 
 .presence {
   position: relative;
-  display: grid;
-  place-items: center;
+  /* no transition on the height: the canvas would stay drawn at the size the transition started from */
+  height: clamp(170px, 24vh, 240px);
+}
+
+/* While you speak the lamp grows, and the exchange makes room for it */
+body[data-state="listening"] .presence {
+  height: clamp(220px, 36vh, 340px);
 }
 
 #orb {
@@ -139,7 +349,7 @@ select {
 
 .status {
   position: absolute;
-  bottom: 0.75rem;
+  bottom: 0;
   left: 1rem;
   right: 1rem;
   margin: 0;
@@ -148,65 +358,123 @@ select {
   color: var(--mist);
 }
 
-.conversation {
-  min-height: 0;
-  overflow-y: auto;
-  padding: 1rem clamp(1rem, 4vw, 2.5rem) 2rem;
-}
-
-@media (min-width: 960px) {
-  .stage {
-    grid-template-columns: minmax(340px, 1fr) minmax(0, 680px);
-    grid-template-rows: minmax(0, 1fr);
-    padding-right: clamp(1rem, 4vw, 3rem);
-  }
-
-  .status {
-    bottom: 6%;
-  }
-
-  .conversation {
-    padding-top: 3rem;
-  }
-}
-
-.log {
-  list-style: none;
-  margin: 0;
-  padding: 0;
+.chat {
   display: flex;
   flex-direction: column;
-  gap: 1.5rem;
-  max-width: 68ch;
+  min-height: 0;
+  padding: 0 clamp(1rem, 4vw, 3rem);
+}
+
+.conversation {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 1rem 0 2rem;
+  mask-image: linear-gradient(transparent, black 2rem);
+}
+
+/* The conversation ---------------------------------------------------------------------- */
+
+.log {
+  display: flex;
+  flex-direction: column;
+  gap: 2.2rem;
+  max-width: 52rem;
+  margin: 0 auto;
+  padding: 0;
+  list-style: none;
 }
 
 .empty {
-  max-width: 40ch;
-  color: var(--mist);
+  display: grid;
+  justify-items: center;
+  gap: 0.9rem;
+  max-width: 40rem;
+  margin: 0 auto;
+  padding-top: 1rem;
+  text-align: center;
 }
 
 .log:not(:empty) + .empty {
   display: none;
 }
 
-.turn-user {
-  align-self: flex-end;
-  max-width: 85%;
-  padding: 0.6rem 0.9rem;
-  border-radius: 14px 14px 4px 14px;
-  background: var(--deep);
-  border: 1px solid var(--line);
+.greeting {
+  margin: 0;
+  font: 300 var(--step-3) / 1.1 var(--read);
 }
 
-/* What the user is saying, transcribed while they still speak */
+.empty-hint {
+  margin: 0;
+  color: var(--mist);
+}
+
+.suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.5rem;
+  margin: 0.6rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.suggestion {
+  padding: 0.55rem 1rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--glass);
+  font-size: var(--step--1);
+  color: var(--paper);
+  cursor: pointer;
+  transition: border-color 160ms ease;
+}
+
+.suggestion:hover {
+  border-color: color-mix(in srgb, var(--lamp) 60%, var(--line));
+}
+
+/* Your words: small and quiet, above the answer */
+.turn-user {
+  align-self: center;
+  max-width: 44rem;
+  margin: 0;
+  text-align: center;
+  font: italic 400 var(--step-1) / 1.45 var(--read);
+  color: var(--mist);
+}
+
 .turn-user.partial {
-  opacity: 0.7;
-  border-style: dashed;
+  opacity: 0.75;
 }
 
 .turn-jarvis {
-  font: 400 var(--step-1) / 1.6 var(--read);
+  position: relative;
+  font: 400 var(--step-1) / 1.62 var(--read);
   white-space: pre-wrap;
+}
+
+/* Earlier answers step back; the latest one is the scene */
+.turn-jarvis:not(.latest) {
+  opacity: 0.72;
+  font-size: var(--step-0);
+}
+
+.turn-jarvis.latest {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 19rem), 1fr));
+  gap: 1rem;
+  align-items: start;
+}
+
+.turn-jarvis.latest > :not(.card) {
+  grid-column: 1 / -1;
+}
+
+/* A short latest answer is said big, as a display would */
+.turn-jarvis.latest.short > p {
+  text-align: center;
+  font: 300 clamp(1.5rem, 2.3vw, 2.25rem) / 1.28 var(--read);
 }
 
 .turn-jarvis.streaming::after {
@@ -223,21 +491,58 @@ select {
 
 .turn-jarvis a,
 .task-body a {
-  color: var(--mist);
-  text-decoration-color: color-mix(in srgb, var(--mist) 45%, transparent);
+  color: var(--lamp);
+  text-decoration-color: color-mix(in srgb, var(--lamp) 45%, transparent);
   text-underline-offset: 0.18em;
 }
 
 .turn-jarvis strong {
-  font-weight: 500;
-  color: color-mix(in srgb, var(--paper) 80%, var(--lamp));
+  font-weight: 600;
+  color: color-mix(in srgb, var(--paper) 70%, var(--lamp));
 }
 
 .task-body strong {
   font-weight: 600;
 }
 
+/* Copy, under each answer: there when you look for it */
+.turn-actions {
+  display: flex;
+  justify-content: center;
+  gap: 0.4rem;
+  margin-top: 0.3rem;
+  opacity: 0;
+  transition: opacity 160ms ease;
+}
+
+.turn-jarvis:hover .turn-actions,
+.turn-jarvis:focus-within .turn-actions {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .turn-actions {
+    opacity: 0.8;
+  }
+}
+
+.turn-action {
+  padding: 0.2rem 0.7rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: transparent;
+  font: 400 var(--step--1) / 1.4 var(--ui);
+  color: var(--mist);
+  cursor: pointer;
+}
+
+.turn-action:hover {
+  color: var(--paper);
+  border-color: color-mix(in srgb, var(--lamp) 50%, var(--line));
+}
+
 .turn-note {
+  align-self: center;
   font-size: var(--step--1);
   color: var(--mist);
 }
@@ -257,55 +562,22 @@ select {
   }
 }
 
+@media (max-width: 900px) {
+  body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .rail {
+    display: none;
+  }
+
+  .stage,
+  .dock {
+    grid-column: 1;
+  }
+}
+
 /* Team: specialists working in the background ------------------------------------------ */
-
-.team-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.55rem;
-  margin-right: auto;
-  margin-left: 1.25rem;
-  padding: 0.3rem 0.8rem 0.3rem 0.6rem;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: transparent;
-  font-size: var(--step--1);
-  color: var(--mist);
-  cursor: pointer;
-}
-
-.team-toggle[data-busy="true"] {
-  color: var(--paper);
-  border-color: color-mix(in srgb, var(--lamp) 45%, var(--line));
-}
-
-/* One dot per active agent, in its colour */
-.team-dots {
-  display: inline-flex;
-  gap: 3px;
-}
-
-.team-dots:empty::before {
-  content: "";
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  border: 1px solid var(--mist);
-  opacity: 0.6;
-}
-
-.team-dots i {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--agent);
-}
-
-.team-dots i.queued,
-.team-dots i.waiting_approval {
-  background: transparent;
-  border: 1px solid var(--agent);
-}
 
 .team {
   position: fixed;
@@ -508,85 +780,183 @@ body.team-open .team {
   }
 }
 
-@media (min-width: 1200px) {
-  .stage {
-    grid-template-columns: minmax(300px, 1fr) minmax(0, 640px) minmax(280px, 24rem);
-    padding-right: 0;
-  }
+/* Dock: the team as glowing avatars, the composer, the microphone ------------------------- */
 
-  .team {
-    position: static;
-    width: auto;
-    transform: none;
-    visibility: visible;
-    transition: none;
-    background: transparent;
-    padding-top: 3rem;
-    min-height: 0;
-  }
-
-  .team-close {
-    display: none;
-  }
+.dock {
+  grid-column: 2;
+  grid-row: 2;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 1.2rem;
+  padding: 0.8rem clamp(1rem, 4vw, 3rem) 1.3rem;
 }
 
-/* Composer ---------------------------------------------------------------------------- */
+.team-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0;
+  border: none;
+  background: none;
+  font-size: var(--step--1);
+  color: var(--mist);
+  cursor: pointer;
+}
+
+.team-dots {
+  display: inline-flex;
+  gap: 0.45rem;
+}
+
+.team-dots:empty::before {
+  content: "";
+  width: 0.6rem;
+  height: 0.6rem;
+  border-radius: 50%;
+  border: 1px solid var(--mist);
+  opacity: 0.6;
+}
+
+/* An agent at work: its initial, in its colour; the ring says how far it is when that is known (its phases),
+   and only that it works when it is not */
+.ava {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 2.2rem;
+  height: 2.2rem;
+  border-radius: 50%;
+  background: var(--agent);
+  font: 600 0.75rem / 1 var(--ui);
+  color: #0b1424;
+  box-shadow: 0 0 0.9rem -0.1rem var(--agent);
+}
+
+.ava::before {
+  content: "";
+  position: absolute;
+  inset: -5px;
+  border-radius: 50%;
+  background: conic-gradient(var(--agent) calc(var(--done, 0) * 1turn), rgb(150 170 200 / 0.2) 0);
+  mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 3px));
+}
+
+.ava.spin::before {
+  background: conic-gradient(var(--agent) 0 0.22turn, transparent 0.22turn);
+  animation: spin 1.4s linear infinite;
+}
+
+.ava.waiting::before {
+  background: var(--agent);
+  animation: breathe 1.4s ease-in-out infinite;
+}
+
+.ava.queued {
+  background: transparent;
+  color: var(--agent);
+  border: 1px solid var(--agent);
+  box-shadow: none;
+}
+
+.ava.queued::before {
+  display: none;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(1turn);
+  }
+}
 
 .composer {
   display: flex;
   align-items: center;
-  gap: 0.6rem;
-  padding: 0.9rem clamp(1rem, 4vw, 2.5rem) 1.25rem;
-  border-top: 1px solid var(--line);
-  background: color-mix(in srgb, var(--ink) 85%, transparent);
+  gap: 0.8rem;
+  margin: 0;
+}
+
+.composer-box {
+  position: relative;
+  flex: 1;
+  min-width: 0;
 }
 
 .composer input {
-  flex: 1;
-  min-width: 0;
-  padding: 0.75rem 1rem;
+  width: 100%;
+  padding: 1rem 3.4rem 1rem 1.3rem;
   border-radius: 999px;
   border: 1px solid var(--line);
-  background: var(--deep);
+  background: var(--glass);
+  transition: border-color 160ms ease;
+}
+
+.composer input:focus {
+  border-color: color-mix(in srgb, var(--lamp) 55%, var(--line));
+  outline: none;
+}
+
+.composer input:focus-visible {
+  outline: 2px solid var(--lamp);
+  outline-offset: 2px;
 }
 
 .composer input::placeholder {
   color: var(--mist);
-  opacity: 0.8;
+  opacity: 0.85;
 }
 
 .send {
-  padding: 0.7rem 1.1rem;
-  border-radius: 999px;
-  border: 1px solid var(--line);
+  position: absolute;
+  top: 50%;
+  right: 0.4rem;
+  display: grid;
+  place-items: center;
+  width: 2.6rem;
+  height: 2.6rem;
+  transform: translateY(-50%);
+  border: none;
+  border-radius: 50%;
   background: transparent;
+  color: var(--lamp);
   cursor: pointer;
+}
+
+.send:hover:not(:disabled) {
+  background: rgb(from var(--glow) r g b / 0.12);
+}
+
+.send svg {
+  width: 1.25rem;
+  height: 1.25rem;
+  fill: currentColor;
 }
 
 .mic {
-  width: 3.4rem;
-  height: 3.4rem;
-  flex: none;
   display: grid;
   place-items: center;
+  flex: none;
+  width: 4rem;
+  height: 4rem;
   border: none;
   border-radius: 50%;
   background: var(--lamp);
-  color: var(--ink);
+  color: #1a1408;
+  box-shadow: 0 0 0 8px rgb(from var(--glow) r g b / 0.13), 0 0 2rem rgb(from var(--glow) r g b / 0.45);
   cursor: pointer;
   touch-action: none;
-  transition: transform 120ms ease, background-color 120ms ease;
+  transition: transform 120ms ease, box-shadow 200ms ease;
 }
 
 .mic svg {
-  width: 1.5rem;
-  height: 1.5rem;
+  width: 1.6rem;
+  height: 1.6rem;
   fill: currentColor;
 }
 
 .mic.recording {
-  transform: scale(1.12);
-  background: var(--mist);
+  transform: scale(1.06);
+  box-shadow: 0 0 0 14px rgb(from var(--glow) r g b / 0.2), 0 0 3.5rem rgb(from var(--glow) r g b / 0.7);
 }
 
 button:disabled,
@@ -594,6 +964,10 @@ input:disabled,
 select:disabled {
   opacity: 0.45;
   cursor: not-allowed;
+}
+
+.mic:disabled {
+  box-shadow: none;
 }
 
 /* Settings and first-start wizard ---------------------------------------------------- */
@@ -987,7 +1361,7 @@ select:disabled {
   }
 }
 
-/* Markdown and cards in written answers (markdown.js) ------------------------------------- */
+/* Markdown and cards in the answers (markdown.js) ----------------------------------------- */
 
 .turn-jarvis:has(> p, > ul, > ol, > div, > figure, > pre, > blockquote, > h3, > h4, > h5, > h6) {
   white-space: normal;
@@ -1000,7 +1374,7 @@ select:disabled {
 
 .turn-jarvis > * + *,
 .task-result > * + * {
-  margin-top: 0.7em;
+  margin-top: 0.75em;
 }
 
 .turn-jarvis p,
@@ -1012,13 +1386,16 @@ select:disabled {
 }
 
 .md-heading {
-  font: 600 var(--step-0) / 1.35 var(--ui);
-  letter-spacing: 0.01em;
-  color: color-mix(in srgb, var(--paper) 75%, var(--lamp));
+  font: 500 var(--step-1) / 1.3 var(--read);
+  color: color-mix(in srgb, var(--paper) 70%, var(--lamp));
 }
 
 .turn-jarvis > .md-heading + * {
   margin-top: 0.35em;
+}
+
+.turn-jarvis > .md-heading:not(:first-child) {
+  margin-top: 1.2em;
 }
 
 .turn-jarvis ul,
@@ -1030,7 +1407,7 @@ select:disabled {
 
 .turn-jarvis li + li,
 .task-result li + li {
-  margin-top: 0.25em;
+  margin-top: 0.3em;
 }
 
 .turn-jarvis > ul,
@@ -1045,19 +1422,20 @@ select:disabled {
 
 .turn-jarvis ol > li::marker,
 .task-result ol > li::marker {
-  color: var(--mist);
-  font: 500 0.85em var(--ui);
+  color: var(--lamp);
+  font: 600 0.8em var(--ui);
 }
 
 .turn-jarvis li > ul,
 .turn-jarvis li > ol {
-  margin-top: 0.25em;
+  margin-top: 0.3em;
 }
 
 .turn-jarvis blockquote {
-  padding-left: 0.9em;
+  padding: 0.2em 0 0.2em 0.9em;
   border-left: 2px solid var(--lamp);
   color: var(--mist);
+  font-style: italic;
 }
 
 .turn-jarvis hr {
@@ -1067,19 +1445,20 @@ select:disabled {
 
 .turn-jarvis code,
 .task-result code {
-  font: 0.85em ui-monospace, "Cascadia Code", Consolas, monospace;
-  padding: 0.1em 0.35em;
-  border-radius: 4px;
-  background: color-mix(in srgb, var(--deep) 70%, black);
+  font: 0.84em ui-monospace, "Cascadia Code", Consolas, monospace;
+  padding: 0.1em 0.38em;
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--rise) 80%, black);
 }
 
 .turn-jarvis pre,
 .task-result pre {
   overflow-x: auto;
-  padding: 0.75rem 0.9rem;
+  padding: 0.85rem 1rem;
   border: 1px solid var(--line);
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--ink) 80%, black);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--ink) 75%, black);
+  font-size: var(--step--1);
   white-space: pre;
 }
 
@@ -1092,26 +1471,27 @@ select:disabled {
 .md-table {
   overflow-x: auto;
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: 14px;
+  background: var(--rise);
 }
 
 .md-table table {
   width: 100%;
   border-collapse: collapse;
   font: 400 var(--step--1) / 1.45 var(--ui);
+  font-variant-numeric: tabular-nums;
 }
 
 .md-table th,
 .md-table td {
-  padding: 0.45rem 0.75rem;
+  padding: 0.55rem 0.85rem;
   text-align: left;
   vertical-align: top;
 }
 
 .md-table th {
   font-weight: 600;
-  color: var(--mist);
-  background: var(--deep);
+  color: color-mix(in srgb, var(--paper) 70%, var(--lamp));
   border-bottom: 1px solid var(--line);
 }
 
@@ -1119,34 +1499,52 @@ select:disabled {
   border-top: 1px solid color-mix(in srgb, var(--line) 60%, transparent);
 }
 
+/* Cards: notes lying on the desk, their top edge caught by the lamp */
 .card {
-  font-family: var(--ui);
+  max-width: 34rem;
+  padding: 1rem 1.15rem 1.05rem;
   border: 1px solid var(--line);
-  border-radius: 14px;
-  background: linear-gradient(160deg, color-mix(in srgb, var(--deep) 85%, var(--lamp)), var(--deep) 55%);
+  border-radius: 18px;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--rise) 90%, var(--lamp)), var(--rise) 45%);
+  box-shadow: inset 0 1px 0 rgb(244 178 78 / 0.22), 0 1.2rem 2.4rem -1.6rem rgb(0 0 0 / 0.7);
+  font: 400 var(--step-0) / 1.45 var(--ui);
 }
 
 .card.pending {
-  padding: 0.8rem 1rem;
   font-size: var(--step--1);
   color: var(--mist);
   animation: breathe 1.6s ease-in-out infinite;
 }
 
-.weather {
-  max-width: 30rem;
-  padding: 1rem 1.1rem 0.9rem;
+.card-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.7rem;
 }
 
+.card-title {
+  font-weight: 600;
+}
+
+.card-note,
+.card-empty {
+  font-size: var(--step--1);
+  color: var(--mist);
+}
+
+/* Weather */
 .weather-now {
   display: flex;
   align-items: center;
-  gap: 0.8rem;
+  gap: 0.9rem;
 }
 
 .weather-now .weather-icon {
-  font-size: 2.6rem;
+  font-size: 2.8rem;
   line-height: 1;
+  filter: drop-shadow(0 0 0.8rem rgb(244 178 78 / 0.35));
 }
 
 .weather-where {
@@ -1169,20 +1567,20 @@ select:disabled {
 }
 
 .weather-temp {
-  font: 400 var(--step-2) / 1 var(--read);
-  color: color-mix(in srgb, var(--paper) 70%, var(--lamp));
+  font: 400 var(--step-3) / 1 var(--read);
+  color: color-mix(in srgb, var(--paper) 65%, var(--lamp));
 }
 
 .weather-details {
-  margin: 0.55rem 0 0;
+  margin: 0.6rem 0 0;
 }
 
 .weather-days {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(3.6rem, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(3.7rem, 1fr));
   gap: 0.4rem;
-  margin-top: 0.8rem;
-  padding-top: 0.8rem;
+  margin-top: 0.85rem;
+  padding-top: 0.85rem;
   border-top: 1px solid var(--line);
 }
 
@@ -1190,9 +1588,9 @@ select:disabled {
   display: grid;
   justify-items: center;
   gap: 0.15rem;
-  padding: 0.4rem 0.2rem;
-  border-radius: 10px;
-  background: color-mix(in srgb, var(--ink) 55%, transparent);
+  padding: 0.45rem 0.2rem;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--ink) 50%, transparent);
   font-size: var(--step--1);
 }
 
@@ -1213,6 +1611,214 @@ select:disabled {
 .weather-rain {
   font-size: 0.75rem;
   color: var(--mist);
+}
+
+/* Agenda: a line of time, one stop per event */
+.agenda-events {
+  position: relative;
+  display: grid;
+  gap: 0.75rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.agenda-events::before {
+  content: "";
+  position: absolute;
+  left: 4.6rem;
+  top: 0.4rem;
+  bottom: 0.4rem;
+  width: 1px;
+  background: color-mix(in srgb, var(--lamp) 30%, var(--line));
+}
+
+.agenda-event {
+  position: relative;
+  display: grid;
+  grid-template-columns: 4rem minmax(0, 1fr);
+  gap: 1.2rem;
+}
+
+.agenda-event::before {
+  content: "";
+  position: absolute;
+  left: calc(4.6rem - 4px);
+  top: 0.45rem;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--lamp);
+  box-shadow: 0 0 0 3px var(--rise);
+}
+
+.agenda-time {
+  display: grid;
+  text-align: right;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: color-mix(in srgb, var(--paper) 70%, var(--lamp));
+}
+
+.agenda-end {
+  margin-top: 0.1rem;
+  font-weight: 400;
+  font-size: var(--step--1);
+  color: var(--mist);
+}
+
+.agenda-what {
+  display: grid;
+}
+
+.agenda-place {
+  font-size: var(--step--1);
+  color: var(--mist);
+}
+
+/* Mail: who, about what, when; unread ones lit */
+.email-list {
+  display: grid;
+  gap: 0.15rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.email {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 0.4rem;
+  border-radius: 10px;
+}
+
+.email + .email {
+  border-top: 1px solid color-mix(in srgb, var(--line) 55%, transparent);
+}
+
+.email-initial {
+  display: grid;
+  place-items: center;
+  width: 2.1rem;
+  height: 2.1rem;
+  border-radius: 50%;
+  background: hsl(var(--hue) 35% 32%);
+  font-weight: 600;
+}
+
+.email-body {
+  display: grid;
+  min-width: 0;
+}
+
+.email-from,
+.email-subject {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.email-subject {
+  font-size: var(--step--1);
+  color: var(--mist);
+}
+
+.email-time {
+  font-size: var(--step--1);
+  color: var(--mist);
+  font-variant-numeric: tabular-nums;
+}
+
+.email.unread .email-from {
+  font-weight: 600;
+}
+
+.email.unread .email-time {
+  color: var(--lamp);
+}
+
+/* Facts: a few numbers at a glance */
+.facts-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr));
+  gap: 0.6rem;
+  margin: 0;
+}
+
+.fact {
+  display: grid;
+  align-content: start;
+  gap: 0.15rem;
+  padding: 0.7rem 0.8rem;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--ink) 45%, transparent);
+}
+
+.fact-label {
+  font-size: var(--step--1);
+  color: var(--mist);
+}
+
+.fact-value {
+  margin: 0;
+  font: 400 var(--step-2) / 1.15 var(--read);
+  color: color-mix(in srgb, var(--paper) 70%, var(--lamp));
+}
+
+.fact-note {
+  margin: 0;
+  font-size: 0.75rem;
+  color: var(--mist);
+}
+
+/* Sources: where an answer comes from */
+.source-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.source {
+  display: grid;
+  max-width: 16rem;
+  padding: 0.45rem 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  text-decoration: none;
+  color: var(--paper);
+  transition: border-color 160ms ease;
+}
+
+.source:hover {
+  border-color: color-mix(in srgb, var(--lamp) 55%, var(--line));
+}
+
+.source-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--step--1);
+}
+
+.source-site {
+  font-size: 0.75rem;
+  color: var(--mist);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lamp-light,
+  .name-lamp,
+  .chip,
+  .suggestion,
+  .turn-actions {
+    animation: none !important;
+    transition: none;
+  }
 }
 
 .team-clear {
@@ -1331,4 +1937,25 @@ select:disabled {
 .setting-choice .preview:hover,
 .setting-choice .preview:focus-visible {
   border-color: var(--lamp);
+}
+
+/* A part of a task, delegated by its specialist to another one: under it, a step in */
+.task.subtask {
+  margin-left: 1.1rem;
+  font-size: 0.95em;
+}
+
+.task.subtask .task-title::before {
+  content: "↳ ";
+  color: var(--mist);
+}
+
+/* External agents: a row like an app's, its description from the agent's card below */
+.agent-row {
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.6fr) minmax(0, 0.9fr) auto;
+}
+
+.agent-description {
+  grid-column: 1 / -1;
+  margin: 0;
 }

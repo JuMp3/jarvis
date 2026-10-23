@@ -24,7 +24,9 @@ Jarvis orchestra una squadra di specialisti in background (sezione "Orchestrazio
 
 ## Prossima sessione (aggiornato il 23/10/2026)
 
-**Fatto oggi, da provare con l'utente:** trascrizione a pezzi mentre parli (`ws/Utterance`, `speech-start` / `speech-end`, `transcript-partial`); Groq come scelta di trascrizione (l'utente l'ha provato: ottimo); Fase 6, routine (sezione "Routine" di `docs/ARCHITECTURE.md`). Poi: voce di Azure (scelta «Azure», piano gratuito) e Impostazioni con i campi che compaiono solo per il fornitore scelto (`SettingsCatalog.Condition`); le chiavi in una scheda dedicata «Chiavi API» (scelta dell'utente dopo averle viste accanto alla scelta). Poi il resto della Fase 6.
+**Fatto il 23/10/2026, sera: Fase 6 chiusa** (valutatore, sotto-lavori, agenti esterni A2A) e **interfaccia rifatta** ("luce di lampada", schede di impegni, email, numeri e fonti; la voce non legge schede e tabelle). Da provare con l'utente dal vivo: una risposta con le schede (a voce e scritta), un lavoro dello Scrittore che chiede dati al Ricercatore, un agente A2A vero se ne ha uno. Poi rigenerare l'app desktop.
+
+**Fatto prima, provato con l'utente:** trascrizione a pezzi mentre parli (`ws/Utterance`, `speech-start` / `speech-end`, `transcript-partial`); Groq come scelta di trascrizione (l'utente l'ha provato: ottimo); Fase 6, routine (sezione "Routine" di `docs/ARCHITECTURE.md`). Poi: voce di Azure (scelta «Azure», piano gratuito) e Impostazioni con i campi che compaiono solo per il fornitore scelto (`SettingsCatalog.Condition`); le chiavi in una scheda dedicata «Chiavi API» (scelta dell'utente dopo averle viste accanto alla scelta). Poi il resto della Fase 6.
 
 **Multilingua italiano e inglese fatto** (sezione "Lingue" di `docs/ARCHITECTURE.md`): impostazione `jarvis.language` nel Profilo (prima domanda del wizard, default dalla lingua del sistema), interfaccia con `static/i18n.js`, testi del server con `i18n/Text`, prompt in italiano con la lingua dell'utente indicata, voce Piper per lingua, date nella lingua scelta. Da fare con l'utente: **prova di qualità in inglese** (wizard in inglese, una conversazione scritta e una a voce, un task della Squadra, un'approvazione) e decidere se i prompt vanno tradotti; poi rigenerare l'app desktop (anche `prepare-voice`, per la voce inglese). Altre lingue: con una terza, i testi del server passano a file di risorse.
 
@@ -93,7 +95,8 @@ src/main/java/dev/jarvis/
                 SentenceChunker, AudioFormats, Multipart, Json, VoiceServices, VoiceConfig (motore per direzione)
   task/         TaskService (coda, parallelismo, timeout, annullamento, approvazioni), TaskRepository,
                 AgentTask, TaskContext, TaskFailure, Specialists (jarvis.agents.*), ChatSpecialist,
-                ClaudeCodeSpecialist (+ ClaudeCodeEvents, WorkspacePolicy), TaskTools
+                ClaudeCodeSpecialist (+ ClaudeCodeEvents, WorkspacePolicy), TaskTools, Review (il valutatore),
+                DelegationTools (sotto-lavori), A2aClient + A2aSpecialist (agenti esterni)
   ws/           WebSocketConfig, JarvisWebSocketHandler, SessionRegistry, SessionState,
                 TurnService, Turn, Protocol, TaskNotifier (aggiornamenti e annunci dei task), ErrorMessages
 src/main/resources/static/   index.html, style.css, app.js, orb.js, settings.js, vad.js, capture.js, markdown.js, i18n.js (ES modules, nessun build step)

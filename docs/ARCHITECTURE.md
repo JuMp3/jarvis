@@ -220,7 +220,7 @@ Isolamento: `--bare` salta hook e plugin dell'utente e si autentica **solo** con
 | Direzione | Tipo | Campi |
 |---|---|---|
 | server → client | `tasks` | `tasks`: elenco recente della conversazione, inviato dopo `history` |
-| server → client | `task-update` | `task`: `id`, `agent`, `title`, `instructions`, `workspace`, `status` (`queued` · `running` · `waiting_approval` · `completed` · `failed` · `cancelled` · `interrupted`), `progress`, `result`, `error`, `inputTokens`, `outputTokens`, `costUsd`, `createdAt`, `startedAt`, `finishedAt` (epoch ms) |
+| server → client | `task-update` | `task`: `id`, `parentId` (il task che ha chiesto questo sotto-lavoro, o null), `agent`, `title`, `instructions`, `workspace`, `status` (`queued` · `running` · `waiting_approval` · `completed` · `failed` · `cancelled` · `interrupted`), `progress`, `result`, `error`, `inputTokens`, `outputTokens`, `costUsd`, `createdAt`, `startedAt`, `finishedAt` (epoch ms) |
 | client → server | `cancel-task` | `id` |
 | client → server | `clear-tasks` | — Nasconde i task finiti della conversazione (restano nel database; quelli al lavoro restano anche sul pannello); ogni scheda riceve di nuovo `tasks` |
 
@@ -299,6 +299,18 @@ Ogni funzione va pensata per Windows, macOS e Linux. Windows è provato per inte
 
 iOS (e Android) non possono eseguire il backend: sarebbero un'app client collegata a un Jarvis acceso altrove. Tauri 2 li supporta, ma è un progetto a parte.
 
+## Interfaccia: smart display
+
+Jarvis come un assistente da tavolo (scelto dall'utente tra tre mockup: smart display, plancia, immersiva).
+
+- **Scena:** al centro la lampada (in alto, più grande mentre ascolta), sotto lo scambio in corso: la tua domanda piccola in corsivo, la risposta di Jarvis grande (detta in grande se è breve, `stageLatest` in `app.js`) e le schede in griglia. Le risposte precedenti restano sopra, più quiete.
+- **Cronologia** a sinistra: le tue domande della conversazione, per tornarci; sotto, gli interruttori della voce. Sotto i 900 px resta solo la scena.
+- **Barra in basso:** la Squadra come avatar luminosi, uno per agente al lavoro, poi il compositore e il microfono. L'anello di un avatar si riempie con le fasi solo quando sono note e vere (`AgentTask.step` di `steps`: il Programmatore piano, approvazione, lavoro, push; un lavoro rivisto lavoro, revisione, rifacimento); altrimenti gira e basta, perché una percentuale sarebbe inventata. Gli avatar aprono il pannello con i dettagli.
+- **Temi:** notte, giorno o automatico secondo il sistema (Impostazioni → Profilo → Tema, `jarvis.ui.theme`, mandato in `hello`; la pagina lo ricorda per la volta dopo). Le palette sono variabili CSS su `html[data-theme]`.
+- **Luce:** `.lamp-light` dietro la scena segue lo stato (`body[data-state]`); la zona della lampada non anima la sua altezza, perché la tela resterebbe disegnata alla misura iniziale.
+- **Schede** (`card()` in `app.js`, la guida per il modello in `agent/Cards`): meteo, impegni, email, numeri e fatti, fonti; sempre costruite con il DOM. **Voce e schermo separati:** la voce legge solo il testo (`voice/SpokenText`, e `SpokenText` in `markdown.js` per la voce del browser).
+- **Accoglienza:** con la conversazione vuota, un saluto per l'ora del giorno e alcune domande da toccare.
+
 ## Routine (Fase 6)
 
 Lavori che Jarvis fa da solo nei giorni e all'ora scelti, per esempio un briefing del mattino con meteo, posta e calendario.
@@ -309,6 +321,12 @@ Lavori che Jarvis fa da solo nei giorni e all'ora scelti, per esempio un briefin
 - **Strumenti e approvazioni:** lo specialista legge come gli altri (ora, ricerca web, documenti, posta IMAP, i tool di lettura di tutti i server MCP) e può anche scrivere (note, invio di email IMAP, i `write-tools` MCP), sempre con l'approvazione: gli strumenti chiedono attraverso il contesto (`ApprovalService.requestApproval(toolContext, …)`), che nelle routine porta l'approvatore del task (`APPROVER_KEY`). La richiesta quindi aspetta fino a `jarvis.tasks.approval-timeout` (30 minuti) e viene ripresentata quando l'utente apre Jarvis. Niente azioni sul desktop: nessuno le vedrebbe.
 - **Notifica:** quando una routine finisce e Jarvis non è in primo piano (finestra nella tray, altra scheda), la pagina mostra una notifica di sistema: nell'app desktop con il plugin delle notifiche di Tauri, concesso alla sola pagina del backend di Jarvis (`capabilities/page.json`, `withGlobalTauri`); nel browser con le notifiche web, il cui permesso è chiesto la prima volta che parte una routine.
 - **Limite:** senza nessuna pagina aperta (solo browser, scheda chiusa) il risultato resta nel pannello Squadra e in `listTasks`; Jarvis non lo riferisce da solo alla riapertura. Nell'app desktop la pagina resta collegata anche con la finestra nella tray.
+
+## Valutatore, sotto-lavori e agenti esterni (Fase 6)
+
+- **Valutatore** (`reviewer: true`, `task/Review`): i lavori degli specialisti con `review: true` (Scrittore e Documenti; non il Ricercatore, dove conta la velocità: un meteo con revisione e rifacimento arrivava dopo 4 minuti) passano dal revisore prima che Jarvis li riferisca. La prima riga del suo verdetto è OK oppure RIVEDERE con le osservazioni; con RIVEDERE lo specialista rifà il lavoro una volta, con la prima versione e le osservazioni. Un verdetto illeggibile vale OK: il revisore non blocca il lavoro. L'avanzamento lo dice nel pannello; i token di tutte le chiamate si sommano.
+- **Sotto-lavori** (`delegates: [...]`, `task/DelegationTools`): uno specialista può chiedere una parte del lavoro agli specialisti elencati (lo Scrittore al Ricercatore e ai Documenti) con `askSpecialist`. Il sotto-lavoro è un task figlio (`agent_task.parent_id`), nel pannello Squadra sotto il principale; gira nello stesso thread del padre, che ha già un posto libero e lo aspetta (in coda si bloccherebbero a vicenda). Un solo livello: un sotto-lavoro non può delegare. Solo tra specialisti chat di sola lettura; il suo esito va allo specialista che l'ha chiesto, non a Jarvis.
+- **Agenti esterni A2A** (Impostazioni → Agenti esterni, `task/A2aClient`, `A2aSpecialist`): l'indirizzo di un agente che parla il protocollo Agent2Agent e, se serve, un token. Al salvataggio Jarvis legge la sua scheda (`/.well-known/agent-card.json`, oppure `agent.json`) per nome e descrizione; ogni agente diventa uno specialista `a2a-<nome>` a cui Jarvis può delegare. Il lavoro parte con JSON-RPC `message/send`; se l'agente risponde con un task, Jarvis lo richiede (`tasks/get`) finché è finito e ne prende gli artefatti. Le righe si salvano cifrate (`SettingsRows.expandAgents`): il token non torna mai alla pagina, e un campo vuoto tiene quello salvato. Quello che un agente esterno risponde è un dato, come per ogni specialista: le azioni restano di Jarvis, con l'approvazione.
 
 ## Lingue
 
@@ -351,4 +369,4 @@ Italiano e inglese, scelti con `jarvis.language` (Impostazioni → Profilo, la p
 - **Fase 3b — installazione e impostazioni (fatta).** Wizard del primo avvio e sezione Impostazioni; valori su DB, segreti cifrati con AES-256-GCM e chiave master fuori dal DB; riavvio interno per applicarli; Organizer collegato a Outlook.com/Hotmail.
 - **Fase 4 — voce naturale (fatta).** Mani libere con rilevamento della voce nel browser, interruzione automatica, wake word "Jarvis" sulla trascrizione (suggerita anche a Whisper), valutazione di STT in streaming e modelli speech-to-speech. Prossimo passo vocale: trascrizione in streaming durante la frase.
 - **Fase 5 — app desktop (quasi fatta).** Shell Tauri con backend, Java ridotto, PostgreSQL + pgvector, voce locale e Node inclusi, tray, avvio automatico, installer NSIS; memoria a lungo termine su conversazioni, task e documenti (pgvector, embedding locali); script per Linux e macOS. Restano la prova dell'installer, la firma del codice e le prove su macOS.
-- **Fase 6 — autonomia controllata (in corso).** Routine pianificate (fatte: sezione "Routine"); poi agenti esterni via A2A, specialista valutatore che verifica i risultati, eventuale delega su più livelli.
+- **Fase 6 — autonomia controllata (fatta).** Routine pianificate, specialista valutatore, sotto-lavori su un livello, agenti esterni via A2A (sezioni "Routine" e "Valutatore, sotto-lavori e agenti esterni"); interfaccia rifatta ("Interfaccia: smart display").

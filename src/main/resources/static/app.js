@@ -2,7 +2,7 @@ import { Orb } from './orb.js';
 import { createSettings } from './settings.js';
 import { VoiceDetector } from './vad.js';
 import { SpeechCapture } from './capture.js';
-import { parseMarkdown, weatherIcon } from './markdown.js';
+import { parseMarkdown, weatherIcon, SpokenText, forSpeech } from './markdown.js';
 import { t, language, setLanguage, onLanguageChange, translatePage } from './i18n.js';
 
 // Message types must match dev.jarvis.ws.Protocol and docs/ARCHITECTURE.md.
@@ -61,7 +61,7 @@ const audio = {
 const desktopWindow = Boolean(window.chrome?.webview);
 const Recognition = desktopWindow ? null : window.SpeechRecognition || window.webkitSpeechRecognition;
 const noBrowserRecognition = () => t(desktopWindow ? 'voice.noRecognitionDesktop' : 'voice.noRecognition');
-const browserSpeech = { pending: '', queued: 0, pulse: 0, voice: null };
+const browserSpeech = { pending: '', queued: 0, pulse: 0, voice: null, filter: new SpokenText() };
 
 function audioContext() {
   if (!audio.ctx) {
@@ -140,6 +140,7 @@ function playNext() {
 function stopPlayback() {
   audio.queue.clear();
   audio.nextSeq = 0;
+  browserSpeech.filter = new SpokenText();
   if (browserSpeech.queued > 0 || browserSpeech.pending) {
     browserSpeech.pending = '';
     browserSpeech.queued = 0;
@@ -176,11 +177,13 @@ function speakInBrowser(text) {
 
 /** Speaks every complete sentence as soon as it has streamed in; the rest waits for more tokens. */
 function speakStreamed(text, final = false) {
-  browserSpeech.pending += text;
-  const complete = final ? browserSpeech.pending : browserSpeech.pending.match(/^[\s\S]*[.!?…]\s/)?.[0];
+  // Cards, tables and code are shown, not read (SpokenText, as on the server)
+  browserSpeech.pending += browserSpeech.filter.append(text) + (final ? browserSpeech.filter.flush() : '');
+  const complete = final ? browserSpeech.pending : browserSpeech.pending.match(/^[\s\S]*([.!?…]\s|\n)/)?.[0];
   if (!complete) return;
   browserSpeech.pending = browserSpeech.pending.slice(complete.length);
-  if (complete.trim()) speakInBrowser(complete.trim());
+  const sentence = forSpeech(complete);
+  if (sentence) speakInBrowser(sentence);
 }
 
 /** Starts a new turn locally: forget pending audio, interrupt Jarvis if it is still answering. */
@@ -550,6 +553,10 @@ function markdownBlock(block) {
 /** Cards the model can add to a written answer (AgentService.WRITTEN); an unknown one is shown as data. */
 function card(data) {
   if (data.type === 'weather') return weatherCard(data);
+  if (data.type === 'agenda') return agendaCard(data);
+  if (data.type === 'emails') return emailsCard(data);
+  if (data.type === 'facts') return factsCard(data);
+  if (data.type === 'sources') return sourcesCard(data);
   const pre = element('pre');
   pre.append(element('code', null, JSON.stringify(data, null, 2)));
   return pre;
@@ -594,10 +601,123 @@ function weatherCard(data) {
   return box;
 }
 
+/** The head of a card: its title, and on the right a short note (a date, a count). */
+function cardHead(title, note) {
+  const head = element('header', 'card-head');
+  head.append(element('span', 'card-title', title ?? ''));
+  if (note) head.append(element('span', 'card-note', note));
+  return head;
+}
+
+const text = (value) => (value == null ? '' : String(value));
+
+/** The day's events on a line of time: hour, title, place. */
+function agendaCard(data) {
+  const box = element('figure', 'card agenda');
+  const events = Array.isArray(data.events) ? data.events : [];
+  box.append(cardHead(data.title ?? t('card.agenda'), data.date));
+  const list = element('ol', 'agenda-events');
+  for (const event of events.slice(0, 12)) {
+    const item = element('li', 'agenda-event');
+    const when = element('span', 'agenda-time', text(event.time));
+    if (event.end) when.append(element('span', 'agenda-end', text(event.end)));
+    const what = element('span', 'agenda-what');
+    what.append(element('span', 'agenda-title', text(event.title)));
+    if (event.place) what.append(element('span', 'agenda-place', text(event.place)));
+    item.append(when, what);
+    list.append(item);
+  }
+  if (!events.length) list.append(element('li', 'card-empty', t('card.agendaEmpty')));
+  box.append(list);
+  return box;
+}
+
+/** Mail as it would be on a desk: who, about what, when; unread ones marked. */
+function emailsCard(data) {
+  const box = element('figure', 'card emails');
+  const items = Array.isArray(data.items) ? data.items : [];
+  box.append(cardHead(data.title ?? t('card.emails'), items.length ? String(items.length) : null));
+  const list = element('ul', 'email-list');
+  for (const mail of items.slice(0, 10)) {
+    const row = element('li', mail.unread ? 'email unread' : 'email');
+    const from = text(mail.from);
+    const initial = element('span', 'email-initial', from.trim().charAt(0).toUpperCase() || '?');
+    initial.style.setProperty('--hue', String([...from].reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 360, 40)));
+    initial.setAttribute('aria-hidden', 'true');
+    const body = element('span', 'email-body');
+    body.append(element('span', 'email-from', from), element('span', 'email-subject', text(mail.subject)));
+    row.append(initial, body, element('span', 'email-time', text(mail.time)));
+    if (mail.unread) row.setAttribute('aria-label', `${t('card.unread')}: ${from}, ${text(mail.subject)}`);
+    list.append(row);
+  }
+  box.append(list);
+  return box;
+}
+
+/** A few numbers worth seeing at a glance. */
+function factsCard(data) {
+  const box = element('figure', 'card facts');
+  if (data.title) box.append(cardHead(data.title));
+  const grid = element('dl', 'facts-grid');
+  for (const fact of (Array.isArray(data.items) ? data.items : []).slice(0, 8)) {
+    const tile = element('div', 'fact');
+    tile.append(element('dt', 'fact-label', text(fact.label)), element('dd', 'fact-value', text(fact.value)));
+    if (fact.note) tile.append(element('dd', 'fact-note', text(fact.note)));
+    grid.append(tile);
+  }
+  box.append(grid);
+  return box;
+}
+
+/** Where an answer comes from: links, http(s) only, with their site. */
+function sourcesCard(data) {
+  const box = element('figure', 'card sources');
+  box.append(cardHead(t('card.sources')));
+  const list = element('ul', 'source-list');
+  for (const source of (Array.isArray(data.items) ? data.items : []).slice(0, 8)) {
+    let url;
+    try {
+      url = new URL(text(source.url));
+    } catch {
+      continue;
+    }
+    if (url.protocol !== 'https:' && url.protocol !== 'http:') continue;
+    const link = element('a', 'source');
+    link.href = url.href;
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+    link.append(element('span', 'source-title', text(source.title) || url.hostname),
+      element('span', 'source-site', url.hostname.replace(/^www\./, '')));
+    const item = element('li');
+    item.append(link);
+    list.append(item);
+  }
+  box.append(list);
+  return box;
+}
+
+/** Under each answer: copy it. The text is the model's, as written. */
+function answerActions(item, markdown) {
+  const actions = element('div', 'turn-actions');
+  const copy = element('button', 'turn-action', t('turn.copy'));
+  copy.type = 'button';
+  copy.addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(markdown);
+      copy.textContent = t('turn.copied');
+      setTimeout(() => { copy.textContent = t('turn.copy'); }, 1500);
+    } catch { /* the browser refused: nothing to undo */ }
+  });
+  actions.append(copy);
+  item.append(actions);
+}
+
 function finishStreaming() {
   if (streamingItem) {
     renderMarkdown(streamingItem, streamingText);
+    answerActions(streamingItem, streamingText);
     streamingItem.classList.remove('streaming');
+    stageLatest();
     streamingItem = null;
   }
 }
@@ -620,6 +740,7 @@ let orb;
 
 function setState(state) {
   ui.state = state;
+  document.body.dataset.state = ui.connected ? state : 'offline'; // the lamp's light follows it (style.css)
   orb?.setState(state);
   let text = statusText(state);
   if (state === 'idle' && handsFree.timer) {
@@ -640,7 +761,6 @@ const SPARE_COLORS = ['#d6a7a0', '#cdbb8a', '#8fb3d9'];
 const LANDING_MS = 2500;
 
 const team = { tasks: new Map(), landing: new Set(), openDetails: new Set() };
-const wideLayout = window.matchMedia('(min-width: 1200px)');
 
 function agentInfo(id) {
   const label = t(`agent.${id}`);
@@ -681,7 +801,7 @@ function element(tag, className, text) {
 
 function renderTask(task) {
   const agent = agentInfo(task.agent);
-  const item = element('li', `task ${task.status}`);
+  const item = element('li', `task ${task.status}${task.parentId ? ' subtask' : ''}`);
   item.style.setProperty('--agent', agent.color);
   item.dataset.id = task.id;
   item.append(element('p', 'task-title', task.title));
@@ -725,13 +845,15 @@ function renderTask(task) {
   return item;
 }
 
-/** Working agents first (oldest first), then finished work (most recent first). */
+/** Working agents first (oldest first), then finished work (most recent first); each part under its task. */
 function sortedTasks() {
   const all = [...team.tasks.values()];
   const rank = { waiting_approval: 0, running: 1, queued: 2 };
-  const working = all.filter(active).sort((a, b) => rank[a.status] - rank[b.status] || a.createdAt - b.createdAt);
-  const done = all.filter((t) => !active(t)).sort((a, b) => (b.finishedAt ?? 0) - (a.finishedAt ?? 0));
-  return [...working, ...done];
+  const top = all.filter((t) => !t.parentId || !team.tasks.has(t.parentId));
+  const working = top.filter(active).sort((a, b) => rank[a.status] - rank[b.status] || a.createdAt - b.createdAt);
+  const done = top.filter((t) => !active(t)).sort((a, b) => (b.finishedAt ?? 0) - (a.finishedAt ?? 0));
+  return [...working, ...done].flatMap((task) => [task,
+    ...all.filter((t) => t.parentId === task.id).sort((a, b) => a.createdAt - b.createdAt)]);
 }
 
 function renderTeam() {
@@ -749,11 +871,7 @@ function renderTeam() {
   el.teamSummary.textContent = summary ? summary.charAt(0).toUpperCase() + summary.slice(1) : t('team.idle');
   el.teamToggle.dataset.busy = String(working.length > 0);
   el.tasksClear.hidden = working.length === team.tasks.size;
-  el.teamDots.replaceChildren(...working.map((task) => {
-    const dot = element('i', task.status === 'running' ? null : task.status);
-    dot.style.setProperty('--agent', agentInfo(task.agent).color);
-    return dot;
-  }));
+  el.teamDots.replaceChildren(...working.map(avatar));
 
   orb?.setAgents([...team.tasks.values()]
     .filter((task) => active(task) || team.landing.has(task.id))
@@ -799,21 +917,29 @@ function routineNotification(task) {
   else if ('Notification' in window && Notification.permission === 'granted') new Notification(title, { body });
 }
 
+/**
+ * An agent at work in the dock: its initial in its colour. The ring fills with its phases when the specialist knows
+ * them (step of steps: the coder, a reviewed work); otherwise it only turns, which says it works and nothing more.
+ */
+function avatar(task) {
+  const agent = agentInfo(task.agent);
+  const known = task.steps > 0 && task.step > 0;
+  const state = task.status === 'waiting_approval' ? 'waiting' : task.status === 'queued' ? 'queued' : known ? '' : 'spin';
+  const node = element('span', `ava ${state}`.trim(), agent.label.charAt(0).toUpperCase());
+  node.style.setProperty('--agent', agent.color);
+  // a phase counts as done once the next one starts
+  if (known) node.style.setProperty('--done', String(Math.max(0.08, (task.step - 1) / task.steps)));
+  return node;
+}
+
 function setTeamOpen(open) {
   document.body.classList.toggle('team-open', open);
-  el.teamToggle.setAttribute('aria-expanded', String(open || wideLayout.matches));
+  el.teamToggle.setAttribute('aria-expanded', String(open));
   if (open) el.team.focus({ preventScroll: true });
 }
 
 el.team.tabIndex = -1;
-el.teamToggle.addEventListener('click', () => {
-  if (wideLayout.matches) {
-    el.team.focus();
-    el.team.scrollIntoView({ block: 'nearest' });
-    return;
-  }
-  setTeamOpen(!document.body.classList.contains('team-open'));
-});
+el.teamToggle.addEventListener('click', () => setTeamOpen(!document.body.classList.contains('team-open')));
 el.teamClose.addEventListener('click', () => { setTeamOpen(false); el.teamToggle.focus(); });
 
 // Both only take things off the screen (the database keeps them for long-term memory), and ask first.
@@ -832,7 +958,6 @@ document.addEventListener('keydown', (event) => {
     el.teamToggle.focus();
   }
 });
-wideLayout.addEventListener('change', () => setTeamOpen(false));
 setTeamOpen(false);
 
 // Elapsed time of running tasks
@@ -902,6 +1027,7 @@ function handle(msg) {
   switch (msg.type) {
     case 'hello':
       keepConversation(msg.conversation);
+      applyTheme(msg.theme);
       setLanguage(msg.language); // first: everything below speaks it
       ui.wakeWord = msg.wakeWord || 'jarvis';
       wakeLabel();
@@ -924,7 +1050,10 @@ function handle(msg) {
       if (el.log.children.length === 0) {
         for (const m of msg.messages) {
           const item = addItem(m.role === 'user' ? 'turn-user' : 'turn-jarvis', m.text);
-          if (m.role !== 'user') renderMarkdown(item, m.text);
+          if (m.role !== 'user') {
+            renderMarkdown(item, m.text);
+            answerActions(item, m.text);
+          }
         }
       }
       break;
@@ -1112,9 +1241,77 @@ function micTitle() {
   el.mic.title = ui.stt !== 'off' ? '' : ui.sttRequested === 'browser' ? noBrowserRecognition() : t('voice.off');
 }
 
+/** night, day or auto (as the system): saved for the next page, which shows it before the server answers. */
+function applyTheme(theme) {
+  const chosen = ['night', 'day'].includes(theme) ? theme : 'auto';
+  document.documentElement.dataset.theme = chosen;
+  try {
+    localStorage.setItem('jarvis.theme', chosen);
+  } catch { /* storage disabled */ }
+}
+
+try {
+  document.documentElement.dataset.theme = localStorage.getItem('jarvis.theme') ?? 'auto';
+} catch { /* storage disabled */ }
+
+/**
+ * The exchange in progress is the scene: the latest answer large (said big when short), the earlier ones quieter;
+ * the rail lists your questions, to go back to them.
+ */
+function stageLatest() {
+  const answers = el.log.querySelectorAll('.turn-jarvis');
+  answers.forEach((node, i) => {
+    const latest = i === answers.length - 1;
+    node.classList.toggle('latest', latest);
+    node.classList.toggle('short', latest && node.textContent.length < 200
+      && !node.querySelector('ul, ol, table, pre, h3, h4, blockquote'));
+  });
+}
+
+const historyList = document.getElementById('history');
+
+function renderHistory() {
+  const questions = [...el.log.querySelectorAll('.turn-user:not(.partial)')];
+  historyList.replaceChildren(...questions.map((question, i) => {
+    const button = element('button', null, question.textContent);
+    button.type = 'button';
+    button.title = question.textContent;
+    button.addEventListener('click', () => question.scrollIntoView({ block: 'start', behavior: 'smooth' }));
+    const item = element('li', i === questions.length - 1 ? 'current' : null);
+    item.append(button);
+    return item;
+  }));
+}
+
+new MutationObserver(() => {
+  stageLatest();
+  renderHistory();
+}).observe(el.log, { childList: true });
+
+/** The empty conversation: a greeting for the time of day, and a few things to ask. */
+function welcome() {
+  const hour = new Date().getHours();
+  document.getElementById('greeting').textContent =
+    t(hour < 5 ? 'welcome.night' : hour < 12 ? 'welcome.morning' : hour < 18 ? 'welcome.afternoon' : 'welcome.evening');
+  const list = document.getElementById('suggestions');
+  list.replaceChildren(...['welcome.ask1', 'welcome.ask2', 'welcome.ask3', 'welcome.ask4'].map((key) => {
+    const button = element('button', 'suggestion', t(key));
+    button.type = 'button';
+    button.addEventListener('click', () => {
+      if (el.input.disabled) return;
+      el.input.value = t(key);
+      el.composer.requestSubmit();
+    });
+    const item = element('li');
+    item.append(button);
+    return item;
+  }));
+}
+
 // Everything written with t() is written again: the fixed texts, and what the page drew itself
 onLanguageChange(() => {
   translatePage();
+  welcome();
   browserSpeech.voice = null; // a voice of the new language
   wakeLabel();
   micTitle();
@@ -1127,6 +1324,7 @@ onLanguageChange(() => {
   }
 });
 translatePage();
+welcome();
 
 const settingsPanel = createSettings({ send });
 document.getElementById('settings-open').addEventListener('click', () => settingsPanel.open(false));

@@ -25,7 +25,7 @@ public final class SettingsCatalog {
      * APPS: the programs Jarvis may start, saved as JSON (see SettingsRows.expandApps). ROUTINES: kept in their own
      * table (RoutineRepository), not in the settings: Jarvis also creates them when asked.
      */
-    public enum Kind { TEXT, SECRET, LIST, CHOICE, MULTI_CHOICE, APPS, ROUTINES }
+    public enum Kind { TEXT, SECRET, LIST, CHOICE, MULTI_CHOICE, APPS, ROUTINES, AGENTS }
 
     /**
      * @param group    tab of the Settings section and step of the wizard, in order of first appearance
@@ -94,6 +94,8 @@ public final class SettingsCatalog {
     public static final String APPS = "jarvis.desktop.apps";
     public static final String LANGUAGE = "jarvis.language";
     public static final String ROUTINES = "jarvis.routines";
+    /** External agents (A2A): saved encrypted, their tokens never leave the server (SettingsRows.expandAgents). */
+    public static final String AGENTS = "jarvis.a2a.agents";
     static final String PROVIDERS = "JARVIS_PROVIDERS";
     static final String STT = "JARVIS_VOICE_STT";
     static final String TTS = "JARVIS_VOICE_TTS";
@@ -110,6 +112,7 @@ public final class SettingsCatalog {
     private static final Text FOLDERS = text("Cartelle", "Folders");
     private static final Text APP_LIST = text("App", "Apps");
     private static final Text ROUTINE_LIST = text("Routine", "Routines");
+    private static final Text EXTERNAL = text("Agenti esterni", "External agents");
 
     public static final List<Definition> ALL = List.of(
             // label in both languages: the user must find it even when the interface does not speak theirs
@@ -117,6 +120,11 @@ public final class SettingsCatalog {
                     text("Per l'interfaccia, la voce e le date.", "For the interface, the voice and dates."), Kind.CHOICE,
                     List.of(choice("it", text("Italiano", "Italiano"), null),
                             choice("en", text("English", "English"), null)), null),
+            new Definition("jarvis.ui.theme", "jarvis.ui.theme", PROFILE, text("Tema", "Theme"),
+                    text("Notte, giorno, o come il sistema.", "Night, day, or as the system."), Kind.CHOICE,
+                    List.of(choice("auto", text("Automatico", "Automatic"), text("Come Windows o macOS.", "As Windows or macOS.")),
+                            choice("night", text("Notte", "Night"), text("Scuro, con la luce della lampada.", "Dark, lamp-lit.")),
+                            choice("day", text("Giorno", "Day"), text("Chiaro e caldo.", "Light and warm."))), null),
             new Definition("jarvis.agent.user-name", "jarvis.agent.user-name", PROFILE,
                     text("Il tuo nome", "Your name"), text("Jarvis ti chiama così.", "What Jarvis calls you."),
                     Kind.TEXT, List.of(), null),
@@ -279,7 +287,13 @@ public final class SettingsCatalog {
                                     + "a voce.",
                             "Work Jarvis does by himself at the chosen time, such as a morning briefing. You can also "
                                     + "ask for them by voice."),
-                    Kind.ROUTINES, List.of(), null));
+                    Kind.ROUTINES, List.of(), null),
+            new Definition(AGENTS, AGENTS, EXTERNAL, text("Agenti A2A", "A2A agents"),
+                    text("Agenti di altri servizi, con il protocollo A2A: Jarvis può affidare loro dei lavori. Basta il loro "
+                                    + "indirizzo e, se lo chiedono, un token.",
+                            "Agents of other services, through the A2A protocol: Jarvis can give them work. Their "
+                                    + "address is enough, and a token if they ask for one."),
+                    Kind.AGENTS, List.of(), null));
 
     /**
      * Values in use until the user saves a setting: the lowest property source (SettingsDefaultsSource), so that
@@ -288,6 +302,7 @@ public final class SettingsCatalog {
     public static Map<String, Object> defaults() {
         Map<String, Object> defaults = new LinkedHashMap<>();
         defaults.put(LANGUAGE, language(Locale.getDefault()));
+        defaults.put("jarvis.ui.theme", "auto");
         defaults.put("jarvis.providers.enabled", "anthropic");
         defaults.put("jarvis.providers.default-provider", "anthropic");
         defaults.put("spring.ai.anthropic.api-key", UNSET);

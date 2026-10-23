@@ -34,7 +34,9 @@ public class TaskNotifier {
         List<SessionState> open = sessions.ofConversation(task.conversationId());
         open.forEach(state -> sessions.send(state.id(), Protocol.taskUpdate(task)));
         // Cancelled by the user: nothing to report. Without an open tab the result stays in the panel and listTasks.
-        if (task.status().terminal() && task.status() != AgentTask.Status.CANCELLED && !open.isEmpty()) {
+        // A delegated part goes to the specialist that asked for it, not to Jarvis.
+        if (task.status().terminal() && task.status() != AgentTask.Status.CANCELLED && !open.isEmpty()
+                && task.parentId() == null) {
             turns.notify(open.getLast(), notice(task));
         }
     }

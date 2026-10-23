@@ -155,3 +155,66 @@ export function weatherIcon(condition) {
   const words = String(condition ?? '').toLowerCase();
   return WEATHER_ICONS.find(([pattern]) => pattern.test(words))?.[1] ?? '🌡️';
 }
+
+/**
+ * What of an answer the browser's voice reads, as it streams: fenced blocks (code, cards) and table rows are shown
+ * only. The same rule as SpokenText on the server; a line is held back until its start tells which kind it is.
+ */
+export class SpokenText {
+  constructor() {
+    this.head = '';
+    this.line = 'unknown';
+    this.fence = false;
+  }
+
+  append(token) {
+    let spoken = '';
+    for (const c of token ?? '') {
+      if (c === '\n') {
+        if (this.line === 'unknown') this.decide(true);
+        if (this.line === 'speak') spoken += `${this.head}\n`;
+        this.head = '';
+        this.line = 'unknown';
+      } else if (this.line === 'speak') {
+        spoken += c;
+      } else if (this.line === 'unknown') {
+        this.head += c;
+        this.decide(false);
+        if (this.line === 'speak') {
+          spoken += this.head;
+          this.head = '';
+        }
+      }
+    }
+    return spoken;
+  }
+
+  flush() {
+    if (this.line === 'unknown') this.decide(true);
+    const rest = this.line === 'speak' ? this.head : '';
+    this.head = '';
+    this.line = 'unknown';
+    return rest;
+  }
+
+  decide(complete) {
+    const start = this.head.trimStart();
+    if (!start && !complete) return;
+    if (start.startsWith('```')) {
+      this.fence = !this.fence;
+      this.line = 'skip';
+    } else if (!complete && '```'.startsWith(start)) {
+      this.line = 'unknown'; // may still open or close a fence
+    } else if (this.fence || start.startsWith('|')) {
+      this.line = 'skip';
+    } else {
+      this.line = 'speak';
+    }
+  }
+}
+
+/** Inline markup read aloud literally, removed: the same as SentenceChunker.forSpeech. */
+export function forSpeech(text) {
+  return text.replace(/[*_`#>|]/g, '').replace(/^\s*[-•]\s+/gm, '').replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/\s+/g, ' ').trim();
+}

@@ -35,6 +35,14 @@ Da verificare con l'utente: mani libere con il microfono vero (taratura VAD), po
 - Una routine saltata perché Jarvis era spento parte alla prima accensione dello stesso giorno, non dei giorni dopo.
 - Possono anche scrivere (email, eventi, note), sempre con l'approvazione, che aspetta finché l'utente apre Jarvis: è l'unica eccezione, voluta dall'utente, alla regola "chi legge contenuti non fidati non scrive".
 
+## Decisioni del resto della Fase 6 e dell'interfaccia (23/10/2026, sera)
+
+- Interfaccia: "smart display" (scelta su mockup tra smart display, plancia e immersiva; la prima versione "luce di lampada" non bastava, troppo simile a prima). Temi notte, giorno e automatico; Squadra come avatar; avanzamento solo se vero (fasi note), altrimenti niente percentuale. L'utente vuole vedere mockup con screenshot prima dei cambi grandi di interfaccia.
+- Valutatore sui lavori di Scrittore e Documenti, un solo rifacimento. Tolto dal Ricercatore su richiesta dell'utente: il meteo con revisione arrivava dopo minuti; la velocità conta più del controllo per le ricerche.
+- A2A: solo Jarvis che usa agenti esterni (non Jarvis come agente A2A).
+- Delega su un livello in più, solo tra specialisti di sola lettura.
+- Chiavi API in una scheda dedicata, ciascuna solo per i fornitori scelti (l'utente non voleva le chiavi sparse accanto alle scelte).
+
 ## Voce: preferenze dell'utente
 
 - Groq per la trascrizione gli piace molto ("comprende benissimo"); la trascrizione locale resta come scelta.

@@ -26,8 +26,8 @@ public class TaskRepository {
         jdbc.sql("""
                         INSERT INTO agent_task (id, conversation_id, agent, title, instructions, expected_output,
                                                 workspace, status, progress, result, error, input_tokens,
-                                                output_tokens, cost_usd, created_at, started_at, finished_at)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                                output_tokens, cost_usd, created_at, started_at, finished_at, parent_id)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                         ON CONFLICT (id) DO UPDATE SET status = EXCLUDED.status, progress = EXCLUDED.progress,
                             result = EXCLUDED.result, error = EXCLUDED.error, input_tokens = EXCLUDED.input_tokens,
                             output_tokens = EXCLUDED.output_tokens, cost_usd = EXCLUDED.cost_usd,
@@ -35,7 +35,8 @@ public class TaskRepository {
                 .params(task.id(), task.conversationId(), task.agent(), task.title(), task.instructions(),
                         task.expectedOutput(), task.workspace(), task.status().name(), task.progress(),
                         task.result(), task.error(), task.inputTokens(), task.outputTokens(), task.costUsd(),
-                        timestamp(task.createdAt()), timestamp(task.startedAt()), timestamp(task.finishedAt()))
+                        timestamp(task.createdAt()), timestamp(task.startedAt()), timestamp(task.finishedAt()),
+                        task.parentId())
                 .update();
     }
 
@@ -80,7 +81,7 @@ public class TaskRepository {
                 (Integer) rs.getObject("input_tokens"), (Integer) rs.getObject("output_tokens"),
                 (Double) rs.getObject("cost_usd"),
                 instant(rs.getTimestamp("created_at")), instant(rs.getTimestamp("started_at")),
-                instant(rs.getTimestamp("finished_at")));
+                instant(rs.getTimestamp("finished_at")), rs.getString("parent_id"), null, null);
     }
 
     private static Timestamp timestamp(Instant instant) {

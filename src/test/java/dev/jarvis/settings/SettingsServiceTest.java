@@ -112,6 +112,28 @@ class SettingsServiceTest extends BaseTest {
     }
 
     @Test
+    void externalAgentsAreSavedEncryptedAndKeepTheirToken() {
+        // an address that does not answer: saved anyway, the card is read when the agent is on
+        settings.save(Map.of(SettingsCatalog.AGENTS, List.of(Map.of("name", "Meteo", "url", "http://127.0.0.1:9/a2a",
+                "token", "segreto-1"))), List.of());
+        String stored = jdbc.sql("SELECT value FROM setting WHERE name = ?").param(SettingsCatalog.AGENTS)
+                .query(String.class).single();
+        assertThat(stored).startsWith("v1:").doesNotContain("segreto");
+        assertThat(nextStart().getProperty("jarvis.agents.a2a-meteo.type")).isEqualTo("a2a");
+        assertThat(nextStart().getProperty("jarvis.agents.a2a-meteo.token")).isEqualTo("segreto-1");
+
+        environment.withProperty(SettingsCatalog.AGENTS, nextStart().getProperty(SettingsCatalog.AGENTS).toString());
+        settings.save(Map.of(SettingsCatalog.AGENTS, List.of(Map.of("name", "Meteo", "url", "http://127.0.0.1:9/a2a",
+                "token", ""))), List.of());
+        assertThat(nextStart().getProperty("jarvis.agents.a2a-meteo.token")).as("an empty field keeps it").isEqualTo("segreto-1");
+        assertThat(settings.view("it").stream().filter(view -> view.name().equals(SettingsCatalog.AGENTS)).findFirst()
+                .orElseThrow().value()).asString().contains("hasToken=true").doesNotContain("segreto");
+
+        assertThatThrownBy(() -> settings.save(Map.of(SettingsCatalog.AGENTS, List.of(Map.of("name", "X", "url",
+                "file:///etc/passwd"))), List.of())).hasMessageContaining("http");
+    }
+
+    @Test
     void theDefaultProviderIsOneOfTheEnabledOnes() {
         assertThatThrownBy(() -> settings.save(Map.of("JARVIS_PROVIDERS", List.of("anthropic"),
                 "jarvis.providers.default-provider", "openai", "ANTHROPIC_API_KEY", "sk-ant-1"), List.of()))

@@ -15,6 +15,7 @@ import dev.jarvis.agent.AgentService;
 import dev.jarvis.agent.ApprovalService;
 import dev.jarvis.llm.ProviderId;
 import dev.jarvis.voice.SentenceChunker;
+import dev.jarvis.voice.SpokenText;
 import dev.jarvis.voice.TextToSpeech;
 import dev.jarvis.voice.VoiceServices;
 
@@ -76,6 +77,7 @@ public class TurnService {
         sessions.send(sessionId, Protocol.state("thinking"));
 
         SentenceChunker chunker = new SentenceChunker();
+        SpokenText spokenText = new SpokenText(); // the screen shows cards and tables, the voice skips them
         AtomicInteger seq = new AtomicInteger();
         long startedAt = System.nanoTime();
 
@@ -85,7 +87,7 @@ public class TurnService {
                             streamed.append(token);
                             sessions.send(sessionId, Protocol.token(token));
                             if (speechQueue != null) {
-                                chunker.append(token).forEach(sentence ->
+                                chunker.append(spokenText.append(token)).forEach(sentence ->
                                         speak(turn, speechQueue, tts.get(), sessionId, sentence, seq));
                             }
                         },
@@ -104,6 +106,8 @@ public class TurnService {
                         },
                         () -> {
                             if (speechQueue != null) {
+                                chunker.append(spokenText.flush()).forEach(sentence ->
+                                        speak(turn, speechQueue, tts.get(), sessionId, sentence, seq));
                                 chunker.flush().forEach(sentence ->
                                         speak(turn, speechQueue, tts.get(), sessionId, sentence, seq));
                             }

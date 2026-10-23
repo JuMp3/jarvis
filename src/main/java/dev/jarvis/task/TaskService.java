@@ -231,6 +231,46 @@ public class TaskService implements DisposableBean {
         }
 
         @Override
+        public void step(int step, int steps) {
+            update(taskId, current -> current.status().terminal() ? null : current.atStep(step, steps));
+        }
+
+        @Override
+        public String delegate(String agent, String title, String instructions, String expectedOutput) {
+            AgentTask parent = active.get(taskId);
+            if (parent == null || parent.parentId() != null) {
+                return "Un sotto-lavoro non può delegare a sua volta: fallo tu.";
+            }
+            try {
+                specialists.validateDelegation(parent.agent(), agent);
+            } catch (IllegalArgumentException e) {
+                return e.getMessage();
+            }
+            // In this thread, not queued: the parent holds a slot already, and waits for it
+            AgentTask child = AgentTask.queued(UUID.randomUUID().toString(), parent.conversationId(), agent, title,
+                    instructions, expectedOutput, null, parent.id());
+            active.put(child.id(), child);
+            publish(child);
+            update(child.id(), AgentTask::running);
+            try {
+                Specialists.Result result = specialists.run(child, new Context(child.id(), clock));
+                end(child.id(), current -> current.completed(result));
+                return result.text();
+            } catch (TaskFailure e) {
+                end(child.id(), current -> current.ended(e.status(), e.getMessage()));
+                return "Il sotto-lavoro non è riuscito: " + e.getMessage();
+            } catch (RuntimeException e) {
+                log.warn("Subtask {} ({}) failed", child.id(), agent, e);
+                end(child.id(), current -> current.ended(Status.FAILED,
+                        ErrorMessages.forProvider(language, specialists.provider(agent), e)));
+                return "Il sotto-lavoro non è riuscito.";
+            } finally {
+                // stopped with its parent
+                end(child.id(), current -> current.ended(Status.CANCELLED, text("Fermato.", "Stopped.").in(language)));
+            }
+        }
+
+        @Override
         public boolean requestApproval(String description) {
             AgentTask waiting = update(taskId, current -> current.status() == Status.RUNNING ? current.waitingApproval() : null);
             if (waiting == null) {

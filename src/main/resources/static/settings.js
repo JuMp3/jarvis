@@ -209,6 +209,40 @@ export function createSettings({ send }) {
         });
         break;
       }
+      case 'agents': {
+        // One row per external agent: name, address, token (never shown: empty keeps the saved one)
+        label.removeAttribute('for');
+        const rows = node('div', 'apps');
+        const addRow = (agent = {}) => {
+          const row = node('div', 'app-row agent-row');
+          const inputs = [['name', t('settings.agents.name'), 'Meteo', 'text'],
+            ['url', t('settings.agents.url'), 'https://agente.example.com', 'url'],
+            ['token', t('settings.agents.token'), agent.hasToken ? '••••••••' : t('settings.apps.optional'), 'password']]
+            .map(([key, text, example, type]) => {
+              const input = node('input');
+              Object.assign(input, { type, value: key === 'token' ? '' : agent[key] ?? '', placeholder: example, spellcheck: false });
+              input.dataset.key = key;
+              input.setAttribute('aria-label', text);
+              return input;
+            });
+          const remove = node('button', 'secondary small', t('settings.apps.remove'));
+          remove.type = 'button';
+          remove.addEventListener('click', () => row.remove());
+          row.append(...inputs, remove);
+          if (agent.description) row.append(node('p', 'setting-help agent-description', agent.description));
+          rows.append(row);
+        };
+        (shown(setting) ?? []).forEach(addRow);
+        const add = node('button', 'secondary small', t('settings.agents.add'));
+        add.type = 'button';
+        add.addEventListener('click', () => addRow());
+        wrapper.append(help, rows, add);
+        fields.set(setting.name, {
+          read: () => [...rows.children].map((row) => Object.fromEntries(
+            [...row.querySelectorAll('input')].map((input) => [input.dataset.key, input.value.trim()]))),
+        });
+        break;
+      }
       case 'routines': {
         // One block per routine: name, time, days, instructions, on/off; an empty one is ignored when saving
         label.removeAttribute('for');

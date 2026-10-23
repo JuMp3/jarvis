@@ -99,6 +99,7 @@ final class ClaudeCodeSpecialist implements SpecialistRunner {
         String branch = "jarvis/" + slug(task.title()) + "-" + task.id().substring(0, 6);
         double budget = spec.maxBudgetUsd();
 
+        context.step(1, 4); // plan, your approval, work, push
         context.progress(text("Studia il repository e prepara un piano", "Studies the repository and prepares a plan")
                 .in(language));
         Run plan = claude(repo, List.of("--session-id", UUID.randomUUID().toString(), "--permission-mode", "plan"),
@@ -109,12 +110,14 @@ final class ClaudeCodeSpecialist implements SpecialistRunner {
                     .in(language, plan.outcome().subtype(), plan.outcome().text()));
         }
         double remaining = budget - plan.outcome().costUsd();
+        context.step(2, 4);
         if (!context.requestApproval(approvalText(repo, base, branch, plan.planText(), remaining))) {
             throw new TaskFailure(AgentTask.Status.CANCELLED, text("Piano non approvato: il repository non è stato toccato.",
                     "Plan not approved: the repository was not touched.").in(language));
         }
 
         git(repo, "switch", "-c", branch);
+        context.step(3, 4);
         context.progress(text("Lavora sul branch %s", "Works on branch %s").in(language, branch));
         List<String> mode = new ArrayList<>(List.of("--resume", plan.outcome().sessionId(),
                 "--permission-mode", "acceptEdits"));
@@ -143,6 +146,7 @@ final class ClaudeCodeSpecialist implements SpecialistRunner {
             text.append(text("\n\nModifiche rimaste senza commit:\n%s", "\n\nChanges left uncommitted:\n%s")
                     .in(language, leftover));
         }
+        context.step(4, 4);
         text.append("\n\n").append(push(repo, branch, commits, files, context));
         text.append(text("\n\nResoconto del programmatore:\n%s", "\n\nThe programmer's report:\n%s")
                 .in(language, work.outcome().text()));

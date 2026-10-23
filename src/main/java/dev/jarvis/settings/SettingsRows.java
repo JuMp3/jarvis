@@ -130,6 +130,60 @@ final class SettingsRows {
         }).toList();
     }
 
+    /**
+     * The saved external agents as specialists: {@code jarvis.agents.a2a-<name>.type=a2a}, {@code .url},
+     * {@code .token} and {@code .description} (from the agent's card, read when saved). The JSON stays too, for the
+     * Settings form, which shows everything but the tokens.
+     */
+    static void expandAgents(String name, Map<String, Object> target) {
+        Object saved = target.get(name);
+        if (saved == null) {
+            return;
+        }
+        List<Map<String, Object>> rows;
+        try {
+            rows = JSON.readValue(saved.toString(), ROWS);
+        } catch (JacksonException e) {
+            log.error("Setting {} is not valid JSON and is ignored: save the agents again in Settings", name);
+            return;
+        }
+        for (Map<String, Object> row : rows) {
+            String prefix = "jarvis.agents.a2a-" + id(text(row.get("name"))) + ".";
+            target.put(prefix + "type", "a2a");
+            target.put(prefix + "url", text(row.get("url")));
+            target.put(prefix + "token", text(row.get("token")));
+            String description = text(row.get("description"));
+            target.put(prefix + "description", description.isEmpty()
+                    ? "Agente esterno " + text(row.get("name")) : description);
+        }
+    }
+
+    /** The agents for the Settings form: no token, only whether it has one. */
+    static List<Map<String, Object>> agentRows(String saved) {
+        if (saved == null || saved.isBlank()) {
+            return List.of();
+        }
+        try {
+            return JSON.readValue(saved, ROWS).stream().map(row -> Map.<String, Object>of(
+                    "name", text(row.get("name")), "url", text(row.get("url")),
+                    "description", text(row.get("description")), "hasToken", !text(row.get("token")).isEmpty())).toList();
+        } catch (JacksonException e) {
+            return List.of();
+        }
+    }
+
+    static List<Map<String, Object>> rows(String saved) {
+        try {
+            return saved == null || saved.isBlank() ? List.of() : JSON.readValue(saved, ROWS);
+        } catch (JacksonException e) {
+            return List.of();
+        }
+    }
+
+    static String json(Object value) {
+        return JSON.writeValueAsString(value);
+    }
+
     static String id(String name) {
         String id = name.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]+", "-").replaceAll("^-|-$", "");
         return id.isEmpty() ? "app" : id;

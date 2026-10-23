@@ -86,7 +86,7 @@ public class JarvisWebSocketHandler extends AbstractWebSocketHandler implements 
         SessionState state = sessions.register(socket, conversationIdOf(session), router.defaultProvider());
         sessions.send(state.id(), Protocol.hello(router.availableIds(), router.defaultProvider().id(),
                 voice.sttMode(), voice.ttsMode(), voice.language(), voice.wakeWord(), settings.setupRequired(),
-                state.conversationId()));
+                state.conversationId(), settings.theme()));
         sessions.send(state.id(), Protocol.history(historyOf(state.conversationId())));
         sessions.send(state.id(), Protocol.tasks(tasks.recent(state.conversationId())));
         // Tasks may have asked for approval while no tab was open

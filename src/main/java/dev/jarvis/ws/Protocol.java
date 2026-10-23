@@ -42,7 +42,7 @@ public final class Protocol {
     /** @param setupRequired true until the wizard has been completed once */
     /** @param conversation the conversation of this connection: the page keeps it for the next ones */
     public record Hello(String type, List<String> providers, String defaultProvider, String stt, String tts,
-                        String language, String wakeWord, boolean setupRequired, String conversation) {
+                        String language, String wakeWord, boolean setupRequired, String conversation, String theme) {
     }
 
     public record Settings(String type, List<SettingsService.View> settings, boolean setupRequired) {
@@ -81,13 +81,14 @@ public final class Protocol {
     /** A background task as shown in the activity panel; times are epoch milliseconds. */
     public record TaskView(String id, String agent, String title, String instructions, String workspace,
                            String status, String progress, String result, String error, Integer inputTokens,
-                           Integer outputTokens, Double costUsd, Long createdAt, Long startedAt, Long finishedAt) {
+                           Integer outputTokens, Double costUsd, Long createdAt, Long startedAt, Long finishedAt,
+                           String parentId, Integer step, Integer steps) {
 
         static TaskView of(AgentTask task) {
             return new TaskView(task.id(), task.agent(), task.title(), task.instructions(), task.workspace(),
                     task.status().name().toLowerCase(Locale.ROOT), task.progress(), task.result(), task.error(),
                     task.inputTokens(), task.outputTokens(), task.costUsd(), millis(task.createdAt()),
-                    millis(task.startedAt()), millis(task.finishedAt()));
+                    millis(task.startedAt()), millis(task.finishedAt()), task.parentId(), task.step(), task.steps());
         }
 
         private static Long millis(Instant instant) {
@@ -128,8 +129,9 @@ public final class Protocol {
     }
 
     public static Hello hello(List<String> providers, String defaultProvider, String stt, String tts,
-                              String language, String wakeWord, boolean setupRequired, String conversation) {
-        return new Hello("hello", providers, defaultProvider, stt, tts, language, wakeWord, setupRequired, conversation);
+                              String language, String wakeWord, boolean setupRequired, String conversation, String theme) {
+        return new Hello("hello", providers, defaultProvider, stt, tts, language, wakeWord, setupRequired, conversation,
+                theme);
     }
 
     public static Settings settings(List<SettingsService.View> settings, boolean setupRequired) {
