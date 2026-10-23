@@ -6,7 +6,7 @@ Lo stato del lavoro, le cose verificate su Spring AI e il piano della prossima s
 
 ## Da dove si riparte
 
-Prima cosa della prossima sessione: **il multilingua, italiano e inglese**, con il piano in `CLAUDE.md` ("Prossima sessione"), da fare insieme all'utente. Ordine proposto: lingua unica nel Profilo → interfaccia (`i18n.js`) → testi del server → voce → date e numeri, poi i prompt con una prova di qualità.
+Il multilingua (italiano e inglese) è fatto; prima cosa della prossima sessione: la prova di qualità in inglese con l'utente, poi rigenerare l'app desktop (con `prepare-voice` per la voce inglese). Dettagli in `CLAUDE.md`, "Prossima sessione".
 
 Restano da fare, dopo: la prova dell'installer da parte dell'utente (rigenerarlo con il Node incluso), la firma del codice, gli script e i binari per macOS e Linux, poi la Fase 6 (autonomia controllata).
 
@@ -16,7 +16,7 @@ Da verificare con l'utente: mani libere con il microfono vero (taratura VAD), po
 
 - **Mai cancellare la storia.** "Cancellare" chat o task dall'interfaccia li nasconde soltanto (e svuota la finestra breve del modello). I messaggi restano in `chat_archive` (solo in aggiunta), i task con `agent_task.hidden`: sono la fonte della memoria a lungo termine. Nessuna funzione nuova deve fare un vero `DELETE` dei dati di conversazione; la memoria legge anche i task nascosti.
 - **Multipiattaforma.** Ogni funzione e ogni passo di build deve funzionare su Windows, macOS e Linux: si parte da Windows, ma il codice specifico del sistema resta isolato (`cfg`, controlli sul sistema operativo) e la controparte macOS/Linux va annotata nella tabella "Multipiattaforma" di `docs/ARCHITECTURE.md`. iOS solo come client di un Jarvis che gira altrove (progetto separato).
-- **Lingue.** Oggi solo italiano; serve almeno l'inglese, le altre lingue da valutare. Non scrivere testi per l'utente in modo che sia difficile tradurli.
+- **Lingue.** Italiano e inglese fatti il 23/10/2026; altre lingue da valutare. Ogni nuovo testo per l'utente va scritto in tutte e due (`text("…", "…")` sul server, una chiave per lingua in `static/i18n.js`). Scelte dell'utente: testi del server a coppie nel codice (file di risorse solo con una terza lingua), prompt in italiano con la lingua dell'utente indicata (da verificare la qualità in inglese), voce inglese `en_US-lessac-medium`, tray e schermata d'avvio nella lingua del sistema.
 - **File temporanei.** Script di prova, log e screenshot in una sola cartella sotto `%TEMP%` (per esempio `%TEMP%/jarvis-work`), da cancellare alla fine del lavoro; mai in `target/`, che tiene solo l'output di Maven. Le cache vere (`desktop/.cache`, build di Rust e Maven, `~/.jarvis`) restano.
 - Le decisioni già prese (sotto) non vanno richieste di nuovo.
 
@@ -36,6 +36,7 @@ Sul vecchio PC (portatile aziendale, Windows 11):
 - **Rete aziendale con Netskope**, che ispeziona il TLS di alcuni host (CDN di Hugging Face, probabilmente Microsoft Graph per Node). La CA radice è esportata in `.certs/` (ignorata da git); `SPEACHES_CA_BUNDLE` e `NODE_EXTRA_CA_CERTS` in `.env` puntano lì. Java raggiunge `api.anthropic.com` e GitHub anche senza. Su un PC senza Netskope queste due variabili non servono.
 - **Porta 5432** occupata dal Postgres di un altro progetto: Jarvis in sviluppo usa la **5433** (`compose.yaml`).
 - **Solo CPU** (Core Ultra 7 165U, niente NVIDIA): Whisper `base` (o `small`, più lento) e Piper sono i modelli locali realistici. Su un PC più potente vale la pena rimisurare `small`.
+- Testcontainers a volte resta appeso al primo ping di Docker (nessun errore, i test si fermano a `BaseTest`): lanciare i test con `DOCKER_HOST=npipe:////./pipe/docker_engine`.
 - In Git Bash i path per Docker richiedono `MSYS_NO_PATHCONV=1` (e con quella variabile usare `C:/...`, non `/c/...`).
 - **Git:** il repository (`github.com/JuMp3/jarvis`) usa l'email personale `jmusic@hotmail.it` nella configurazione locale, mai quella di lavoro:
   `git config user.email jmusic@hotmail.it` dopo il clone.

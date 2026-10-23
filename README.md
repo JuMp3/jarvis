@@ -20,7 +20,7 @@ Trascrizione e sintesi si scelgono in Impostazioni → Voce, indipendentemente:
 
 | Valore | Motore | Note |
 |---|---|---|
-| `local` (default) | Sul tuo PC: whisper.cpp (Whisper `small` o `base`) + Piper (voce Paola), avviati da Jarvis | Gratis e privato, niente Docker. Binari e modelli: `desktop/prepare-voice.ps1`, poi `JARVIS_VOICE_HOME` (in `.env`) verso `desktop/src-tauri/resources/voice` |
+| `local` (default) | Sul tuo PC: whisper.cpp (Whisper `small` o `base`) + Piper (voce Paola in italiano, Lessac in inglese), avviati da Jarvis | Gratis e privato, niente Docker. Binari e modelli: `desktop/prepare-voice.ps1`, poi `JARVIS_VOICE_HOME` (in `.env`) verso `desktop/src-tauri/resources/voice` |
 | `openai` | API audio OpenAI | Qualità migliore, serve la chiave OpenAI (Impostazioni → Modelli) con credito |
 | `browser` | Web Speech API | Gratis, ma il riconoscimento manda l'audio a Google/Microsoft, non funziona nell'app desktop e l'orb non segue la voce reale |
 | `off` | — | Solo testo |
@@ -72,6 +72,7 @@ Su Linux servono anche le librerie di sviluppo di Tauri (Debian/Ubuntu: `libwebk
 
 ## Cosa c'è
 
+- Italiano e inglese (Impostazioni → Profilo): interfaccia, voce, date e risposte nella lingua scelta.
 - Chat in streaming con più provider, selezionabili dall'interfaccia, con memoria condivisa salvata su PostgreSQL (sopravvive ai riavvii).
 - Push-to-talk: trascrizione, risposta e sintesi vocale frase per frase.
 - Mani libere: Jarvis capisce da solo quando inizi e finisci di parlare, e si interrompe se parli mentre risponde. Con "Solo se dico «Jarvis»" ascolta solo le frasi rivolte a lui. Con le casse funziona meglio a volume moderato; con le cuffie sempre.

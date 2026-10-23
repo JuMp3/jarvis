@@ -1,13 +1,13 @@
 // Wizard (first start) and Settings: the same form, one tab per group of the catalog (SettingsCatalog).
 // The wizard walks the tabs in order; Settings lets you jump between them. Values edited in a tab are kept
 // while moving to another one. Secrets never come back from the server: an empty field keeps the saved one.
+// Labels and help come from the server in the user's language; choosing another language in the wizard asks
+// for them again in that one.
 
-const ORIGIN = {
-  settings: 'nelle impostazioni',
-  environment: 'da una variabile d\'ambiente, che ha la precedenza',
-  file: 'da un file di configurazione (.env o application.yml)',
-};
+import { t, language, setLanguage } from './i18n.js';
+
 const MAIL = 'JARVIS_MAIL';
+const LANGUAGE = 'jarvis.language';
 const IMAP_ONLY = new Set(['jarvis.mail.address', 'MAIL_PASSWORD', 'jarvis.mail.imap-server', 'jarvis.mail.smtp-server']);
 const MICROSOFT = new Set(['outlook', 'microsoft365']);
 
@@ -53,6 +53,8 @@ export function createSettings({ send }) {
   let wizard = false;
   let step = 0;
   let restarting = false;
+  let saved = false;
+  let openedIn = language();
   const fields = new Map(); // name -> { read: () => value | undefined, clear?: () => boolean }
 
   /** The values of every tab seen so far are kept while moving between tabs. */
@@ -76,24 +78,24 @@ export function createSettings({ send }) {
       case 'secret': {
         const input = node('input');
         Object.assign(input, { id, type: 'password', autocomplete: 'off', spellcheck: false });
-        input.placeholder = setting.set ? '••••••••••••' : 'Incolla qui la chiave';
+        input.placeholder = setting.set ? '••••••••••••' : t('settings.secret.placeholder');
         input.value = pending.get(setting.name) ?? '';
-        const setText = `✓ Impostata ${ORIGIN[setting.origin] ?? ''}. Lascia vuoto il campo per non cambiarla.`;
-        const state = node('p', setting.set ? 'setting-state set' : 'setting-state', setting.set ? setText : 'Non impostata.');
+        const setText = t('settings.secret.set', { origin: setting.origin ? t(`settings.origin.${setting.origin}`) : '' });
+        const state = node('p', setting.set ? 'setting-state set' : 'setting-state', setting.set ? setText : t('settings.secret.unset'));
         state.id = `${id}-state`;
         input.setAttribute('aria-describedby', `${state.id} ${help.id}`);
         const row = node('div', 'setting-row');
         // Show / hide: the value in use is asked to the server only when the user wants to see it
         const eye = node('button', 'eye');
         eye.type = 'button';
-        eye.setAttribute('aria-label', 'Mostra la chiave');
+        eye.setAttribute('aria-label', t('settings.secret.show'));
         eye.setAttribute('aria-pressed', 'false');
         eye.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5C6.5 5 2.7 9.4 1.5 12c1.2 2.6 5 7 10.5 7s9.3-4.4 10.5-7C21.3 9.4 17.5 5 12 5Zm0 11a4 4 0 1 1 0-8 4 4 0 0 1 0 8Zm0-2.2a1.8 1.8 0 1 0 0-3.6 1.8 1.8 0 0 0 0 3.6Z"/></svg>';
         eye.addEventListener('click', () => {
           const show = input.type === 'password';
           input.type = show ? 'text' : 'password';
           eye.setAttribute('aria-pressed', String(show));
-          eye.setAttribute('aria-label', show ? 'Nascondi la chiave' : 'Mostra la chiave');
+          eye.setAttribute('aria-label', t(show ? 'settings.secret.hide' : 'settings.secret.show'));
           if (show && !input.value && setting.set) send({ type: 'settings-reveal', name: setting.name });
         });
         input.dataset.secret = setting.name;
@@ -104,10 +106,10 @@ export function createSettings({ send }) {
         result.setAttribute('aria-live', 'polite');
         result.dataset.test = setting.name;
         if (setting.test) {
-          const verify = node('button', 'secondary small', 'Verifica');
+          const verify = node('button', 'secondary small', t('settings.verify'));
           verify.type = 'button';
           verify.addEventListener('click', () => {
-            result.textContent = 'Verifico…';
+            result.textContent = t('settings.verifying');
             send({ type: 'settings-test', name: setting.name, value: input.value });
           });
           row.append(verify);
@@ -117,9 +119,9 @@ export function createSettings({ send }) {
           const remove = node('button', 'secondary small');
           remove.type = 'button';
           const update = () => {
-            remove.textContent = removing ? 'Annulla' : 'Rimuovi';
+            remove.textContent = t(removing ? 'settings.secret.undo' : 'settings.secret.remove');
             remove.setAttribute('aria-pressed', String(removing));
-            state.textContent = removing ? 'Verrà rimossa al salvataggio.' : setText;
+            state.textContent = removing ? t('settings.secret.removing') : setText;
             state.classList.toggle('removing', removing);
           };
           remove.addEventListener('click', () => { removing = !removing; update(); });
@@ -146,15 +148,16 @@ export function createSettings({ send }) {
         const rows = node('div', 'apps');
         const addRow = (app = {}) => {
           const row = node('div', 'app-row');
-          const inputs = [['name', 'Nome', 'Visual Studio Code'], ['program', 'Programma', 'C:/…/Code.exe'],
-            ['arguments', 'Argomenti', 'facoltativi']].map(([key, text, example]) => {
+          const inputs = [['name', t('settings.apps.name'), 'Visual Studio Code'],
+            ['program', t('settings.apps.program'), 'C:/…/Code.exe'],
+            ['arguments', t('settings.apps.arguments'), t('settings.apps.optional')]].map(([key, text, example]) => {
             const input = node('input');
             Object.assign(input, { type: 'text', value: app[key] ?? '', placeholder: example, spellcheck: false });
             input.dataset.key = key;
             input.setAttribute('aria-label', text);
             return input;
           });
-          const remove = node('button', 'secondary small', 'Togli');
+          const remove = node('button', 'secondary small', t('settings.apps.remove'));
           remove.type = 'button';
           remove.addEventListener('click', () => row.remove());
           row.append(...inputs, remove);
@@ -162,9 +165,10 @@ export function createSettings({ send }) {
         };
         const head = node('div', 'app-row app-head');
         head.setAttribute('aria-hidden', 'true');
-        head.append(node('span', null, 'Nome'), node('span', null, 'Programma'), node('span', null, 'Argomenti'));
+        head.append(node('span', null, t('settings.apps.name')), node('span', null, t('settings.apps.program')),
+          node('span', null, t('settings.apps.arguments')));
         (shown(setting) ?? []).forEach(addRow);
-        const add = node('button', 'secondary small', 'Aggiungi un\'app');
+        const add = node('button', 'secondary small', t('settings.apps.add'));
         add.type = 'button';
         add.addEventListener('click', () => addRow());
         wrapper.append(help, head, rows, add);
@@ -209,6 +213,14 @@ export function createSettings({ send }) {
           wrapper.append(accountControls(setting.value));
           inputs.forEach((input) => input.addEventListener('change', () => showMailFields(input.value)));
         }
+        if (setting.name === LANGUAGE) {
+          // The rest of the wizard, and the page, in the language just chosen; closing without saving goes back
+          inputs.forEach((input) => input.addEventListener('change', () => {
+            collect();
+            setLanguage(input.value);
+            send({ type: 'settings-get', value: input.value });
+          }));
+        }
         break;
       }
       default: {
@@ -233,13 +245,13 @@ export function createSettings({ send }) {
   function accountControls(provider) {
     const box = node('div', 'account');
     if (!MICROSOFT.has(provider)) return box;
-    const login = node('button', 'secondary small', 'Collega l\'account Microsoft');
-    const verify = node('button', 'secondary small', 'Ho fatto l\'accesso');
+    const login = node('button', 'secondary small', t('settings.account.login'));
+    const verify = node('button', 'secondary small', t('settings.account.verify'));
     login.type = verify.type = 'button';
     const message = node('p', 'setting-result account-message');
     message.setAttribute('aria-live', 'polite');
-    login.addEventListener('click', () => { message.textContent = 'Chiedo il codice a Microsoft…'; send({ type: 'account-login', server: 'mail' }); });
-    verify.addEventListener('click', () => { message.textContent = 'Verifico…'; send({ type: 'account-verify', server: 'mail' }); });
+    login.addEventListener('click', () => { message.textContent = t('settings.account.asking'); send({ type: 'account-login', server: 'mail' }); });
+    verify.addEventListener('click', () => { message.textContent = t('settings.verifying'); send({ type: 'account-verify', server: 'mail' }); });
     box.append(login, verify, message);
     return box;
   }
@@ -268,10 +280,10 @@ export function createSettings({ send }) {
     if (mail) showMailFields(shown(mail));
     body.scrollTop = 0;
 
-    title.textContent = wizard ? 'Configuriamo Jarvis' : 'Impostazioni';
+    title.textContent = t(wizard ? 'settings.wizardTitle' : 'settings.title');
     intro.textContent = wizard
-      ? `Passo ${step + 1} di ${groups.length}. Puoi cambiare tutto più tardi da Impostazioni.`
-      : 'Le modifiche si applicano con un breve riavvio di Jarvis.';
+      ? t('settings.wizardIntro', { step: step + 1, total: groups.length })
+      : t('settings.intro');
     back.hidden = !wizard || step === 0;
     next.hidden = !wizard || step === groups.length - 1;
     save.hidden = wizard && step < groups.length - 1;
@@ -305,10 +317,14 @@ export function createSettings({ send }) {
   back.addEventListener('click', () => go(step - 1));
   next.addEventListener('click', () => go(step + 1));
   later.addEventListener('click', () => { sessionStorage.setItem('jarvis.setupLater', '1'); dialog.close(); });
+  // Not saved: the page goes back to its language (after a save, the next hello brings the new one)
+  dialog.addEventListener('close', () => {
+    if (!saved) setLanguage(openedIn);
+  });
   form.addEventListener('submit', (event) => {
     event.preventDefault();
     collect();
-    status.textContent = 'Salvo…';
+    status.textContent = t('settings.saving');
     send({ type: 'settings-save', values: Object.fromEntries(pending), cleared: [...pendingClears] });
   });
 
@@ -316,6 +332,8 @@ export function createSettings({ send }) {
     open(asWizard) {
       wizard = asWizard;
       step = 0;
+      saved = false;
+      openedIn = language();
       pending.clear();
       pendingClears.clear();
       send({ type: 'settings-get' });
@@ -339,7 +357,8 @@ export function createSettings({ send }) {
           return true;
         case 'settings-saved':
           restarting = msg.restarting;
-          status.textContent = 'Salvate. Riavvio Jarvis per applicarle…';
+          saved = true;
+          status.textContent = t('settings.saved');
           return true;
         case 'settings-secret': {
           const input = body.querySelector(`[data-secret="${CSS.escape(msg.name)}"]`);

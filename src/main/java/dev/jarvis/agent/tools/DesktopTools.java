@@ -1,5 +1,7 @@
 package dev.jarvis.agent.tools;
 
+import static dev.jarvis.i18n.Text.text;
+
 import java.io.IOException;
 import java.net.URI;
 import java.nio.file.Files;
@@ -34,9 +36,11 @@ public class DesktopTools {
 
     private final ApprovalService approvals;
     private final Map<String, DesktopApp> apps;
+    private final String language;
 
     public DesktopTools(ApprovalService approvals, JarvisProperties properties) {
         this.approvals = approvals;
+        this.language = properties.language();
         this.apps = properties.desktop() == null || properties.desktop().apps() == null
                 ? Map.of() : properties.desktop().apps();
     }
@@ -53,7 +57,8 @@ public class DesktopTools {
         if (!"https".equalsIgnoreCase(uri.getScheme()) && !"http".equalsIgnoreCase(uri.getScheme())) {
             return "Apro solo link http o https.";
         }
-        return run(toolContext, "Aprire nel browser:\n" + uri, opener(uri.toString()));
+        return run(toolContext, text("Aprire nel browser:\n%s", "Open in the browser:\n%s").in(language, uri),
+                opener(uri.toString()));
     }
 
     @Tool(description = "Apre una cartella nel gestore file. L'utente deve confermare.")
@@ -62,7 +67,8 @@ public class DesktopTools {
         if (!Files.isDirectory(folder)) {
             return "La cartella " + folder + " non esiste.";
         }
-        return run(toolContext, "Aprire la cartella:\n" + folder, opener(folder.toString()));
+        return run(toolContext, text("Aprire la cartella:\n%s", "Open the folder:\n%s").in(language, folder),
+                opener(folder.toString()));
     }
 
     @Tool(description = "Avvia un'applicazione del catalogo di Jarvis (vedi listApps), con un file o una cartella "
@@ -90,8 +96,11 @@ public class DesktopTools {
         List<String> command = app.command().stream()
                 .map(part -> part.equals(TARGET) ? finalTarget : part)
                 .toList();
-        return run(toolContext, "Avviare " + app.description() + (resolved == null ? "" : " su " + resolved)
-                + ":\n" + String.join(" ", command), command);
+        String shown = String.join(" ", command);
+        return run(toolContext, resolved == null
+                ? text("Avviare %s:\n%s", "Start %s:\n%s").in(language, app.description(), shown)
+                : text("Avviare %s su %s:\n%s", "Start %s on %s:\n%s").in(language, app.description(), resolved, shown),
+                command);
     }
 
     @Tool(description = "Elenca le applicazioni che Jarvis può avviare.")

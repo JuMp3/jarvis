@@ -55,7 +55,7 @@ fn main() {
             thread::spawn(move || open_backend(&handle, &window));
             Ok(())
         })
-        // Closing the window keeps Jarvis in the tray; "Esci" ends it
+        // Closing the window keeps Jarvis in the tray; "Quit" ends it
         .on_window_event(|window, event| {
             if let WindowEvent::CloseRequested { api, .. } = event {
                 api.prevent_close();
@@ -77,12 +77,12 @@ fn open_backend(app: &AppHandle, window: &WebviewWindow) {
         Ok(url) if !url.is_empty() => url,
         _ => match start_backend(app, window) {
             Ok(()) => format!("http://127.0.0.1:{PORT}/"),
-            Err(error) => return fail(window, &format!("Non riesco ad avviare Jarvis: {error}")),
+            Err(error) => return fail(window, "cannotStart", &[("detail", &error)]),
         },
     };
     let address = match Url::parse(&url) {
         Ok(parsed) => parsed,
-        Err(error) => return fail(window, &format!("Indirizzo del backend non valido ({url}): {error}")),
+        Err(error) => return fail(window, "badAddress", &[("detail", &format!("{url}: {error}"))]),
     };
     let started = Instant::now();
     loop {
@@ -91,10 +91,11 @@ fn open_backend(app: &AppHandle, window: &WebviewWindow) {
             return;
         }
         if let Some(status) = exited(app) {
-            return fail(window, &format!("Jarvis si è chiuso all'avvio ({status}).\nDettagli in {}", console_log(app).display()));
+            return fail(window, "exited", &[("detail", &status.to_string()),
+                ("log", &console_log(app).display().to_string())]);
         }
         if started.elapsed() > READY_TIMEOUT {
-            return fail(window, "Jarvis non risponde. Riprova più tardi o controlla i log in ~/.jarvis/logs.");
+            return fail(window, "noAnswer", &[]);
         }
         thread::sleep(Duration::from_millis(500));
     }
@@ -109,7 +110,7 @@ fn start_backend(app: &AppHandle, window: &WebviewWindow) -> Result<(), String> 
         |message| { let _ = window.eval(&format!("setStatus({message:?})")); })
         .map_err(|e| format!("database: {e}"))?;
     app.state::<Backend>().0.lock().unwrap().database = Some(database);
-    let _ = window.eval("setStatus('Avvio di Jarvis…')");
+    let _ = window.eval("setStatus('starting')");
 
     let backend = resources.join("backend");
     let java = backend.join("runtime").join("bin").join(if cfg!(windows) { "java.exe" } else { "java" });
@@ -193,9 +194,32 @@ fn request(address: SocketAddr, host: &str) -> std::io::Result<String> {
     Ok(String::from_utf8_lossy(&head[..read]).into_owned())
 }
 
-fn fail(window: &WebviewWindow, message: &str) {
+/// The splash screen writes the message in its language, from the key and the details.
+fn fail(window: &WebviewWindow, key: &str, params: &[(&str, &str)]) {
     let _ = window.show();
-    let _ = window.eval(&format!("showError({message:?})"));
+    let params = params.iter().map(|(name, value)| format!("{name}: {value:?}")).collect::<Vec<_>>().join(", ");
+    let _ = window.eval(&format!("showError({key:?}, {{{params}}})"));
+}
+
+/// The tray menu exists before the backend, so it follows the system: Italian if the system is, otherwise English
+/// (the same default as the Settings). shortcut: a language chosen in Jarvis other than the system's does not
+/// reach the tray; read it from ~/.jarvis if that matters.
+fn italian_system() -> bool {
+    #[cfg(windows)]
+    {
+        extern "system" {
+            fn GetUserDefaultUILanguage() -> u16;
+        }
+        const LANG_ITALIAN: u16 = 0x10;
+        unsafe { GetUserDefaultUILanguage() & 0x3ff == LANG_ITALIAN }
+    }
+    #[cfg(not(windows))]
+    {
+        // macOS apps started from the Finder have no LANG: English there, to verify on a Mac
+        ["LC_ALL", "LC_MESSAGES", "LANG"].iter()
+            .find_map(|name| std::env::var(name).ok().filter(|value| !value.is_empty()))
+            .is_some_and(|value| value.starts_with("it"))
+    }
 }
 
 fn jarvis_home(app: &AppHandle) -> Result<PathBuf, String> {
@@ -229,10 +253,12 @@ fn show(app: &AppHandle) {
 }
 
 fn tray(app: &AppHandle) -> tauri::Result<()> {
-    let open = MenuItem::with_id(app, "open", "Apri Jarvis", true, None::<&str>)?;
-    let autostart = CheckMenuItem::with_id(app, "autostart", "Avvia con il sistema", true,
+    let it = italian_system();
+    let text = |italian, english| if it { italian } else { english };
+    let open = MenuItem::with_id(app, "open", text("Apri Jarvis", "Open Jarvis"), true, None::<&str>)?;
+    let autostart = CheckMenuItem::with_id(app, "autostart", text("Avvia con il sistema", "Start with the system"), true,
         app.autolaunch().is_enabled().unwrap_or(false), None::<&str>)?;
-    let quit = MenuItem::with_id(app, "quit", "Esci", true, None::<&str>)?;
+    let quit = MenuItem::with_id(app, "quit", text("Esci", "Quit"), true, None::<&str>)?;
     let menu = Menu::with_items(app, &[&open, &autostart, &PredefinedMenuItem::separator(app)?, &quit])?;
     let toggle = autostart.clone();
     TrayIconBuilder::with_id("jarvis")

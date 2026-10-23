@@ -4,7 +4,7 @@ Assistente AI personale: backend Java (Spring Boot 4.1, Spring AI 2.0), frontend
 
 ## Stato attuale — leggere per primo
 
-Fasi 0 e 1 chiuse e verificate end-to-end con Claude: streaming, tool, approvazioni, memoria su PostgreSQL + pgvector, errori leggibili, turni interrotti e riconnessione, log strutturati. Voce: locale (whisper.cpp + Piper avviati da Jarvis, prima Speaches) e browser verificate end-to-end; OpenAI non provata (account senza credito). Ollama non provato. Fase 2 (squadra di agenti) fatta. Fase 3 fatta: approvazioni per conversazione, Programmatore (`coder`, Claude Code, push su autorizzazione), MCP (GitHub), Documenti, azioni desktop. Fase 3b fatta: wizard e Impostazioni su DB (segreti cifrati), riavvio interno, Organizer su Outlook.com verificato (anche invio email ed evento reali, 22/10/2026). Fase 4 fatta: mani libere (VAD nel browser), interruzione automatica, wake word. Fase 5 in corso: shell desktop Tauri fatta e verificata su Windows (backend incluso con runtime jlink, tray, istanza unica, job object), Postgres 18 + pgvector inclusi senza Docker (primo avvio con wizard verificato), voce locale nativa (whisper.cpp + Piper avviati da Jarvis), memoria a lungo termine (embedding e5 locali con ONNX Runtime, tool `searchMemory`, documenti delle cartelle consentite), Node incluso per i server MCP `npx`, script `.sh` per Linux (provati in un container Ubuntu 22.04) e macOS (non provati); resta la prova dell'installer da parte dell'utente e la firma del codice. Requisito: tutto deve funzionare anche su macOS e Linux (tabella "Multipiattaforma" in `docs/ARCHITECTURE.md`).
+Fasi 0 e 1 chiuse e verificate end-to-end con Claude: streaming, tool, approvazioni, memoria su PostgreSQL + pgvector, errori leggibili, turni interrotti e riconnessione, log strutturati. Voce: locale (whisper.cpp + Piper avviati da Jarvis, prima Speaches) e browser verificate end-to-end; OpenAI non provata (account senza credito). Ollama non provato. Fase 2 (squadra di agenti) fatta. Fase 3 fatta: approvazioni per conversazione, Programmatore (`coder`, Claude Code, push su autorizzazione), MCP (GitHub), Documenti, azioni desktop. Fase 3b fatta: wizard e Impostazioni su DB (segreti cifrati), riavvio interno, Organizer su Outlook.com verificato (anche invio email ed evento reali, 22/10/2026). Fase 4 fatta: mani libere (VAD nel browser), interruzione automatica, wake word. Fase 5 in corso: shell desktop Tauri fatta e verificata su Windows (backend incluso con runtime jlink, tray, istanza unica, job object), Postgres 18 + pgvector inclusi senza Docker (primo avvio con wizard verificato), voce locale nativa (whisper.cpp + Piper avviati da Jarvis), memoria a lungo termine (embedding e5 locali con ONNX Runtime, tool `searchMemory`, documenti delle cartelle consentite), italiano e inglese, Node incluso per i server MCP `npx`, script `.sh` per Linux (provati in un container Ubuntu 22.04) e macOS (non provati); resta la prova dell'installer da parte dell'utente e la firma del codice. Requisito: tutto deve funzionare anche su macOS e Linux (tabella "Multipiattaforma" in `docs/ARCHITECTURE.md`).
 
 Cose verificate su Spring AI 2.0.1, da non rifare:
 
@@ -22,18 +22,9 @@ Cose verificate su Spring AI 2.0.1, da non rifare:
 
 Jarvis orchestra una squadra di specialisti in background (sezione "Orchestrazione degli agenti" di `docs/ARCHITECTURE.md`). Uno specialista che scrive chiede sempre l'approvazione con `TaskContext.requestApproval` prima di agire.
 
-## Prossima sessione (aggiornato il 22/10/2026, sera)
+## Prossima sessione (aggiornato il 23/10/2026)
 
-**Da fare per primo: il multilingua, italiano e inglese** (altre lingue dopo). Piano concordato a grandi linee, i dettagli si decidono insieme:
-
-1. **Una lingua sola per tutto:** impostazione "Lingua" nella scheda Profilo (italiano · English), che sostituisce `jarvis.voice.language` e guida interfaccia, voce e date. Il wizard la chiede per prima; il default viene dalla lingua del sistema.
-2. **Interfaccia:** dizionario `static/i18n.js` (`it`, `en`) e una funzione `t('chiave')` in `app.js`, `settings.js`; i testi fissi di `index.html` con attributi `data-i18n`. La pagina prende la lingua da `hello`; la schermata d'avvio della shell da `navigator.language` (il backend non c'è ancora). Test node: ogni chiave esiste in tutte le lingue.
-3. **Testi che arrivano all'utente dal server:** `ErrorMessages`, `LocalVoiceException`, le richieste di approvazione dei tool, le note del WebSocket, le etichette del `SettingsCatalog` (testi per lingua nel catalogo, risolti in `SettingsService.view`). I risultati dei tool vanno al modello, non all'utente: possono restare in italiano.
-4. **Prompt:** system prompt, `SPOKEN`/`WRITTEN`, specialisti e Organizer dicono già "rispondi nella lingua dell'utente"; da decidere se tradurli o lasciarli in italiano con la lingua dell'utente indicata nel prompt (più semplice, da misurare la qualità in inglese).
-5. **Voce:** Whisper con la lingua scelta (`-l`, e nella richiesta); una voce Piper inglese in `prepare-voice` (per esempio `en_US-lessac-medium` o `en_GB-alan-medium`) scelta per lingua; riconoscimento e sintesi del browser con la lingua scelta; parola di attivazione invariata ("Jarvis").
-6. **Date e numeri:** `DocumentTools` (oggi `Locale.ITALIAN`), `MemoryIndexer` (`dd/MM/yyyy`), `SystemTools`, la pagina (`toLocaleString('it-IT')`): dal locale della lingua scelta.
-
-Ordine proposto: 1 → 2 → 3 → 5 → 6, poi 4 con una prova di qualità.
+**Multilingua italiano e inglese fatto** (sezione "Lingue" di `docs/ARCHITECTURE.md`): impostazione `jarvis.language` nel Profilo (prima domanda del wizard, default dalla lingua del sistema), interfaccia con `static/i18n.js`, testi del server con `i18n/Text`, prompt in italiano con la lingua dell'utente indicata, voce Piper per lingua, date nella lingua scelta. Da fare con l'utente: **prova di qualità in inglese** (wizard in inglese, una conversazione scritta e una a voce, un task della Squadra, un'approvazione) e decidere se i prompt vanno tradotti; poi rigenerare l'app desktop (anche `prepare-voice`, per la voce inglese). Altre lingue: con una terza, i testi del server passano a file di risorse.
 
 Altro rimasto aperto:
 - Prova dell'installer da parte dell'utente; rigenerarlo per avere anche il Node incluso.
@@ -54,6 +45,7 @@ Fase 5 quasi chiusa (dettagli in `docs/ARCHITECTURE.md`, "App desktop" e "Memori
 
 ```bash
 ./mvnw verify                    # build + test (Testcontainers: serve Docker)
+# se i test restano fermi al primo test su Postgres (Testcontainers appeso al ping di Docker): DOCKER_HOST=npipe:////./pipe/docker_engine ./mvnw verify
 ./mvnw spring-boot:run           # avvio su http://localhost:8080, avvia anche Postgres da compose.yaml
 node --test src/test/js/*.test.mjs     # test della logica pura del browser (voce, registrazione)
 
@@ -76,6 +68,7 @@ Configurazione: chiavi, fornitori, voce, cartelle e posta solo nel database, dal
 ```
 src/main/java/dev/jarvis/
   config/       JarvisProperties                     configurazione tipizzata (prefisso "jarvis")
+  i18n/         Text                                 testi per l'utente in italiano e inglese, locale, lingua nei prompt
   llm/          ProviderId (logica pura), ProviderRouter (un ChatClient per provider abilitato)
   agent/        AgentService, AgentConfig (ChatMemory, ApprovalService), ApprovalService,
                 ApprovalChannel, ApprovalRequest, PostgresChatMemoryRepository
@@ -99,7 +92,7 @@ src/main/java/dev/jarvis/
                 ClaudeCodeSpecialist (+ ClaudeCodeEvents, WorkspacePolicy), TaskTools
   ws/           WebSocketConfig, JarvisWebSocketHandler, SessionRegistry, SessionState,
                 TurnService, Turn, Protocol, TaskNotifier (aggiornamenti e annunci dei task), ErrorMessages
-src/main/resources/static/   index.html, style.css, app.js, orb.js, settings.js, vad.js, capture.js, markdown.js (ES modules, nessun build step)
+src/main/resources/static/   index.html, style.css, app.js, orb.js, settings.js, vad.js, capture.js, markdown.js, i18n.js (ES modules, nessun build step)
 src/main/resources/schema.sql  schema idempotente (estensione vector, chat_message)
 src/test/java/               test JUnit 5 della logica pura + integrazione su Postgres (Testcontainers)
 desktop/                     shell Tauri 2 (src-tauri/src/main.rs: backend, finestra, tray, job object; database.rs:
@@ -115,3 +108,4 @@ desktop/                     shell Tauri 2 (src-tauri/src/main.rs: backend, fine
 - **Specialisti (dalla Fase 2):** si aggiungono in configurazione (`jarvis.agents.*`), non con codice dedicato. Uno specialista che legge contenuti non fidati non riceve tool di scrittura, e gli specialisti non delegano ad altri specialisti.
 - Nessun segreto nel repository.
 - Messaggi WebSocket: aggiungere i nuovi tipi sia in `ws/Protocol` sia in `static/app.js`, e aggiornare la tabella in `docs/ARCHITECTURE.md`.
+- **Testi per l'utente in tutte le lingue:** sul server `text("italiano", "english").in(language)` (`i18n/Text`), nella pagina `t('chiave')` con la chiave in ogni lingua di `static/i18n.js` (il test node lo controlla). I prompt e i risultati dei tool, che legge il modello, restano in italiano.

@@ -1,5 +1,7 @@
 package dev.jarvis.voice;
 
+import static dev.jarvis.i18n.Text.text;
+
 import java.io.File;
 import java.io.IOException;
 import java.net.ServerSocket;
@@ -25,6 +27,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import dev.jarvis.config.JarvisProperties.Voice.Local;
+import dev.jarvis.i18n.Text;
 
 /**
  * The local voice engines, run by Jarvis as its own processes: the server of whisper.cpp for speech-to-text (with
@@ -61,7 +64,7 @@ final class LocalVoice implements AutoCloseable {
     /** Speech-to-text through the whisper.cpp server, started now in the background. */
     SpeechToText speechToText(HttpClient http, OpenAiAudioClient.Settings settings) {
         Thread.ofVirtual().name("whisper-start").start(() -> startWhisper(http, settings));
-        return (audio, mimeType) -> ready(whisper, "trascrizione").transcribe(audio, mimeType);
+        return (audio, mimeType) -> ready(whisper, text("La trascrizione", "Transcription")).transcribe(audio, mimeType);
     }
 
     /** Text-to-speech with Piper, started now in the background. */
@@ -69,18 +72,22 @@ final class LocalVoice implements AutoCloseable {
         CompletableFuture<PiperTts> started = new CompletableFuture<>();
         Thread.ofVirtual().name("piper-start").start(() -> {
             try {
+                String voice = config.ttsVoices().get(language);
+                if (voice == null) {
+                    throw new IOException("no Piper voice for language " + language + " (jarvis.voice.local.tts-voices)");
+                }
                 PiperTts tts = new PiperTts(executable("piper", "piper"),
-                        home.resolve("models").resolve(config.ttsVoice() + ".onnx"), logFile("piper.log"));
+                        home.resolve("models").resolve(voice + ".onnx"), logFile("piper.log"));
                 piper = tts;
                 tts.warmUp();
-                log.info("Local text-to-speech ready: Piper {}", config.ttsVoice());
+                log.info("Local text-to-speech ready: Piper {}", voice);
                 started.complete(tts);
             } catch (IOException | RuntimeException e) {
                 log.warn("Local text-to-speech not available: {}", e.getMessage());
                 started.completeExceptionally(e);
             }
         });
-        return text -> ready(started, "voce").synthesize(text);
+        return sentence -> ready(started, text("La voce", "The voice")).synthesize(sentence);
     }
 
     private void startWhisper(HttpClient http, OpenAiAudioClient.Settings settings) {
@@ -138,17 +145,19 @@ final class LocalVoice implements AutoCloseable {
     }
 
     /** Waits for an engine still starting; a clear message if it cannot run (not installed, failed). */
-    private static <T> T ready(CompletableFuture<T> engine, String what) {
+    private <T> T ready(CompletableFuture<T> engine, Text what) {
         try {
             return engine.get(READY_TIMEOUT.toSeconds(), TimeUnit.SECONDS);
         } catch (ExecutionException e) {
-            throw new LocalVoiceException("La " + what + " sul tuo PC non è disponibile (" + e.getCause().getMessage()
-                    + "). Scegline un'altra in Impostazioni → Voce.", e);
+            throw new LocalVoiceException(text("%s sul tuo PC non è disponibile (%s). Scegline un'altra in Impostazioni → Voce.",
+                    "%s on your PC is not available (%s). Choose another one in Settings → Voice.")
+                    .in(language, what.in(language), e.getCause().getMessage()), e);
         } catch (TimeoutException e) {
-            throw new LocalVoiceException("La " + what + " sul tuo PC non è ancora pronta: riprova tra poco.", e);
+            throw new LocalVoiceException(text("%s sul tuo PC non è ancora pronta: riprova tra poco.",
+                    "%s on your PC is not ready yet: try again in a moment.").in(language, what.in(language)), e);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            throw new LocalVoiceException("Interrotto.", e);
+            throw new LocalVoiceException(text("Interrotto.", "Interrupted.").in(language), e);
         }
     }
 

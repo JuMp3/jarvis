@@ -3,10 +3,11 @@ import { createSettings } from './settings.js';
 import { VoiceDetector } from './vad.js';
 import { SpeechCapture } from './capture.js';
 import { parseMarkdown, weatherIcon } from './markdown.js';
+import { t, language, setLanguage, onLanguageChange, translatePage } from './i18n.js';
 
 // Message types must match dev.jarvis.ws.Protocol and docs/ARCHITECTURE.md.
 
-const PROVIDER_LABELS = { anthropic: 'Claude', openai: 'OpenAI', ollama: 'Ollama (locale)' };
+const providerLabel = (id) => ({ anthropic: 'Claude', openai: 'OpenAI', ollama: t('provider.ollama') })[id] ?? id;
 const MIN_RECORDING_MS = 350;
 
 const el = {
@@ -59,9 +60,7 @@ const audio = {
 // uses the voices installed in the system, and works.
 const desktopWindow = Boolean(window.chrome?.webview);
 const Recognition = desktopWindow ? null : window.SpeechRecognition || window.webkitSpeechRecognition;
-const NO_BROWSER_RECOGNITION = desktopWindow
-  ? 'Nell\'app desktop il riconoscimento vocale del browser non è disponibile: scegli «Sul tuo PC» o «OpenAI» in Impostazioni → Voce.'
-  : 'Questo browser non supporta il riconoscimento vocale: scegli «Sul tuo PC» o «OpenAI» in Impostazioni → Voce.';
+const noBrowserRecognition = () => t(desktopWindow ? 'voice.noRecognitionDesktop' : 'voice.noRecognition');
 const browserSpeech = { pending: '', queued: 0, pulse: 0, voice: null };
 
 function audioContext() {
@@ -113,7 +112,7 @@ async function enqueueClip(seq, base64) {
     audio.queue.set(seq, buffer);
     playNext();
   } catch (e) {
-    note('Non riesco a riprodurre l\'audio della risposta.', true);
+    note(t('voice.playbackFailed'), true);
   }
 }
 
@@ -156,13 +155,13 @@ function stopPlayback() {
 // ---- browser speech synthesis ------------------------------------------------------------
 
 function browserVoice() {
-  const voices = speechSynthesis.getVoices().filter((v) => v.lang.toLowerCase().startsWith(ui.language));
+  const voices = speechSynthesis.getVoices().filter((v) => v.lang.toLowerCase().startsWith(language()));
   return voices.find((v) => /natural|online/i.test(v.name)) ?? voices[0] ?? null;
 }
 
 function speakInBrowser(text) {
   const utterance = new SpeechSynthesisUtterance(text);
-  utterance.lang = ui.language;
+  utterance.lang = language();
   browserSpeech.voice ??= browserVoice();
   if (browserSpeech.voice) utterance.voice = browserSpeech.voice;
   utterance.onstart = () => setState('speaking');
@@ -235,7 +234,7 @@ async function startHandsFree() {
     await openMicrophone();
   } catch {
     el.handsfree.checked = false;
-    note('Microfono non disponibile: consenti l\'accesso al microfono nelle impostazioni del browser.', true);
+    note(t('voice.noMicrophone'), true);
     return;
   }
   handsFree.detector = new VoiceDetector();
@@ -314,14 +313,14 @@ async function startRecording() {
   } catch (e) {
     ui.recording = false;
     el.mic.classList.remove('recording');
-    note('Microfono non disponibile: consenti l\'accesso al microfono nelle impostazioni del browser.', true);
+    note(t('voice.noMicrophone'), true);
     setState('idle');
   }
 }
 
 function startRecognition() {
   const recognition = new Recognition();
-  recognition.lang = ui.language;
+  recognition.lang = language();
   recognition.continuous = true;
   let transcript = '';
   recognition.onresult = (event) => {
@@ -331,17 +330,16 @@ function startRecognition() {
   };
   recognition.onerror = (event) => {
     if (event.error === 'network') {
-      note('Il riconoscimento vocale del browser usa un servizio online che non risponde (rete o proxy aziendale): '
-        + 'prova «Sul tuo PC» in Impostazioni → Voce.', true);
+      note(t('voice.recognitionNetwork'), true);
     } else if (event.error !== 'no-speech' && event.error !== 'aborted') {
-      note(`Riconoscimento vocale del browser non riuscito (${event.error}).`, true);
+      note(t('voice.recognitionFailed', { error: event.error }), true);
     }
   };
   recognition.onend = () => {
     audio.recognition = null;
     let text = transcript.trim();
     if (!text) {
-      if (!el.handsfree.checked) note('Non ho sentito nulla. Riprova parlando più vicino al microfono.');
+      if (!el.handsfree.checked) note(t('voice.nothingHeard'));
       setState('idle');
       return;
     }
@@ -377,7 +375,7 @@ function stopRecording() {
 function sendAudio(buffer) {
   const duration = performance.now() - audio.startedAt;
   if (duration < MIN_RECORDING_MS || buffer.byteLength === 0) {
-    note('Tieni premuto mentre parli, poi rilascia.');
+    note(t('voice.tooShort'));
     setState('idle');
     return;
   }
@@ -500,7 +498,7 @@ function markdownBlock(block) {
       scroll.append(table);
       return scroll;
     }
-    case 'pending-card': return element('div', 'card pending', 'Preparo la scheda…');
+    case 'pending-card': return element('div', 'card pending', t('card.pending'));
     case 'card': return card(block.card);
     default: return element('p', null, '');
   }
@@ -522,15 +520,15 @@ function weatherCard(data) {
   const head = element('div', 'weather-now');
   head.append(element('span', 'weather-icon', weatherIcon(now.condition)));
   const where = element('div', 'weather-where');
-  where.append(element('span', 'weather-place', data.place ?? 'Meteo'));
+  where.append(element('span', 'weather-place', data.place ?? t('weather.title')));
   if (now.condition) where.append(element('span', 'weather-condition', now.condition));
   head.append(where, element('span', 'weather-temp', degrees(now.temp)));
   box.append(head);
 
   const details = [
-    now.feels != null && `percepita ${degrees(now.feels)}`,
-    now.humidity != null && `umidità ${Math.round(now.humidity)}%`,
-    now.wind != null && `vento ${Math.round(now.wind)} km/h`,
+    now.feels != null && t('weather.feels', { value: degrees(now.feels) }),
+    now.humidity != null && t('weather.humidity', { value: Math.round(now.humidity) }),
+    now.wind != null && t('weather.wind', { value: Math.round(now.wind) }),
   ].filter(Boolean);
   if (details.length) box.append(element('p', 'weather-details', details.join(' · ')));
 
@@ -565,46 +563,36 @@ function finishStreaming() {
 
 const ui = {
   state: 'idle', recording: false, connected: false,
-  stt: 'off', tts: 'off', language: 'it', // from the server's hello: "server", "browser" or "off"
+  stt: 'off', tts: 'off', // from the server's hello: "server", "browser" or "off"
+  sttRequested: 'off', // what the settings ask, even when this page cannot do it
   spokenTurn: false,
   wakeWord: 'jarvis',
 };
 
 const touchOnly = window.matchMedia('(pointer: coarse)').matches;
 
-const STATUS_TEXT = {
-  idle: touchOnly
-    ? 'Tieni premuto il microfono per parlare'
-    : 'Tieni premuto il microfono o la barra spaziatrice per parlare',
-  listening: 'Ti ascolto…',
-  thinking: 'Sto pensando…',
-  speaking: 'Sto rispondendo. Premi il microfono per interrompermi',
-};
+const statusText = (state) => t(state === 'idle' && touchOnly ? 'status.idleTouch' : `status.${state}`);
 
 let orb;
 
 function setState(state) {
   ui.state = state;
   orb?.setState(state);
-  let text = STATUS_TEXT[state];
+  let text = statusText(state);
   if (state === 'idle' && handsFree.timer) {
-    text = wakeRequired() ? `Mani libere: di' «${ui.wakeWord}» e poi la tua richiesta` : 'Mani libere: parla quando vuoi';
+    text = wakeRequired() ? t('status.handsfreeWake', { word: ui.wakeWord }) : t('status.handsfree');
   }
-  el.status.textContent = ui.connected ? text : 'Connessione persa. Riprovo…';
+  el.status.textContent = ui.connected ? text : t('status.disconnected');
 }
 
 /** A hands-free phrase not addressed to Jarvis: shown faintly, so it is clear why he did not answer. */
 function ignored(text) {
-  addItem('turn-note ignored', `Non era per me: «${text}»`);
+  addItem('turn-note ignored', t('turn.ignored', { text }));
 }
 
 // ---- team: specialists working in the background --------------------------------------------
 
-const AGENTS = {
-  researcher: { label: 'Ricercatore', color: '#86c5c4' },
-  writer: { label: 'Scrittore', color: '#b9a7dc' },
-  coder: { label: 'Programmatore', color: '#a9c58b' },
-};
+const AGENT_COLORS = { researcher: '#86c5c4', writer: '#b9a7dc', coder: '#a9c58b' };
 const SPARE_COLORS = ['#d6a7a0', '#cdbb8a', '#8fb3d9'];
 const LANDING_MS = 2500;
 
@@ -612,9 +600,12 @@ const team = { tasks: new Map(), landing: new Set(), openDetails: new Set() };
 const wideLayout = window.matchMedia('(min-width: 1200px)');
 
 function agentInfo(id) {
-  if (AGENTS[id]) return AGENTS[id];
+  const label = t(`agent.${id}`);
   const hash = [...id].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7);
-  return { label: id, color: SPARE_COLORS[hash % SPARE_COLORS.length] };
+  return {
+    label: label === `agent.${id}` ? id : label, // agents added in configuration keep their id
+    color: AGENT_COLORS[id] ?? SPARE_COLORS[hash % SPARE_COLORS.length],
+  };
 }
 
 const rgb = (hex) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
@@ -627,13 +618,13 @@ function clock(ms) {
 
 function stateText(task) {
   switch (task.status) {
-    case 'queued': return 'in coda';
-    case 'running': return `al lavoro da ${clock(Date.now() - task.startedAt)}`;
-    case 'waiting_approval': return 'aspetta la tua approvazione';
-    case 'completed': return `fatto in ${clock(task.finishedAt - task.startedAt)}`;
-    case 'failed': return 'non riuscito';
-    case 'cancelled': return 'fermato';
-    case 'interrupted': return 'interrotto dal riavvio';
+    case 'queued': return t('task.queued');
+    case 'running': return t('task.running', { time: clock(Date.now() - task.startedAt) });
+    case 'waiting_approval': return t('task.waiting');
+    case 'completed': return t('task.completed', { time: clock(task.finishedAt - task.startedAt) });
+    case 'failed': return t('task.failed');
+    case 'cancelled': return t('task.cancelled');
+    case 'interrupted': return t('task.interrupted');
     default: return task.status;
   }
 }
@@ -657,9 +648,9 @@ function renderTask(task) {
   if (task.status === 'running' && task.progress) item.append(element('p', 'task-progress', task.progress));
 
   if (active(task)) {
-    const stop = element('button', 'task-stop', 'Ferma');
+    const stop = element('button', 'task-stop', t('task.stop'));
     stop.type = 'button';
-    stop.setAttribute('aria-label', `Ferma il lavoro: ${task.title}`);
+    stop.setAttribute('aria-label', t('task.stopLabel', { title: task.title }));
     stop.addEventListener('click', () => send({ type: 'cancel-task', id: task.id }));
     item.append(stop);
   }
@@ -670,18 +661,21 @@ function renderTask(task) {
     if (details.open) team.openDetails.add(task.id);
     else team.openDetails.delete(task.id);
   });
-  details.append(element('summary', null, task.result ? 'Risultato e istruzioni' : 'Istruzioni'));
+  details.append(element('summary', null, t(task.result ? 'task.resultAndInstructions' : 'task.instructions')));
   const body = element('div', 'task-body');
-  if (task.result) body.append(element('h3', null, 'Risultato'), renderMarkdown(element('div', 'task-result'), task.result));
-  if (task.error) body.append(element('h3', null, 'Motivo'), element('p', null, task.error));
-  body.append(element('h3', null, 'Istruzioni'), element('p', null, task.instructions));
-  if (task.workspace) body.append(element('h3', null, 'Repository'), element('p', null, task.workspace));
+  if (task.result) body.append(element('h3', null, t('task.result')), renderMarkdown(element('div', 'task-result'), task.result));
+  if (task.error) body.append(element('h3', null, t('task.reason')), element('p', null, task.error));
+  body.append(element('h3', null, t('task.instructions')), element('p', null, task.instructions));
+  if (task.workspace) body.append(element('h3', null, t('task.repository')), element('p', null, task.workspace));
   if (task.costUsd != null) {
-    body.append(element('h3', null, 'Costo'), element('p', null, `${task.costUsd.toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} $`));
+    const cost = task.costUsd.toLocaleString(language(), { style: 'currency', currency: 'USD' });
+    body.append(element('h3', null, t('task.cost')), element('p', null, cost));
   }
   if (task.inputTokens != null) {
-    const tokens = `${task.inputTokens.toLocaleString('it-IT')} in ingresso, ${(task.outputTokens ?? 0).toLocaleString('it-IT')} in uscita`;
-    body.append(element('h3', null, 'Token'), element('p', null, tokens));
+    const tokens = t('task.tokenCounts', {
+      input: task.inputTokens.toLocaleString(language()), output: (task.outputTokens ?? 0).toLocaleString(language()),
+    });
+    body.append(element('h3', null, t('task.tokens')), element('p', null, tokens));
   }
   details.append(body);
   item.append(details);
@@ -703,11 +697,13 @@ function renderTeam() {
   const working = [...team.tasks.values()].filter(active);
   const count = (status) => working.filter((t) => t.status === status).length;
   const parts = [];
-  if (count('waiting_approval')) parts.push(count('waiting_approval') === 1 ? '1 aspetta la tua approvazione' : `${count('waiting_approval')} aspettano la tua approvazione`);
-  if (count('running')) parts.push(count('running') === 1 ? '1 agente al lavoro' : `${count('running')} agenti al lavoro`);
-  if (count('queued')) parts.push(`${count('queued')} in coda`);
+  const waiting = count('waiting_approval');
+  const running = count('running');
+  if (waiting) parts.push(waiting === 1 ? t('team.waitingOne') : t('team.waitingMany', { count: waiting }));
+  if (running) parts.push(running === 1 ? t('team.runningOne') : t('team.runningMany', { count: running }));
+  if (count('queued')) parts.push(t('team.queued', { count: count('queued') }));
   const summary = parts.join(', ');
-  el.teamSummary.textContent = summary ? summary.charAt(0).toUpperCase() + summary.slice(1) : 'Squadra a riposo';
+  el.teamSummary.textContent = summary ? summary.charAt(0).toUpperCase() + summary.slice(1) : t('team.idle');
   el.teamToggle.dataset.busy = String(working.length > 0);
   el.tasksClear.hidden = working.length === team.tasks.size;
   el.teamDots.replaceChildren(...working.map((task) => {
@@ -723,12 +719,9 @@ function renderTeam() {
 
 function announce(task) {
   const who = agentInfo(task.agent).label;
-  const text = {
-    running: `${who} al lavoro: ${task.title}`,
-    completed: `${who} ha finito: ${task.title}`,
-    failed: `${who} non è riuscito: ${task.title}`,
-  }[task.status];
-  if (text) el.announcer.textContent = text;
+  if (['running', 'completed', 'failed'].includes(task.status)) {
+    el.announcer.textContent = t(`announce.${task.status}`, { who, title: task.title });
+  }
 }
 
 function updateTask(task) {
@@ -765,10 +758,10 @@ el.teamClose.addEventListener('click', () => { setTeamOpen(false); el.teamToggle
 // Both only take things off the screen (the database keeps them for long-term memory), and ask first.
 // Work in progress is never removed.
 el.tasksClear.addEventListener('click', () => {
-  if (confirm('Togliere dalla Squadra i lavori finiti? Non li vedrai più qui.')) send({ type: 'clear-tasks' });
+  if (confirm(t('team.clearConfirm'))) send({ type: 'clear-tasks' });
 });
 el.historyClear.addEventListener('click', () => {
-  if (confirm('Cancellare la conversazione dallo schermo? Jarvis riparte da zero; quanto vi siete detti resta nel suo archivio.')) {
+  if (confirm(t('history.clearConfirm'))) {
     send({ type: 'clear-history' });
   }
 });
@@ -828,7 +821,7 @@ function connect() {
     audio.turnDone = true;
     finishStreaming();
     dismissApproval(); // the server already denied it when the connection dropped
-    if (interrupted) note('Connessione persa: la risposta in corso è stata interrotta.', true);
+    if (interrupted) note(t('turn.connectionLost'), true);
     setState('idle');
     setTimeout(connect, retryDelay);
     retryDelay = Math.min(retryDelay * 2, 10000);
@@ -848,24 +841,23 @@ function handle(msg) {
   switch (msg.type) {
     case 'hello':
       keepConversation(msg.conversation);
+      setLanguage(msg.language); // first: everything below speaks it
       ui.wakeWord = msg.wakeWord || 'jarvis';
-      el.wake.nextElementSibling.textContent = `Solo se dico «${ui.wakeWord.charAt(0).toUpperCase() + ui.wakeWord.slice(1)}»`;
+      wakeLabel();
       if (el.handsfree.checked) sendVoiceMode(); // a new connection starts without it
-      if (settingsPanel.onHello(msg)) note('Impostazioni applicate.');
-      ui.language = msg.language || 'it';
+      if (settingsPanel.onHello(msg)) note(t('turn.settingsApplied'));
+      ui.sttRequested = msg.stt;
       ui.stt = msg.stt === 'browser' && !Recognition ? 'off' : msg.stt;
       if (msg.stt === 'browser' && !Recognition && !ui.toldNoRecognition) {
         ui.toldNoRecognition = true; // once per page, not at every reconnection
-        note(NO_BROWSER_RECOGNITION, true);
+        note(noBrowserRecognition(), true);
       }
       ui.tts = msg.tts === 'browser' && !('speechSynthesis' in window) ? 'off' : msg.tts;
       fillProviders(msg.providers, msg.defaultProvider);
       el.speak.checked = ui.tts !== 'off';
       el.speak.disabled = ui.tts === 'off';
       setControlsEnabled(true);
-      el.mic.title = ui.stt !== 'off' ? ''
-        : msg.stt === 'browser' ? NO_BROWSER_RECOGNITION
-          : 'Voce non attiva: scegli chi trascrive la tua voce in Impostazioni → Voce';
+      micTitle();
       break;
     case 'history':
       if (el.log.children.length === 0) {
@@ -896,7 +888,7 @@ function handle(msg) {
       break;
     case 'transcript':
       if (msg.text) addItem('turn-user', msg.text);
-      else note('Non ho sentito nulla. Riprova parlando più vicino al microfono.');
+      else note(t('voice.nothingHeard'));
       break;
     case 'token':
       appendToken(msg.text);
@@ -930,7 +922,7 @@ function fillProviders(providers, selected) {
   el.provider.replaceChildren(...providers.map((id) => {
     const option = document.createElement('option');
     option.value = id;
-    option.textContent = PROVIDER_LABELS[id] ?? id;
+    option.textContent = providerLabel(id);
     option.selected = id === selected;
     return option;
   }));
@@ -960,7 +952,7 @@ function showNextApproval() {
   const request = approvals[0];
   shownApproval = request.id;
   const who = request.agent ? agentInfo(request.agent).label : 'Jarvis';
-  el.approvalTitle.textContent = `${who} chiede il permesso`;
+  el.approvalTitle.textContent = t('approval.title', { who });
   el.approvalTask.hidden = !request.taskTitle;
   el.approvalTask.textContent = request.taskTitle ?? '';
   richText(el.approvalText, request.description);
@@ -1035,6 +1027,31 @@ document.addEventListener('keyup', (event) => {
     stopRecording();
   }
 });
+
+/** "Only when I say «Jarvis»", with the wake word of the settings. */
+function wakeLabel() {
+  el.wake.nextElementSibling.textContent = t('header.wake', { word: ui.wakeWord.charAt(0).toUpperCase() + ui.wakeWord.slice(1) });
+}
+
+function micTitle() {
+  el.mic.title = ui.stt !== 'off' ? '' : ui.sttRequested === 'browser' ? noBrowserRecognition() : t('voice.off');
+}
+
+// Everything written with t() is written again: the fixed texts, and what the page drew itself
+onLanguageChange(() => {
+  translatePage();
+  browserSpeech.voice = null; // a voice of the new language
+  wakeLabel();
+  micTitle();
+  for (const option of el.provider.options) option.textContent = providerLabel(option.value);
+  setState(ui.state);
+  renderTeam();
+  if (shownApproval) {
+    const request = approvals[0];
+    el.approvalTitle.textContent = t('approval.title', { who: request.agent ? agentInfo(request.agent).label : 'Jarvis' });
+  }
+});
+translatePage();
 
 const settingsPanel = createSettings({ send });
 document.getElementById('settings-open').addEventListener('click', () => settingsPanel.open(false));

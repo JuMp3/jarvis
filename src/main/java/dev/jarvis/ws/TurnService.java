@@ -95,7 +95,7 @@ public class TurnService {
                                     .addKeyValue("conversationId", session.conversationId())
                                     .addKeyValue("durationMs", elapsedMs(startedAt))
                                     .log();
-                            String message = ErrorMessages.forProvider(provider, error);
+                            String message = ErrorMessages.forProvider(voice.language(), provider, error);
                             sessions.send(sessionId, Protocol.error(message));
                             if (speechQueue != null) {
                                 speak(turn, speechQueue, tts.get(), sessionId, message, seq);
@@ -136,7 +136,7 @@ public class TurnService {
             } catch (RuntimeException e) {
                 log.warn("Speech synthesis failed for session {}", sessionId, e);
                 turn.markSpeechFailed();
-                sessions.send(sessionId, Protocol.error(ErrorMessages.forVoice(e)));
+                sessions.send(sessionId, Protocol.error(ErrorMessages.forVoice(voice.language(), e)));
             }
         });
     }

@@ -8,6 +8,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
+import java.util.Map;
 
 import org.junit.jupiter.api.Test;
 
@@ -22,7 +23,7 @@ class LocalVoiceTest {
     @Test
     void piperSpeaksAndWhisperUnderstandsIt() {
         assumeTrue(Files.isDirectory(HOME.resolve("models")), "local voice not prepared in " + HOME.toAbsolutePath());
-        try (LocalVoice voice = new LocalVoice(new Local(HOME.toAbsolutePath().toString(), "base", "it_IT-paola-medium", 4), "it")) {
+        try (LocalVoice voice = new LocalVoice(new Local(HOME.toAbsolutePath().toString(), "base", Map.of("it", "it_IT-paola-medium"), 4), "it")) {
             TextToSpeech tts = voice.textToSpeech();
             SpeechToText stt = voice.speechToText(HttpClient.newHttpClient(),
                     new OpenAiAudioClient.Settings("", "it", "whisper-1", null, null, null, "Jarvis"));

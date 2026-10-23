@@ -1,5 +1,7 @@
 package dev.jarvis.task;
 
+import static dev.jarvis.i18n.Text.text;
+
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
@@ -49,6 +51,7 @@ public class TaskService implements DisposableBean {
     private final ApprovalService approvals;
     private final Semaphore slots;
     private final Duration defaultTimeout;
+    private final String language;
     private final ExecutorService workers = Executors.newVirtualThreadPerTaskExecutor();
     private final ScheduledExecutorService timers =
             Executors.newSingleThreadScheduledExecutor(Thread.ofVirtual().name("task-timeout").factory());
@@ -64,7 +67,9 @@ public class TaskService implements DisposableBean {
         this.approvals = approvals;
         this.slots = new Semaphore(Math.max(1, properties.tasks().maxParallel()), true);
         this.defaultTimeout = properties.tasks().timeout();
-        int interrupted = repository.markInterrupted("Jarvis è stato riavviato mentre il task era in corso.");
+        this.language = properties.language();
+        int interrupted = repository.markInterrupted(text("Jarvis è stato riavviato mentre il task era in corso.",
+                "Jarvis was restarted while the task was running.").in(language));
         if (interrupted > 0) {
             log.info("Marked {} unfinished tasks as interrupted", interrupted);
         }
@@ -149,7 +154,7 @@ public class TaskService implements DisposableBean {
                 if (!Thread.currentThread().isInterrupted()) {
                     log.warn("Task {} ({}) failed", taskId, running.agent(), e);
                     end(taskId, current -> current.ended(Status.FAILED,
-                            ErrorMessages.forProvider(specialists.provider(running.agent()), e)));
+                            ErrorMessages.forProvider(language, specialists.provider(running.agent()), e)));
                 }
             } finally {
                 clock.stop();
@@ -228,8 +233,10 @@ public class TaskService implements DisposableBean {
 
     private void timeOut(String taskId) {
         AgentTask task = active.get(taskId);
-        String limit = task == null ? "" : " dopo " + specialists.timeout(task.agent()).orElse(defaultTimeout).toMinutes() + " minuti";
-        if (end(taskId, current -> current.ended(Status.FAILED, "Tempo scaduto" + limit + "."))) {
+        String reason = task == null ? text("Tempo scaduto.", "Out of time.").in(language)
+                : text("Tempo scaduto dopo %s minuti.", "Out of time after %s minutes.")
+                        .in(language, specialists.timeout(task.agent()).orElse(defaultTimeout).toMinutes());
+        if (end(taskId, current -> current.ended(Status.FAILED, reason))) {
             Future<?> future = futures.remove(taskId);
             if (future != null) {
                 future.cancel(true);

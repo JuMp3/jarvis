@@ -61,8 +61,9 @@ public class Specialists {
                 return;
             }
             built.put(id, "claude-code".equals(spec.type())
-                    ? new ClaudeCodeSpecialist(id, spec, claudeCodeEnvironment(environment), json)
-                    : new ChatSpecialist(id, spec, router, systemTools, documentTools, mcpTools, mailTools));
+                    ? new ClaudeCodeSpecialist(id, spec, claudeCodeEnvironment(environment), json, properties.language())
+                    : new ChatSpecialist(id, spec, router, systemTools, documentTools, mcpTools, mailTools,
+                            properties.language()));
             if (spec.timeout() != null) {
                 limits.put(id, spec.timeout());
             }

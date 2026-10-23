@@ -19,6 +19,7 @@ import org.springframework.ai.tool.annotation.ToolParam;
 import org.springframework.stereotype.Component;
 
 import dev.jarvis.config.JarvisProperties;
+import dev.jarvis.i18n.Text;
 import dev.jarvis.memory.LongTermMemory;
 
 /**
@@ -34,8 +35,6 @@ public class DocumentTools {
     private static final int MAX_FOUND = 20;
     private static final int MAX_READ_CHARS = 40_000;
     private static final int SNIPPET = 120;
-    private static final DateTimeFormatter DAY = DateTimeFormatter.ofPattern("d MMM yyyy", Locale.ITALIAN)
-            .withZone(ZoneId.systemDefault());
 
     /** Indexed by the long-term memory: beyond it, the plain searches still find them. */
     private static final int MAX_INDEXED = 2_000;
@@ -43,9 +42,11 @@ public class DocumentTools {
 
     private final AllowedFolders folders;
     private final LongTermMemory memory;
+    private final DateTimeFormatter day;
 
     public DocumentTools(JarvisProperties properties, LongTermMemory memory) {
         this.memory = memory;
+        this.day = DateTimeFormatter.ofPattern("d MMM yyyy", Text.locale(properties.language())).withZone(ZoneId.systemDefault());
         List<String> configured = properties.documents() == null || properties.documents().folders() == null
                 ? List.of() : properties.documents().folders();
         configured.forEach(DocumentTools::createIfMissing);
@@ -56,7 +57,7 @@ public class DocumentTools {
     public String listDocuments(
             @ToolParam(description = "Cartella da elencare; vuoto per tutte le cartelle consentite", required = false) String folder) {
         List<Path> roots = folder == null || folder.isBlank() ? folders.roots() : List.of(folders.resolve(folder));
-        List<String> lines = documents(roots).limit(MAX_LISTED + 1L).map(DocumentTools::describe).toList();
+        List<String> lines = documents(roots).limit(MAX_LISTED + 1L).map(this::describe).toList();
         if (lines.isEmpty()) {
             return "Nessun documento. Cartelle consentite: " + folders.roots();
         }
@@ -157,10 +158,10 @@ public class DocumentTools {
         }
     }
 
-    private static String describe(Path file) {
+    private String describe(Path file) {
         try {
             long kb = Math.max(1, Files.size(file) / 1024);
-            return file + " (" + kb + " KB, " + DAY.format(Files.getLastModifiedTime(file).toInstant()) + ")";
+            return file + " (" + kb + " KB, " + day.format(Files.getLastModifiedTime(file).toInstant()) + ")";
         } catch (IOException e) {
             return file.toString();
         }

@@ -20,11 +20,11 @@ class ErrorMessagesTest {
 
     @Test
     void mapsStatusCodesToActionableSentences() {
-        assertThat(ErrorMessages.describe("Claude", 401)).contains("chiave API");
-        assertThat(ErrorMessages.describe("Claude", 429)).contains("credito");
-        assertThat(ErrorMessages.describe("Claude", 529)).contains("sovraccarico");
-        assertThat(ErrorMessages.describe("Claude", 400)).contains("rifiutato");
-        assertThat(ErrorMessages.describe("Claude", ErrorMessages.NO_STATUS)).isEqualTo("Qualcosa è andato storto. Riprova.");
+        assertThat(ErrorMessages.describe("it", "Claude", 401)).contains("chiave API");
+        assertThat(ErrorMessages.describe("it", "Claude", 429)).contains("credito");
+        assertThat(ErrorMessages.describe("it", "Claude", 529)).contains("sovraccarico");
+        assertThat(ErrorMessages.describe("it", "Claude", 400)).contains("rifiutato");
+        assertThat(ErrorMessages.describe("it", "Claude", ErrorMessages.NO_STATUS)).isEqualTo("Qualcosa è andato storto. Riprova.");
     }
 
     @Test
@@ -34,7 +34,7 @@ class ErrorMessagesTest {
         RuntimeException wrapped = new RuntimeException("stream failed", new IllegalStateException(response));
 
         assertThat(ErrorMessages.statusOf(wrapped)).isEqualTo(503);
-        assertThat(ErrorMessages.forProvider(ProviderId.OPENAI, wrapped)).startsWith("OpenAI è sovraccarico");
+        assertThat(ErrorMessages.forProvider("it", ProviderId.OPENAI, wrapped)).startsWith("OpenAI è sovraccarico");
     }
 
     @Test
@@ -43,16 +43,23 @@ class ErrorMessagesTest {
                 HttpMethod.POST, URI.create("http://localhost:11434/api/chat"),
                 HttpHeaders.EMPTY);
 
-        assertThat(ErrorMessages.forProvider(ProviderId.OLLAMA, refused)).contains("Verifica che sia avviato");
+        assertThat(ErrorMessages.forProvider("it", ProviderId.OLLAMA, refused)).contains("Verifica che sia avviato");
     }
 
     @Test
     void describesVoiceFailures() {
-        assertThat(ErrorMessages.forVoice(new VoiceException("Audio API returned 429: quota", 429)))
+        assertThat(ErrorMessages.forVoice("it", new VoiceException("Audio API returned 429: quota", 429)))
                 .isEqualTo("Il servizio vocale ha raggiunto il limite di richieste, o il credito è esaurito. Riprova tra poco.");
-        assertThat(ErrorMessages.forVoice(new VoiceException("unreachable", new ConnectException())))
+        assertThat(ErrorMessages.forVoice("it", new VoiceException("unreachable", new ConnectException())))
                 .contains("riavvia Jarvis");
-        assertThat(ErrorMessages.forVoice(new RuntimeException(new LocalVoiceException("La voce sul tuo PC non è pronta.", null))))
+        assertThat(ErrorMessages.forVoice("it", new RuntimeException(new LocalVoiceException("La voce sul tuo PC non è pronta.", null))))
                 .isEqualTo("La voce sul tuo PC non è pronta.");
+    }
+
+    @Test
+    void speaksEnglishWhenTheUserDoes() {
+        assertThat(ErrorMessages.describe("en", "Claude", 401)).isEqualTo("Claude does not accept the API key. Check the configuration.");
+        assertThat(ErrorMessages.forVoice("en", new VoiceException("unreachable", new ConnectException())))
+                .startsWith("I can't reach the voice service");
     }
 }

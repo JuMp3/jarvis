@@ -6,7 +6,8 @@
 param(
     [string]$WhisperBuild = 'b5454',
     [string]$PiperVersion = '2023.11.14-2',
-    [string]$Voice = 'it/it_IT/paola/medium/it_IT-paola-medium'
+    # Piper voices, one per language of jarvis.voice.local.tts-voices
+    [string[]]$Voices = @('it/it_IT/paola/medium/it_IT-paola-medium', 'en/en_US/lessac/medium/en_US-lessac-medium')
 )
 
 $ErrorActionPreference = 'Stop'
@@ -33,9 +34,12 @@ Download "https://github.com/rhasspy/piper/releases/download/$PiperVersion/piper
 foreach ($model in 'ggml-small-q5_1.bin', 'ggml-base.bin') {
     Download "$huggingFace/ggerganov/whisper.cpp/resolve/main/$model" "$cache/$model"
 }
-$voiceName = Split-Path $Voice -Leaf
-foreach ($extension in '.onnx', '.onnx.json') {
-    Download "$huggingFace/rhasspy/piper-voices/resolve/main/$Voice$extension" "$cache/$voiceName$extension"
+$voiceFiles = foreach ($voice in $Voices) {
+    $voiceName = Split-Path $voice -Leaf
+    foreach ($extension in '.onnx', '.onnx.json') {
+        Download "$huggingFace/rhasspy/piper-voices/resolve/main/$voice$extension" "$cache/$voiceName$extension"
+        "$cache/$voiceName$extension"
+    }
 }
 
 if (Test-Path $out) { Remove-Item -Recurse -Force $out }
@@ -53,7 +57,7 @@ Copy-Item "$unpacked/Release/whisper-server.exe", "$unpacked/Release/whisper.dll
 & $tar -xf $piperZip -C $out
 if ($LASTEXITCODE -ne 0) { throw "Estrazione di Piper non riuscita" }
 
-Copy-Item "$cache/ggml-small-q5_1.bin", "$cache/ggml-base.bin", "$cache/$voiceName.onnx", "$cache/$voiceName.onnx.json" "$out/models"
+Copy-Item (@("$cache/ggml-small-q5_1.bin", "$cache/ggml-base.bin") + $voiceFiles) "$out/models"
 
 $size = (Get-ChildItem -Recurse $out | Measure-Object -Property Length -Sum).Sum / 1MB
 Write-Host ("Voce locale pronta in {0} ({1:N0} MB)" -f $out, $size)

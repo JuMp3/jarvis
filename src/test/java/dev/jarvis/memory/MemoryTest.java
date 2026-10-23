@@ -142,7 +142,7 @@ class MemoryTest extends BaseTest {
 
     private static DocumentTools documentsIn(Path folder, LongTermMemory memory) {
         return new DocumentTools(new JarvisProperties(null, null, null, null, null,
-                new JarvisProperties.Documents(List.of(folder.toString())), null, null, null, null), memory);
+                new JarvisProperties.Documents(List.of(folder.toString())), null, null, null, null, null), memory);
     }
 
     /** The real model: runs only where it is prepared (desktop/prepare-memory.ps1). */
@@ -151,7 +151,7 @@ class MemoryTest extends BaseTest {
         Path home = Path.of(System.getenv().getOrDefault("JARVIS_MEMORY_HOME", "desktop/src-tauri/resources/memory"));
         assumeTrue(Files.isRegularFile(home.resolve("model.onnx")), "memory model not prepared in " + home.toAbsolutePath());
         LongTermMemory memory = new LongTermMemory(new JarvisProperties(null, null, null, null, null, null, null, null,
-                null, new JarvisProperties.Memory(home.toAbsolutePath().toString())), jdbcTemplate);
+                null, new JarvisProperties.Memory(home.toAbsolutePath().toString()), null), jdbcTemplate);
         String marker = UUID.randomUUID().toString().substring(0, 8);
         memory.store(List.of(
                 passage(marker, "L'utente ha detto: ad agosto vado al mare in Sardegna con la famiglia"),

@@ -1,5 +1,7 @@
 package dev.jarvis.ws;
 
+import static dev.jarvis.i18n.Text.text;
+
 import java.io.IOException;
 
 import org.springframework.web.client.RestClientResponseException;
@@ -10,13 +12,14 @@ import com.anthropic.errors.AnthropicServiceException;
 import com.openai.errors.OpenAIIoException;
 import com.openai.errors.OpenAIServiceException;
 
+import dev.jarvis.i18n.Text;
 import dev.jarvis.llm.ProviderId;
 import dev.jarvis.voice.LocalVoiceException;
 import dev.jarvis.voice.VoiceException;
 
 /**
- * Turns failures into short Italian sentences that can be shown and spoken. Technical details stay in
- * the logs.
+ * Turns failures into short sentences in the user's language, that can be shown and spoken. Technical details stay
+ * in the logs.
  */
 public final class ErrorMessages {
 
@@ -26,37 +29,46 @@ public final class ErrorMessages {
     private ErrorMessages() {
     }
 
-    public static String forProvider(ProviderId provider, Throwable error) {
+    public static String forProvider(String language, ProviderId provider, Throwable error) {
         if (isNetwork(error)) {
             return provider == ProviderId.OLLAMA
-                    ? "Non riesco a raggiungere Ollama. Verifica che sia avviato."
-                    : "Non riesco a raggiungere " + provider.label() + ". Controlla la connessione a internet.";
+                    ? text("Non riesco a raggiungere Ollama. Verifica che sia avviato.",
+                            "I can't reach Ollama. Check that it is running.").in(language)
+                    : text("Non riesco a raggiungere %s. Controlla la connessione a internet.",
+                            "I can't reach %s. Check your internet connection.").in(language, provider.label());
         }
-        return describe(provider.label(), statusOf(error));
+        return describe(language, provider.label(), statusOf(error));
     }
 
-    static String forVoice(Throwable error) {
+    static String forVoice(String language, Throwable error) {
         for (Throwable current = error; current != null; current = current.getCause()) {
             if (current instanceof LocalVoiceException local) {
                 return local.getMessage(); // already written for the user
             }
         }
         if (isNetwork(error)) {
-            return "Non riesco a raggiungere il servizio vocale. Se è quello sul tuo PC, riavvia Jarvis "
-                    + "(dettagli in ~/.jarvis/logs).";
+            return text("Non riesco a raggiungere il servizio vocale. Se è quello sul tuo PC, riavvia Jarvis "
+                            + "(dettagli in ~/.jarvis/logs).",
+                    "I can't reach the voice service. If it is the one on your PC, restart Jarvis "
+                            + "(details in ~/.jarvis/logs).").in(language);
         }
-        return describe("Il servizio vocale", statusOf(error));
+        return describe(language, text("Il servizio vocale", "The voice service").in(language), statusOf(error));
     }
 
-    static String describe(String service, int status) {
-        return switch (status) {
-            case 401, 403 -> service + " non accetta la chiave API. Controlla la configurazione.";
-            case 429 -> service + " ha raggiunto il limite di richieste, o il credito è esaurito. Riprova tra poco.";
-            case 400, 404, 422 -> service + " ha rifiutato la richiesta. Controlla il modello e la configurazione.";
+    static String describe(String language, String service, int status) {
+        Text message = switch (status) {
+            case 401, 403 -> text("%s non accetta la chiave API. Controlla la configurazione.",
+                    "%s does not accept the API key. Check the configuration.");
+            case 429 -> text("%s ha raggiunto il limite di richieste, o il credito è esaurito. Riprova tra poco.",
+                    "%s has reached its request limit, or the credit has run out. Try again in a moment.");
+            case 400, 404, 422 -> text("%s ha rifiutato la richiesta. Controlla il modello e la configurazione.",
+                    "%s refused the request. Check the model and the configuration.");
             default -> status >= 500
-                    ? service + " è sovraccarico o non disponibile. Riprova tra poco."
-                    : "Qualcosa è andato storto. Riprova.";
+                    ? text("%s è sovraccarico o non disponibile. Riprova tra poco.",
+                            "%s is overloaded or unavailable. Try again in a moment.")
+                    : text("Qualcosa è andato storto. Riprova.", "Something went wrong. Try again.");
         };
+        return message.in(language, service);
     }
 
     /** First HTTP status found in the cause chain, {@link #NO_STATUS} if none. */

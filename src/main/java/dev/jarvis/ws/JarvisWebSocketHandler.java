@@ -1,5 +1,7 @@
 package dev.jarvis.ws;
 
+import static dev.jarvis.i18n.Text.text;
+
 import java.nio.ByteBuffer;
 import java.util.List;
 import java.util.Map;
@@ -114,7 +116,7 @@ public class JarvisWebSocketHandler extends AbstractWebSocketHandler implements 
         try {
             msg = json.readValue(message.getPayload(), Protocol.ClientMessage.class);
         } catch (RuntimeException e) {
-            sessions.send(state.id(), Protocol.error("Messaggio non valido"));
+            sessions.send(state.id(), Protocol.error(text("Messaggio non valido", "Invalid message").in(voice.language())));
             return;
         }
         String type = msg.type() == null ? "" : msg.type();
@@ -145,7 +147,9 @@ public class JarvisWebSocketHandler extends AbstractWebSocketHandler implements 
                 sessions.ofConversation(state.conversationId())
                         .forEach(tab -> sessions.send(tab.id(), Protocol.tasks(remaining)));
             }
-            case "settings-get" -> sessions.send(state.id(), Protocol.settings(settings.view(), settings.setupRequired()));
+            // value: a language just chosen in the wizard, to show the rest in it
+            case "settings-get" -> sessions.send(state.id(),
+                    Protocol.settings(settings.view(msg.value()), settings.setupRequired()));
             case "settings-save" -> workers.submit(() -> saveSettings(state, msg));
             case "settings-reveal" -> {
                 try {
@@ -160,7 +164,8 @@ public class JarvisWebSocketHandler extends AbstractWebSocketHandler implements 
                     Protocol.accountResult(msg.server(), mcp.adminCall(msg.server(), "login"))));
             case "account-verify" -> workers.submit(() -> sessions.send(state.id(),
                     Protocol.accountResult(msg.server(), mcp.adminCall(msg.server(), "verify-login"))));
-            default -> sessions.send(state.id(), Protocol.error("Tipo di messaggio sconosciuto: " + type));
+            default -> sessions.send(state.id(), Protocol.error(text("Tipo di messaggio sconosciuto: %s",
+                    "Unknown message type: %s").in(voice.language(), type)));
         }
     }
 
@@ -171,7 +176,8 @@ public class JarvisWebSocketHandler extends AbstractWebSocketHandler implements 
     private void clearHistory(SessionState state) {
         List<SessionState> tabs = sessions.ofConversation(state.conversationId());
         if (!tabs.stream().allMatch(SessionState::idle)) {
-            sessions.send(state.id(), Protocol.error("Aspetta che Jarvis finisca di rispondere, poi riprova."));
+            sessions.send(state.id(), Protocol.error(text("Aspetta che Jarvis finisca di rispondere, poi riprova.",
+                    "Wait for Jarvis to finish answering, then try again.").in(voice.language())));
             return;
         }
         memory.clear(state.conversationId());
@@ -187,7 +193,8 @@ public class JarvisWebSocketHandler extends AbstractWebSocketHandler implements 
             return;
         } catch (RuntimeException e) {
             log.warn("Cannot save settings", e);
-            sessions.send(state.id(), Protocol.settingsError("Non riesco a salvare le impostazioni: " + e.getMessage()));
+            sessions.send(state.id(), Protocol.settingsError(text("Non riesco a salvare le impostazioni: %s",
+                    "I can't save the settings: %s").in(voice.language(), e.getMessage())));
             return;
         }
         sessions.send(state.id(), Protocol.settingsSaved(true));
@@ -202,7 +209,8 @@ public class JarvisWebSocketHandler extends AbstractWebSocketHandler implements 
         }
         SpeechToText stt = voice.speechToText().orElse(null);
         if (stt == null) {
-            sessions.send(state.id(), Protocol.error("La trascrizione sul server non è attiva: controlla jarvis.voice.stt"));
+            sessions.send(state.id(), Protocol.error(text("La trascrizione sul server non è attiva: controlla Impostazioni → Voce.",
+                    "Transcription on the server is off: check Settings → Voice.").in(voice.language())));
             return;
         }
         byte[] audio = toBytes(message.getPayload());
@@ -228,7 +236,7 @@ public class JarvisWebSocketHandler extends AbstractWebSocketHandler implements 
                 turns.start(state, text, true);
             } catch (RuntimeException e) {
                 log.warn("Transcription failed for session {}", state.id(), e);
-                sessions.send(state.id(), Protocol.error(ErrorMessages.forVoice(e)));
+                sessions.send(state.id(), Protocol.error(ErrorMessages.forVoice(voice.language(), e)));
                 sessions.send(state.id(), Protocol.done());
             }
         });

@@ -36,7 +36,7 @@ public record AgentTask(String id, String conversationId, String agent, String t
     }
 
     AgentTask waitingApproval() {
-        return with(Status.WAITING_APPROVAL, "Aspetta la tua approvazione", startedAt);
+        return with(Status.WAITING_APPROVAL, progress, startedAt); // the page says it from the status, in its language
     }
 
     AgentTask withProgress(String progress) {

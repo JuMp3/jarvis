@@ -28,7 +28,7 @@ pub fn start(bin: &Path, home: &Path, status: impl Fn(&str)) -> Result<(Database
     let password_file = home.join("db.password");
     let first = !data.join("PG_VERSION").is_file();
     if first {
-        status("Prima configurazione del database (solo questa volta)…");
+        status("firstDatabase"); // a key of the splash screen, which says it in its language
         write_secret(&password_file, &random_password()?)?;
         // builtin C.UTF-8: the same collation on every operating system, Unicode-aware upper and lower case
         run(tool(bin, "initdb")

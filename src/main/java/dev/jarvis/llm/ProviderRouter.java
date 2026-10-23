@@ -15,6 +15,7 @@ import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.stereotype.Component;
 
 import dev.jarvis.config.JarvisProperties;
+import dev.jarvis.i18n.Text;
 
 /**
  * One {@link ChatClient} per enabled provider, all sharing the same system prompt and memory,
@@ -41,7 +42,7 @@ public class ProviderRouter {
         }
 
         this.systemPrompt = properties.agent().systemPrompt() + userLine(properties.agent().userName())
-                + specialistCatalog(properties);
+                + Text.languageLine(properties.language()) + specialistCatalog(properties);
         Map<ProviderId, ChatClient> built = new EnumMap<>(ProviderId.class);
         selected.forEach((provider, beanName) -> models.put(provider, chatModels.get(beanName)));
         models.forEach((provider, model) -> built.put(provider,

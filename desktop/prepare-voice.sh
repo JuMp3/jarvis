@@ -9,7 +9,8 @@ set -euo pipefail
 
 WHISPER_VERSION=${WHISPER_VERSION:-1.9.5}
 PIPER_VERSION=${PIPER_VERSION:-2023.11.14-2}
-VOICE=${VOICE:-it/it_IT/paola/medium/it_IT-paola-medium}
+# Piper voices, one per language of jarvis.voice.local.tts-voices
+VOICES=${VOICES:-it/it_IT/paola/medium/it_IT-paola-medium en/en_US/lessac/medium/en_US-lessac-medium}
 DIR=$(cd "$(dirname "$0")" && pwd)
 CACHE="$DIR/.cache"
 OUT="${JARVIS_RESOURCES:-$DIR/src-tauri/resources}/voice"
@@ -31,9 +32,12 @@ download "https://github.com/rhasspy/piper/releases/download/$PIPER_VERSION/$PIP
 for model in ggml-small-q5_1.bin ggml-base.bin; do
     download "$HF/ggerganov/whisper.cpp/resolve/main/$model" "$CACHE/$model"
 done
-NAME=$(basename "$VOICE")
-for extension in .onnx .onnx.json; do
-    download "$HF/rhasspy/piper-voices/resolve/main/$VOICE$extension" "$CACHE/$NAME$extension"
+VOICE_FILES=()
+for voice in $VOICES; do
+    for extension in .onnx .onnx.json; do
+        download "$HF/rhasspy/piper-voices/resolve/main/$voice$extension" "$CACHE/$(basename "$voice")$extension"
+        VOICE_FILES+=("$CACHE/$(basename "$voice")$extension")
+    done
 done
 
 BUILD=$(mktemp -d)
@@ -51,5 +55,5 @@ mkdir -p "$OUT/whisper" "$OUT/models"
 cp "$BUILD/build/bin/whisper-server" "$OUT/whisper/"
 find "$BUILD/build" \( -name "*.so*" -o -name "*.dylib" \) -exec cp -P {} "$OUT/whisper/" \;
 tar -xzf "$CACHE/piper-$PIPER_VERSION-$PIPER" -C "$OUT"
-cp "$CACHE/ggml-small-q5_1.bin" "$CACHE/ggml-base.bin" "$CACHE/$NAME.onnx" "$CACHE/$NAME.onnx.json" "$OUT/models/"
+cp "$CACHE/ggml-small-q5_1.bin" "$CACHE/ggml-base.bin" "${VOICE_FILES[@]}" "$OUT/models/"
 echo "Voce locale pronta in $OUT ($(du -sh "$OUT" | cut -f1))"

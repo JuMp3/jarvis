@@ -23,13 +23,38 @@
 </head>
 <body>
   <div class="orb" aria-hidden="true"></div>
-  <p id="status" role="status">Avvio di Jarvis…</p>
+  <p id="status" role="status"></p>
   <script>
+    // The backend is not running yet: the language of the system, as Jarvis' own default
+    const texts = {
+      it: {
+        starting: 'Avvio di Jarvis…',
+        firstDatabase: 'Prima configurazione del database (solo questa volta)…',
+        cannotStart: 'Non riesco ad avviare Jarvis: {detail}',
+        badAddress: 'Indirizzo del backend non valido: {detail}',
+        exited: 'Jarvis si è chiuso all\'avvio ({detail}).\nDettagli in {log}',
+        noAnswer: 'Jarvis non risponde. Riprova più tardi o controlla i log in ~/.jarvis/logs.',
+      },
+      en: {
+        starting: 'Starting Jarvis…',
+        firstDatabase: 'Setting up the database (only this once)…',
+        cannotStart: 'I can\'t start Jarvis: {detail}',
+        badAddress: 'The backend address is not valid: {detail}',
+        exited: 'Jarvis closed while starting ({detail}).\nDetails in {log}',
+        noAnswer: 'Jarvis does not answer. Try again later or check the logs in ~/.jarvis/logs.',
+      },
+    };
+    const language = navigator.language.slice(0, 2).toLowerCase() === 'it' ? 'it' : 'en';
+    document.documentElement.lang = language;
+    const text = (key, params = {}) => (texts[language][key] ?? key)
+      .replace(/\{(\w+)\}/g, (match, name) => params[name] ?? match);
+    const status = document.getElementById('status');
+    status.textContent = text('starting');
     // Called by the shell: progress of the start, or why it failed
-    window.setStatus = (message) => { document.getElementById('status').textContent = message; };
-    window.showError = (message) => {
+    window.setStatus = (key) => { status.textContent = text(key); };
+    window.showError = (key, params) => {
       document.body.classList.add('error');
-      document.getElementById('status').textContent = message;
+      status.textContent = text(key, params);
     };
   </script>
 </body>

@@ -19,6 +19,7 @@ import dev.jarvis.agent.tools.DocumentTools;
 import dev.jarvis.agent.tools.MailTools;
 import dev.jarvis.agent.tools.SystemTools;
 import dev.jarvis.config.JarvisProperties.Specialist;
+import dev.jarvis.i18n.Text;
 import dev.jarvis.llm.ProviderId;
 import dev.jarvis.llm.ProviderRouter;
 import dev.jarvis.mcp.McpTools;
@@ -38,7 +39,7 @@ final class ChatSpecialist implements SpecialistRunner {
     private final McpTools mcpTools;
 
     ChatSpecialist(String id, Specialist spec, ProviderRouter router, SystemTools systemTools,
-                   DocumentTools documentTools, McpTools mcpTools, MailTools mailTools) {
+                   DocumentTools documentTools, McpTools mcpTools, MailTools mailTools, String language) {
         String property = "jarvis.agents." + id;
         List<String> toolGroups = spec.tools() == null ? List.of() : spec.tools();
         List<String> unknown = toolGroups.stream()
@@ -72,7 +73,7 @@ final class ChatSpecialist implements SpecialistRunner {
             options.maxTokens(spec.maxTokens());
         }
         this.client = ChatClient.builder(model)
-                .defaultSystem(spec.systemPrompt())
+                .defaultSystem((spec.systemPrompt() == null ? "" : spec.systemPrompt()) + Text.specialistLanguageLine(language))
                 .defaultOptions(options)
                 .build();
         List<Object> granted = new ArrayList<>();

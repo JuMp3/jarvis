@@ -1,5 +1,7 @@
 package dev.jarvis.settings;
 
+import static dev.jarvis.i18n.Text.text;
+
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -26,6 +28,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import dev.jarvis.config.JarvisProperties;
+import dev.jarvis.i18n.Text;
 import dev.jarvis.mail.MailClient;
 import dev.jarvis.mail.MailServers;
 import dev.jarvis.settings.SettingsCatalog.Definition;
@@ -43,12 +46,18 @@ public class SettingsService {
     private static final HttpClient HTTP = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build();
 
     /** @param value current value (text, or list of strings); null for secrets */
-    public record View(String name, String group, String label, String help, String kind, List<SettingsCatalog.Choice> choices,
+    public record View(String name, String group, String label, String help, String kind, List<ChoiceView> choices,
                        Object value, boolean set, String origin, String test) {
+    }
+
+    /** @param description may be null */
+    public record ChoiceView(String value, String label, String description) {
     }
 
     public record TestResult(boolean ok, String message) {
     }
+
+    private static final Text UNKNOWN = text("Impostazione sconosciuta: %s", "Unknown setting: %s");
 
     private final JdbcClient jdbc;
     private final ConfigurableEnvironment environment;
@@ -66,11 +75,18 @@ public class SettingsService {
         return !environment.getProperty(SETUP_COMPLETED, Boolean.class, false);
     }
 
-    public List<View> view() {
-        return SettingsCatalog.ALL.stream().map(this::view).toList();
+    /** The language in use (Settings → Profilo). */
+    public String language() {
+        return environment.getProperty(SettingsCatalog.LANGUAGE);
     }
 
-    private View view(Definition definition) {
+    /** @param language of the texts; null: the one in use (the wizard asks again in the language just chosen) */
+    public List<View> view(String language) {
+        String in = language != null && SettingsCatalog.LANGUAGES.contains(language) ? language : language();
+        return SettingsCatalog.ALL.stream().map(definition -> view(definition, in)).toList();
+    }
+
+    private View view(Definition definition, String language) {
         String origin = origin(definition.property());
         Object value = switch (definition.kind()) {
             case SECRET -> null;
@@ -86,9 +102,13 @@ public class SettingsService {
                 ? !environment.getProperty(definition.property(), "").isBlank()
                         && !SettingsCatalog.UNSET.equals(environment.getProperty(definition.property()))
                 : value != null;
-        return new View(definition.name(), definition.group(), definition.label(), definition.help(),
-                definition.kind().name().toLowerCase(Locale.ROOT), definition.choices(), value, set, origin,
-                definition.test());
+        List<ChoiceView> choices = definition.choices().stream()
+                .map(choice -> new ChoiceView(choice.value(), choice.label().in(language),
+                        choice.description() == null ? null : choice.description().in(language)))
+                .toList();
+        return new View(definition.name(), definition.group().in(language), definition.label().in(language),
+                definition.help().in(language), definition.kind().name().toLowerCase(Locale.ROOT), choices, value, set,
+                origin, definition.test());
     }
 
     /** Where the effective value comes from: the database, an environment variable or a configuration file. */
@@ -130,23 +150,27 @@ public class SettingsService {
      */
     @Transactional
     public void save(Map<String, Object> values, Collection<String> cleared) {
+        // errors in the language just chosen, if any
+        Object chosen = values.get(SettingsCatalog.LANGUAGE);
+        String language = chosen != null && SettingsCatalog.LANGUAGES.contains(chosen.toString())
+                ? chosen.toString() : language();
         List<Runnable> writes = new ArrayList<>();
         for (Map.Entry<String, Object> entry : values.entrySet()) {
             Definition definition = SettingsCatalog.find(entry.getKey())
-                    .orElseThrow(() -> new IllegalArgumentException("Impostazione sconosciuta: " + entry.getKey()));
-            writes.add(write(definition, entry.getValue()));
+                    .orElseThrow(() -> new IllegalArgumentException(UNKNOWN.in(language, entry.getKey())));
+            writes.add(write(definition, entry.getValue(), language));
         }
         for (String name : cleared) {
             Definition definition = SettingsCatalog.find(name)
-                    .orElseThrow(() -> new IllegalArgumentException("Impostazione sconosciuta: " + name));
+                    .orElseThrow(() -> new IllegalArgumentException(UNKNOWN.in(language, name)));
             writes.add(() -> delete(definition.name()));
         }
         writes.forEach(Runnable::run); // only once everything is valid
         upsert(SETUP_COMPLETED, SettingsRows.TEXT, "true");
     }
 
-    private Runnable write(Definition definition, Object raw) {
-        String label = definition.label();
+    private Runnable write(Definition definition, Object raw, String language) {
+        String label = definition.label().in(language);
         return switch (definition.kind()) {
             case SECRET -> {
                 String secret = raw == null ? "" : raw.toString().strip();
@@ -161,7 +185,8 @@ public class SettingsService {
             case CHOICE -> {
                 String choice = raw == null ? "" : raw.toString().strip();
                 if (!definition.values().contains(choice)) {
-                    throw new IllegalArgumentException(label + ": scegli tra " + definition.values() + ".");
+                    throw new IllegalArgumentException(text("%s: scegli tra %s.", "%s: choose one of %s.")
+                            .in(language, label, definition.values()));
                 }
                 yield SettingsCatalog.MAIL.equals(definition.name()) ? () -> applyMail(choice)
                         : () -> upsert(definition.name(), SettingsRows.TEXT, choice);
@@ -169,7 +194,8 @@ public class SettingsService {
             case MULTI_CHOICE -> {
                 List<String> chosen = items(raw, true);
                 if (chosen.isEmpty() || !definition.values().containsAll(chosen)) {
-                    throw new IllegalArgumentException(label + ": scegli almeno uno tra " + definition.values() + ".");
+                    throw new IllegalArgumentException(text("%s: scegli almeno uno tra %s.", "%s: choose at least one of %s.")
+                            .in(language, label, definition.values()));
                 }
                 yield () -> upsert(definition.name(), SettingsRows.TEXT, String.join(",", chosen));
             }
@@ -183,7 +209,8 @@ public class SettingsService {
                 if (definition.name().equals("jarvis.agents.coder.workspaces")) {
                     folders.stream().filter(folder -> !Files.isDirectory(Path.of(folder))).findFirst()
                             .ifPresent(missing -> {
-                                throw new IllegalArgumentException(label + ": la cartella " + missing + " non esiste.");
+                                throw new IllegalArgumentException(text("%s: la cartella %s non esiste.",
+                                        "%s: the folder %s does not exist.").in(language, label, missing));
                             });
                 }
                 yield folders.isEmpty() ? () -> delete(definition.name())
@@ -212,17 +239,20 @@ public class SettingsService {
      */
     public String reveal(String name) {
         Definition definition = SettingsCatalog.find(name).filter(found -> found.kind() == Kind.SECRET)
-                .orElseThrow(() -> new IllegalArgumentException("Non è una chiave: " + name));
+                .orElseThrow(() -> new IllegalArgumentException(text("Non è una chiave: %s", "Not a key: %s")
+                        .in(language(), name)));
         return environment.getProperty(definition.property(), "");
     }
 
     /** Checks a key without saving it; with an empty value it checks the one in use. */
     public TestResult test(String name, String value) {
+        String language = language();
         Definition definition = SettingsCatalog.find(name).filter(found -> found.test() != null)
-                .orElseThrow(() -> new IllegalArgumentException("Nessuna verifica per " + name));
+                .orElseThrow(() -> new IllegalArgumentException(text("Nessuna verifica per %s", "No check for %s")
+                        .in(language, name)));
         String secret = value == null || value.isBlank() ? environment.getProperty(definition.property(), "") : value.strip();
         if (secret.isBlank()) {
-            return new TestResult(false, "Nessuna chiave da verificare.");
+            return new TestResult(false, text("Nessuna chiave da verificare.", "No key to check.").in(language));
         }
         try {
             return switch (definition.test()) {
@@ -233,36 +263,39 @@ public class SettingsService {
                     if (!workspace.isBlank()) {
                         request.header("anthropic-workspace-id", workspace);
                     }
-                    yield check(request, "Claude");
+                    yield check(request, "Claude", language);
                 }
                 case "openai" -> check(HttpRequest.newBuilder(URI.create("https://api.openai.com/v1/models"))
-                        .header("Authorization", "Bearer " + secret), "OpenAI");
+                        .header("Authorization", "Bearer " + secret), "OpenAI", language);
                 case "imap" -> {
                     String address = environment.getProperty("jarvis.mail.address", "");
                     MailClient mailbox = new MailClient(address, secret,
                             MailServers.imap(address, environment.getProperty("jarvis.mail.imap-server")),
                             MailServers.smtp(address, environment.getProperty("jarvis.mail.smtp-server")));
                     mailbox.check();
-                    yield new TestResult(true, "Accesso riuscito alla posta di " + address + " (IMAP e SMTP).");
+                    yield new TestResult(true, text("Accesso riuscito alla posta di %s (IMAP e SMTP).",
+                            "Signed in to the mail of %s (IMAP and SMTP).").in(language, address));
                 }
                 case "github" -> check(HttpRequest.newBuilder(URI.create("https://api.github.com/user"))
                         .header("Authorization", "Bearer " + secret)
-                        .header("Accept", "application/vnd.github+json"), "GitHub");
-                default -> new TestResult(false, "Verifica non disponibile.");
+                        .header("Accept", "application/vnd.github+json"), "GitHub", language);
+                default -> new TestResult(false, text("Verifica non disponibile.", "Check not available.").in(language));
             };
         } catch (Exception e) {
-            return new TestResult(false, "Non riesco a contattare il servizio: " + e.getMessage());
+            return new TestResult(false, text("Non riesco a contattare il servizio: %s", "I can't reach the service: %s")
+                    .in(language, e.getMessage()));
         }
     }
 
-    private static TestResult check(HttpRequest.Builder request, String service) throws Exception {
+    private static TestResult check(HttpRequest.Builder request, String service, String language) throws Exception {
         HttpResponse<String> response = HTTP.send(request.timeout(Duration.ofSeconds(20)).GET().build(),
                 HttpResponse.BodyHandlers.ofString());
         return switch (response.statusCode()) {
-            case 200 -> new TestResult(true, service + " accetta la chiave.");
-            case 401, 403 -> new TestResult(false, service + " non accetta la chiave.");
-            default -> new TestResult(false, service + " ha risposto " + response.statusCode() + ": "
-                    + response.body().substring(0, Math.min(200, response.body().length())));
+            case 200 -> new TestResult(true, text("%s accetta la chiave.", "%s accepts the key.").in(language, service));
+            case 401, 403 -> new TestResult(false, text("%s non accetta la chiave.", "%s does not accept the key.")
+                    .in(language, service));
+            default -> new TestResult(false, text("%s ha risposto %s: %s", "%s answered %s: %s").in(language, service,
+                    response.statusCode(), response.body().substring(0, Math.min(200, response.body().length()))));
         };
     }
 

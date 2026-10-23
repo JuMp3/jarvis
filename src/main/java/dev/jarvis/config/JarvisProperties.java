@@ -8,11 +8,14 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 
 /**
  * Typed configuration under the {@code jarvis} prefix (see application.yml).
+ *
+ * <p>{@code language}: ISO 639-1 code of the user's language ("it", "en"; Settings → Profilo), for the interface,
+ * the voice engines and dates.
  */
 @ConfigurationProperties(prefix = "jarvis")
 public record JarvisProperties(Providers providers, Agent agent, Voice voice, Tasks tasks,
                                Map<String, Specialist> agents, Documents documents, Desktop desktop, Mcp mcp,
-                               Mail mail, Memory memory) {
+                               Mail mail, Memory memory, String language) {
 
     /** @param home folder with model.onnx and tokenizer.json of the embedding model (desktop/prepare-memory.ps1) */
     public record Memory(String home) {
@@ -117,12 +120,10 @@ public record JarvisProperties(Providers providers, Agent agent, Voice voice, Ta
     /**
      * Voice settings: which engine turns speech into text ({@code stt}) and text into speech ({@code tts}).
      *
-     * @param language ISO 639-1 code passed to the engines (e.g. "it")
      * @param openai   OpenAI audio API
      * @param local    engines run by Jarvis on this machine (whisper.cpp and Piper, see LocalVoice)
      */
-    public record Voice(Engine stt, Engine tts, String language, AudioEndpoint openai, Local local,
-                        String wakeWord) {
+    public record Voice(Engine stt, Engine tts, AudioEndpoint openai, Local local, String wakeWord) {
 
         public enum Engine {
             /** OpenAI audio API, needs an API key with credit. */
@@ -146,10 +147,10 @@ public record JarvisProperties(Providers providers, Agent agent, Voice voice, Ta
         /**
          * @param home     folder with whisper/, piper/ and models/ (desktop/prepare-voice.ps1)
          * @param sttModel "small" (more precise) or "base" (faster)
-         * @param ttsVoice Piper voice, a file of models/ without .onnx
+         * @param ttsVoices Piper voice by language ("it", "en"), a file of models/ without .onnx
          * @param threads  for whisper.cpp; null: 4 (or fewer processors)
          */
-        public record Local(String home, String sttModel, String ttsVoice, Integer threads) {
+        public record Local(String home, String sttModel, Map<String, String> ttsVoices, Integer threads) {
         }
     }
 }

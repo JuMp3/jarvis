@@ -1,9 +1,10 @@
 package dev.jarvis.agent.tools;
 
+import static dev.jarvis.i18n.Text.text;
+
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
-import java.util.Locale;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
@@ -15,6 +16,7 @@ import org.springframework.stereotype.Component;
 import dev.jarvis.agent.AgentService;
 import dev.jarvis.agent.ApprovalService;
 import dev.jarvis.config.JarvisProperties;
+import dev.jarvis.i18n.Text;
 import dev.jarvis.mail.MailClient;
 import dev.jarvis.mail.MailServers;
 
@@ -27,15 +29,16 @@ import dev.jarvis.mail.MailServers;
 public class MailTools {
 
     private static final int MAX_LISTED = 20;
-    private static final DateTimeFormatter WHEN = DateTimeFormatter.ofPattern("d MMM yyyy HH:mm", Locale.ITALIAN)
-            .withZone(ZoneId.systemDefault());
-
+    private final DateTimeFormatter when;
+    private final String language;
     private final Optional<MailClient> client;
     private final Reader reader = new Reader();
     private final Sender sender;
 
     public MailTools(JarvisProperties properties, ApprovalService approvals) {
         JarvisProperties.Mail mail = properties.mail();
+        this.language = properties.language();
+        this.when = DateTimeFormatter.ofPattern("d MMM yyyy HH:mm", Text.locale(language)).withZone(ZoneId.systemDefault());
         this.client = mail == null || !mail.enabled() || mail.address() == null || mail.address().isBlank()
                 ? Optional.empty()
                 : Optional.of(new MailClient(mail.address().strip(), mail.password() == null ? "" : mail.password(),
@@ -94,8 +97,10 @@ public class MailTools {
                                 @ToolParam(description = "Testo") String body,
                                 @ToolParam(description = "Copia conoscenza, separati da virgola", required = false) String cc,
                                 ToolContext toolContext) {
-            String description = "Inviare un'email da " + client.map(MailClient::address).orElse("?") + "\nA: " + to
-                    + (cc == null || cc.isBlank() ? "" : "\nCc: " + cc) + "\nOggetto: " + subject + "\n\n" + body;
+            String description = text("Inviare un'email da %s\nA: %s%s\nOggetto: %s\n\n%s",
+                    "Send an email from %s\nTo: %s%s\nSubject: %s\n\n%s").in(language,
+                    client.map(MailClient::address).orElse("?"), to, cc == null || cc.isBlank() ? "" : "\nCc: " + cc,
+                    subject, body);
             if (!approve(toolContext, description)) {
                 return "L'utente non ha approvato. Nessuna email inviata.";
             }
@@ -109,7 +114,8 @@ public class MailTools {
         public String replyToEmail(@ToolParam(description = "Id dell'email a cui rispondere") long id,
                                    @ToolParam(description = "Testo della risposta") String body,
                                    ToolContext toolContext) {
-            if (!approve(toolContext, "Rispondere all'email con id " + id + ":\n\n" + body)) {
+            if (!approve(toolContext, text("Rispondere all'email con id %s:\n\n%s", "Reply to the email with id %s:\n\n%s")
+                    .in(language, id, body))) {
                 return "L'utente non ha approvato. Nessuna risposta inviata.";
             }
             return call(mailbox -> "Risposta inviata a " + mailbox.reply(id, body) + ".");
@@ -140,7 +146,7 @@ public class MailTools {
         return limit == null || limit < 1 ? 10 : Math.min(limit, MAX_LISTED);
     }
 
-    private static String describe(List<MailClient.Summary> summaries) {
+    private String describe(List<MailClient.Summary> summaries) {
         if (summaries.isEmpty()) {
             return "La posta in arrivo è vuota.";
         }
@@ -150,7 +156,7 @@ public class MailTools {
                 .collect(Collectors.joining("\n"));
     }
 
-    private static String when(MailClient.Summary mail) {
-        return mail.date() == null ? "" : WHEN.format(mail.date());
+    private String when(MailClient.Summary mail) {
+        return mail.date() == null ? "" : when.format(mail.date());
     }
 }

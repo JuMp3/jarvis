@@ -9,8 +9,8 @@ import org.testcontainers.utility.DockerImageName;
  * Boots the whole application on a real PostgreSQL with pgvector (same image as compose.yaml).
  * One container for the whole test run, so every subclass shares the same cached Spring context.
  */
-// Settings from the developer's database must not leak into tests
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties = "jarvis.settings.enabled=false")
+// Settings from the developer's database must not leak into tests; Italian on any machine, as the assertions
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties = {"jarvis.settings.enabled=false", "jarvis.language=it"})
 public abstract class BaseTest {
 
     @ServiceConnection

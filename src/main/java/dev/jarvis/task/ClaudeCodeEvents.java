@@ -1,5 +1,7 @@
 package dev.jarvis.task;
 
+import static dev.jarvis.i18n.Text.text;
+
 import java.util.Optional;
 
 import tools.jackson.databind.JsonNode;
@@ -20,13 +22,13 @@ final class ClaudeCodeEvents {
     }
 
     /** What the coder is doing, in words for the Squadra panel; empty for events that are not tool calls. */
-    static Optional<String> progress(JsonNode event) {
+    static Optional<String> progress(JsonNode event, String language) {
         if (!"assistant".equals(event.path("type").asString(""))) {
             return Optional.empty();
         }
         for (JsonNode content : event.path("message").path("content")) {
             if ("tool_use".equals(content.path("type").asString(""))) {
-                return Optional.of(describeTool(content.path("name").asString(""), content.path("input")));
+                return Optional.of(describeTool(content.path("name").asString(""), content.path("input"), language));
             }
         }
         return Optional.empty();
@@ -59,23 +61,25 @@ final class ClaudeCodeEvents {
                 input, usage.path("output_tokens").asInt(0), event.path("subtype").asString("")));
     }
 
-    static String describeTool(String name, JsonNode input) {
+    static String describeTool(String name, JsonNode input, String language) {
         return switch (name) {
-            case "Read" -> "Legge " + fileName(input);
-            case "Edit", "MultiEdit", "Write", "NotebookEdit" -> "Modifica " + fileName(input);
-            case "Glob", "Grep" -> "Cerca nel codice";
-            case "Bash", "PowerShell" -> "Esegue " + preview(input.path("command").asString(""));
-            case "TodoWrite" -> "Aggiorna la lista dei passi";
-            case "ExitPlanMode" -> "Propone il piano";
-            case "WebFetch", "WebSearch" -> "Consulta la documentazione";
-            default -> "Usa " + name;
+            case "Read" -> text("Legge %s", "Reads %s").in(language, fileName(input, language));
+            case "Edit", "MultiEdit", "Write", "NotebookEdit" ->
+                    text("Modifica %s", "Edits %s").in(language, fileName(input, language));
+            case "Glob", "Grep" -> text("Cerca nel codice", "Searches the code").in(language);
+            case "Bash", "PowerShell" ->
+                    text("Esegue %s", "Runs %s").in(language, preview(input.path("command").asString("")));
+            case "TodoWrite" -> text("Aggiorna la lista dei passi", "Updates the list of steps").in(language);
+            case "ExitPlanMode" -> text("Propone il piano", "Proposes the plan").in(language);
+            case "WebFetch", "WebSearch" -> text("Consulta la documentazione", "Reads the documentation").in(language);
+            default -> text("Usa %s", "Uses %s").in(language, name);
         };
     }
 
-    private static String fileName(JsonNode input) {
+    private static String fileName(JsonNode input, String language) {
         String path = input.path("file_path").asString(input.path("notebook_path").asString(""));
         int slash = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'));
-        return path.isBlank() ? "un file" : path.substring(slash + 1);
+        return path.isBlank() ? text("un file", "a file").in(language) : path.substring(slash + 1);
     }
 
     private static String preview(String command) {

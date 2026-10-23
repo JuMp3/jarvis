@@ -35,7 +35,7 @@ Il frontend gestisce tutto ciò che è audio e grafica; il backend coordina tutt
 | `tools/` | `SystemTools` (sola lettura), `NoteTools` (scrittura in una cartella sandbox, previa approvazione), `DesktopTools` (link, cartelle, app del catalogo, sempre con conferma), `DocumentTools` (documenti delle cartelle consentite, sola lettura), `MailTools` (caselle IMAP: lettura all'Organizer, invio solo a Jarvis con approvazione), `MemoryTools` (`searchMemory`, sola lettura). |
 | `SpeechToText` / `TextToSpeech` | Interfacce, implementate da `OpenAiAudioClient` (solo `java.net.http`) verso l'API audio OpenAI o verso whisper.cpp in locale, che espone la stessa API; la voce locale è `PiperTts`, entrambi avviati da `LocalVoice`. `VoiceConfig` sceglie il motore per direzione da `jarvis.voice.stt` / `jarvis.voice.tts` (`local` · `openai` · `browser` · `off`); con `browser` il server non interviene e il client usa la Web Speech API. |
 | `SentenceChunker` | Spezza lo stream di token in frasi complete, così il TTS parte alla prima frase invece di aspettare la risposta intera. |
-| `TurnService` | Collega tutto per un turno: stato → token → frasi → audio ordinato → fine. Gestisce l'annullamento (barge-in). Gli errori diventano frasi brevi in italiano (`ErrorMessages`), pronunciate se il turno è vocale; il dettaglio resta nei log. |
+| `TurnService` | Collega tutto per un turno: stato → token → frasi → audio ordinato → fine. Gestisce l'annullamento (barge-in). Gli errori diventano frasi brevi nella lingua dell'utente (`ErrorMessages`), pronunciate se il turno è vocale; il dettaglio resta nei log. |
 | `InterruptedTurns` | Chiude la coda di una conversazione interrotta: risultato fittizio per le chiamate ai tool rimaste aperte e risposta parziale marcata come interrotta. Gira all'annullamento e all'inizio di ogni turno, così copre anche i crash. |
 
 ## Flusso vocale
@@ -104,7 +104,7 @@ Client → server
 | `cancel` | — | Interrompe il turno in corso |
 | `clear-history` | — | Svuota la conversazione (schermo e finestra del modello, non l'archivio), in tutte le schede; rifiutato con `error` durante un turno |
 | `approval` | `id`, `approved` | Risposta a una richiesta di approvazione |
-| `settings-get` | — | Chiede le impostazioni |
+| `settings-get` | `value?` | Chiede le impostazioni; `value`: una lingua appena scelta nel wizard, per avere i testi in quella |
 | `settings-save` | `values`, `cleared` | Salva (i segreti vuoti restano come sono) e riavvia |
 | `settings-test` | `name`, `value?` | Verifica una chiave senza salvarla |
 | `settings-reveal` | `name` | Mostra in chiaro una chiave |
@@ -114,7 +114,7 @@ Server → client
 
 | Tipo | Campi |
 |---|---|
-| `hello` | `providers`, `defaultProvider`, `stt`, `tts` (`server` · `browser` · `off`), `language`, `wakeWord`, `setupRequired`, `conversation` (la conversazione della connessione: la pagina la conserva; se non ne aveva, il server riprende l'ultima dell'archivio) |
+| `hello` | `providers`, `defaultProvider`, `stt`, `tts` (`server` · `browser` · `off`), `language` (`it` · `en`, da `jarvis.language`), `wakeWord`, `setupRequired`, `conversation` (la conversazione della connessione: la pagina la conserva; se non ne aveva, il server riprende l'ultima dell'archivio) |
 | `history` | `messages` (`role`: `user` · `assistant`, `text`): ultimi scambi della conversazione, inviati dopo `hello`. Il client li mostra solo se il log è vuoto (pagina ricaricata) |
 | `history-cleared` | — | La conversazione è stata cancellata: il client svuota il log |
 | `state` | `state` (`idle` · `thinking` · `speaking`) |
@@ -234,6 +234,7 @@ Jarvis va installato su un PC, dove un file `.env` non è una soluzione: le impo
 
 - **Tabella `setting`** (`name`, `kind` text · secret · list, `value`). Il nome è la chiave della configurazione (`jarvis.voice.stt`) oppure, per le prime voci, un nome storico (`ANTHROPIC_API_KEY`, `GITHUB_TOKEN`) che non si può cambiare perché fa parte della cifratura: `DatabaseSettingsSource` pubblica il valore anche sotto la proprietà del catalogo (`spring.ai.anthropic.api-key`, `jarvis.mcp.servers.github.token`; la chiave OpenAI anche per la voce).
 - **Segreti cifrati** con AES-256-GCM (`SecretBox`); il nome dell'impostazione è dato autenticato, quindi un valore copiato sotto un altro nome non si decifra. La chiave master non sta nel database: `~/.jarvis/master.key`, generata al primo avvio (o `JARVIS_MASTER_KEY`). Protegge un dump o un backup del DB, non da chi può accedere con l'utente del PC.
+- **Lingua** (`jarvis.language`, scheda Profilo, la prima domanda del wizard): italiano o inglese, una sola per interfaccia, voce e date. Finché l'utente non sceglie vale quella del sistema, se Jarvis la parla, altrimenti l'inglese (`SettingsCatalog.language`). Etichetta e scelte sono scritte in entrambe le lingue, così si trova prima che l'interfaccia sia tradotta.
 - **Interfaccia:** una scheda per funzione (Profilo, Modelli, Voce, Posta e calendario, GitHub, Cartelle, App: il campo `group` di `SettingsCatalog`, nell'ordine in cui compare); il wizard le percorre in ordine, le Impostazioni le lasciano scegliere, e i valori modificati restano passando da una scheda all'altra. Le scelte sono riquadri con nome e descrizione (`SettingsCatalog.Choice`); i campi IMAP compaiono solo con la casella `imap`.
 - **Lettura all'avvio:** `SettingsEnvironmentPostProcessor` aggiunge `DatabaseSettingsSource` subito dopo le variabili d'ambiente: le impostazioni vincono su `application.yml` e `.env`, una variabile d'ambiente o un argomento da riga di comando vincono ancora. La sorgente si carica al primo uso con JDBC semplice (il DataSource non esiste ancora) e, se il database sta ancora partendo, riprova al massimo una volta al secondo; una tabella che non esiste ancora vale come "nessuna impostazione". Le liste salvate sostituiscono per intero quelle dello YAML.
 - **Applicazione:** dopo il salvataggio Jarvis si riavvia nello stesso processo (`JarvisApplication.restart`), le pagine si riconnettono da sole; i container di sviluppo restano accesi (`lifecycle-management: start-only`).
@@ -255,7 +256,7 @@ Jarvis va installato su un PC, dove un file `.env` non è una soluzione: le impo
 - **Voce nella finestra desktop:** WebView2 ha l'interfaccia del riconoscimento vocale ma non il servizio online dietro, e fallisce sempre con `network`: la pagina riconosce la finestra desktop (`window.chrome.webview`) e non offre la trascrizione "Browser", spiegando cosa scegliere. La sintesi "Browser" funziona, con le voci installate nel sistema.
 - **Rilascio:** `npx tauri build` produce l'eseguibile ottimizzato e l'installer NSIS (circa 180 MB); come e quando rigenerarli è nel `README.md`.
 - **Sviluppo:** `JARVIS_BACKEND_URL=http://localhost:8080` collega la shell a un backend già acceso (`./mvnw spring-boot:run`) invece di avviare quello incluso.
-- **Voce locale:** whisper.cpp e Piper li avvia il backend (`LocalVoice`), quindi la shell passa solo la cartella (`JARVIS_VOICE_HOME`, `src-tauri/resources/voice`: circa 430 MB, quasi tutti modelli: Whisper `small` quantizzato e `base`, voce Paola).
+- **Voce locale:** whisper.cpp e Piper li avvia il backend (`LocalVoice`), quindi la shell passa solo la cartella (`JARVIS_VOICE_HOME`, `src-tauri/resources/voice`: circa 490 MB, quasi tutti modelli: Whisper `small` quantizzato e `base`, le voci Paola e Lessac).
 - **Memoria a lungo termine:** il modello di embedding sta in `src-tauri/resources/memory` (`prepare-memory.ps1`, circa 130 MB), passato con `JARVIS_MEMORY_HOME`.
 - **Node per i server MCP** (`prepare-node.ps1`, circa 150 MB): `node.exe` 24 LTS con il pacchetto di Outlook già installato, alla versione letta da `MailTemplates.java`. Le impostazioni restano nella forma `npx -y pacchetto@versione …`; al momento di avviare il server `NpxCommand` la traduce nel Node incluso (`JARVIS_NODE_HOME`) se c'è quel pacchetto a quella versione, altrimenti resta `npx` (sviluppo). Nessun percorso d'installazione finisce nel database. Node gira con `--use-system-ca`: i certificati di sistema, come la JVM. `keytar` (Credential Manager) è un modulo nativo installato per il sistema su cui gira lo script. Verificato: Outlook collegato con il Node incluso, login letto.
 - **Prossimi passi della fase:** prova dell'installer (da rigenerare con il Node incluso); firma del codice; prova su macOS e della finestra su Linux.
@@ -290,6 +291,17 @@ Ogni funzione va pensata per Windows, macOS e Linux. Windows è provato per inte
 | Binari Linux | — | compilati su una distribuzione vecchia (glibc è compatibile solo in avanti): Ubuntu 22.04 copre le distribuzioni più recenti |
 
 iOS (e Android) non possono eseguire il backend: sarebbero un'app client collegata a un Jarvis acceso altrove. Tauri 2 li supporta, ma è un progetto a parte.
+
+## Lingue
+
+Italiano e inglese, scelti con `jarvis.language` (Impostazioni → Profilo, la prima domanda del wizard; finché l'utente non sceglie vale la lingua del sistema, se Jarvis la parla, altrimenti l'inglese). Una lingua sola guida interfaccia, voce e date.
+
+- **Pagina** (`static/i18n.js`): un dizionario per lingua e `t('chiave', { nome })`; i testi fissi di `index.html` hanno `data-i18n` (testo) o `data-i18n-attr` (attributi). La lingua arriva in `hello`; prima la pagina usa l'ultima vista (`localStorage`) o quella del browser. Cambiando lingua tutto ciò che è scritto con `t()` viene riscritto (`onLanguageChange`). Nel wizard, scegliere un'altra lingua chiede di nuovo le impostazioni in quella (`settings-get` con `value`) e traduce subito la pagina; chiudendo senza salvare si torna alla precedente. Un test node controlla che ogni chiave esista in ogni lingua con gli stessi segnaposto.
+- **Server** (`i18n/Text`): ogni testo che l'utente legge è una coppia `text("…", "…")` accanto al codice, risolta con `in(language)`; `%s` e i numeri seguono la lingua. Vale per le etichette del `SettingsCatalog` (risolte in `SettingsService.view`), gli errori (`ErrorMessages`, voce locale, impostazioni), le richieste di approvazione dei tool, i motivi e l'avanzamento dei task, il Programmatore (piano, domanda del push, resoconto), i messaggi dell'account Microsoft. Con una terza lingua conviene passare a file di risorse.
+- **Prompt:** restano in italiano. Al system prompt di Jarvis si aggiunge "L'utente parla inglese: rispondi in inglese, anche a voce, salvo che ti scriva in un'altra lingua", a quello di ogni specialista "Scrivi il risultato in inglese"; il Programmatore scrive piano e resoconto nella lingua dell'utente. I risultati dei tool e gli aggiornamenti automatici sui task vanno al modello e restano in italiano. Da misurare la qualità in inglese.
+- **Voce:** Whisper riceve la lingua (`-l` per whisper.cpp, `language` per OpenAI); Piper ha una voce per lingua (`jarvis.voice.local.tts-voices`: Paola per l'italiano, `en_US-lessac-medium` per l'inglese, entrambe scaricate da `prepare-voice`); riconoscimento e sintesi del browser usano la lingua scelta. La parola di attivazione resta "Jarvis".
+- **Date:** l'ora di `SystemTools`, le date di documenti e posta nella lingua scelta; i passaggi della memoria tengono `dd/MM/yyyy` (sono per il modello, e cambiarli a metà mescolerebbe due formati nell'indice).
+- **Shell desktop:** schermata d'avvio e menu della tray partono prima del backend, quindi seguono la lingua del sistema (`navigator.language` nella schermata, `GetUserDefaultUILanguage` o `LANG` per la tray); la shell manda alla schermata solo chiavi e dettagli (`setStatus('starting')`, `showError('exited', {...})`). Una lingua scelta in Jarvis diversa da quella del sistema non arriva alla tray.
 
 ## Configurazione e segreti
 

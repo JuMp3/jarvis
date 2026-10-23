@@ -1,5 +1,7 @@
 package dev.jarvis.agent.tools;
 
+import static dev.jarvis.i18n.Text.text;
+
 import java.nio.file.Path;
 import java.util.List;
 
@@ -23,9 +25,11 @@ public class NoteTools {
 
     private final ApprovalService approvals;
     private final NoteStore store;
+    private final String language;
 
     public NoteTools(ApprovalService approvals, JarvisProperties properties) {
         this.approvals = approvals;
+        this.language = properties.language();
         this.store = new NoteStore(Path.of(properties.agent().notesDir()));
     }
 
@@ -37,7 +41,8 @@ public class NoteTools {
         String sessionId = (String) toolContext.getContext().get(AgentService.SESSION_ID_KEY);
         String conversationId = (String) toolContext.getContext().get(AgentService.CONVERSATION_ID_KEY);
         Path target = store.pathFor(title);
-        String description = "Salvare la nota \"" + target.getFileName() + "\":\n" + preview(content);
+        String description = text("Salvare la nota \"%s\":\n%s", "Save the note \"%s\":\n%s")
+                .in(language, target.getFileName(), preview(content));
 
         if (!approvals.requestApproval(conversationId, sessionId, description)) {
             return "L'utente non ha approvato. Nessuna nota salvata.";

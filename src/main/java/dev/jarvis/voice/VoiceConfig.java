@@ -31,19 +31,19 @@ public class VoiceConfig {
                 .connectTimeout(Duration.ofSeconds(10))
                 .build();
         if (voice.stt() == Engine.LOCAL || voice.tts() == Engine.LOCAL) {
-            local = new LocalVoice(voice.local(), voice.language());
+            local = new LocalVoice(voice.local(), properties.language());
         }
         Optional<SpeechToText> stt = switch (voice.stt()) {
-            case OPENAI -> openAi(voice, "jarvis.voice.stt", http).map(SpeechToText.class::cast);
-            case LOCAL -> Optional.of(local.speechToText(http, settings(voice, voice.openai())));
+            case OPENAI -> openAi(voice, properties.language(), "jarvis.voice.stt", http).map(SpeechToText.class::cast);
+            case LOCAL -> Optional.of(local.speechToText(http, settings(voice, voice.openai(), properties.language())));
             case BROWSER, OFF -> Optional.empty();
         };
         Optional<TextToSpeech> tts = switch (voice.tts()) {
-            case OPENAI -> openAi(voice, "jarvis.voice.tts", http).map(TextToSpeech.class::cast);
+            case OPENAI -> openAi(voice, properties.language(), "jarvis.voice.tts", http).map(TextToSpeech.class::cast);
             case LOCAL -> Optional.of(local.textToSpeech());
             case BROWSER, OFF -> Optional.empty();
         };
-        return new VoiceServices(stt, tts, mode(voice.stt(), stt), mode(voice.tts(), tts), voice.language(),
+        return new VoiceServices(stt, tts, mode(voice.stt(), stt), mode(voice.tts(), tts), properties.language(),
                 wakeWord(voice));
     }
 
@@ -56,18 +56,18 @@ public class VoiceConfig {
     }
 
     /** Empty without a key: the voice is off in that direction. */
-    private static Optional<OpenAiAudioClient> openAi(Voice voice, String property, HttpClient http) {
+    private static Optional<OpenAiAudioClient> openAi(Voice voice, String language, String property, HttpClient http) {
         AudioEndpoint endpoint = voice.openai();
         if (endpoint.apiKey() == null || endpoint.apiKey().isBlank()) {
             log.warn("{}=openai but no OpenAI API key is configured: voice disabled in this direction", property);
             return Optional.empty();
         }
-        return Optional.of(new OpenAiAudioClient(http, URI.create(endpoint.baseUrl()), settings(voice, endpoint)));
+        return Optional.of(new OpenAiAudioClient(http, URI.create(endpoint.baseUrl()), settings(voice, endpoint, language)));
     }
 
     /** For the local whisper.cpp server only the language and the prompt matter: it has one model loaded. */
-    private static OpenAiAudioClient.Settings settings(Voice voice, AudioEndpoint endpoint) {
-        return new OpenAiAudioClient.Settings(endpoint.apiKey(), voice.language(), endpoint.sttModel(),
+    private static OpenAiAudioClient.Settings settings(Voice voice, AudioEndpoint endpoint, String language) {
+        return new OpenAiAudioClient.Settings(endpoint.apiKey(), language, endpoint.sttModel(),
                 endpoint.ttsModel(), endpoint.ttsVoice(), endpoint.ttsInstructions(), wakeWord(voice));
     }
 

@@ -1,5 +1,7 @@
 package dev.jarvis.mcp;
 
+import static dev.jarvis.i18n.Text.text;
+
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -58,6 +60,7 @@ public class McpTools {
     private final ObjectProvider<McpClientCommonProperties> common;
     private volatile boolean closed;
     private final String nodeHome;
+    private final String language;
 
     public McpTools(JarvisProperties properties, ObjectProvider<List<McpSyncClient>> clients,
                     ApprovalService approvals, ObjectProvider<McpStdioClientProperties> stdio,
@@ -68,6 +71,7 @@ public class McpTools {
                 ? Map.of() : properties.mcp().servers();
         this.configured = Collections.unmodifiableSet(servers.keySet());
         this.nodeHome = properties.mcp() == null ? null : properties.mcp().nodeHome();
+        this.language = properties.language();
         List<McpSyncClient> available = clients.getIfAvailable(List::of);
         servers.forEach((name, server) -> {
             McpSyncClient client = stdioParameters(name) != null ? stdioClient(name) : available.stream()
@@ -209,7 +213,8 @@ public class McpTools {
     public String adminCall(String server, String tool) {
         McpSyncClient client = connected.get(server);
         if (client == null) {
-            return "Il collegamento " + server + " non è attivo: salva le impostazioni e attendi il riavvio.";
+            return text("Il collegamento %s non è attivo: salva le impostazioni e attendi il riavvio.",
+                    "The %s connection is not active: save the settings and wait for the restart.").in(language, server);
         }
         try {
             McpSchema.CallToolResult result = client.callTool(new McpSchema.CallToolRequest(tool, Map.of()));
@@ -218,7 +223,8 @@ public class McpTools {
                     .map(content -> ((McpSchema.TextContent) content).text())
                     .collect(Collectors.joining("\n"));
         } catch (RuntimeException e) {
-            return "Il server " + server + " non ha risposto: " + e.getMessage();
+            return text("Il server %s non ha risposto: %s", "The %s server did not answer: %s")
+                    .in(language, server, e.getMessage());
         }
     }
 

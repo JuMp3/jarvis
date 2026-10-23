@@ -19,14 +19,16 @@ class ClaudeCodeEventsTest {
 
     @Test
     void describesToolCallsInWords() {
-        assertThat(ClaudeCodeEvents.progress(toolUse("Edit", "{\"file_path\":\"C:\\\\repo\\\\src\\\\App.java\"}")))
+        assertThat(ClaudeCodeEvents.progress(toolUse("Edit", "{\"file_path\":\"C:\\\\repo\\\\src\\\\App.java\"}"), "it"))
                 .contains("Modifica App.java");
-        assertThat(ClaudeCodeEvents.progress(toolUse("Read", "{\"file_path\":\"/repo/pom.xml\"}")))
+        assertThat(ClaudeCodeEvents.progress(toolUse("Read", "{\"file_path\":\"/repo/pom.xml\"}"), "it"))
                 .contains("Legge pom.xml");
-        assertThat(ClaudeCodeEvents.progress(toolUse("Bash", "{\"command\":\"./mvnw  -q\\n verify\"}")))
+        assertThat(ClaudeCodeEvents.progress(toolUse("Bash", "{\"command\":\"./mvnw  -q\\n verify\"}"), "it"))
                 .contains("Esegue ./mvnw -q verify");
+        assertThat(ClaudeCodeEvents.progress(toolUse("Read", "{\"file_path\":\"/repo/pom.xml\"}"), "en"))
+                .contains("Reads pom.xml");
         assertThat(ClaudeCodeEvents.progress(JSON.readTree("""
-                {"type":"assistant","message":{"content":[{"type":"text","text":"ok"}]}}"""))).isEmpty();
+                {"type":"assistant","message":{"content":[{"type":"text","text":"ok"}]}}"""), "it")).isEmpty();
     }
 
     @Test

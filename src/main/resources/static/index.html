@@ -14,66 +14,66 @@
     <h1 class="name">Jarvis</h1>
     <button id="team-toggle" class="team-toggle" type="button" aria-controls="team" aria-expanded="false">
       <span class="team-dots" aria-hidden="true"></span>
-      <span id="team-summary">Squadra a riposo</span>
+      <span id="team-summary" data-i18n="team.idle">Squadra a riposo</span>
     </button>
     <div class="settings">
       <label class="field">
-        <span>Modello</span>
+        <span data-i18n="header.model">Modello</span>
         <select id="provider" disabled></select>
       </label>
       <label class="toggle">
         <input type="checkbox" id="speak">
-        <span>Rispondi a voce</span>
+        <span data-i18n="header.speak">Rispondi a voce</span>
       </label>
       <label class="toggle">
         <input type="checkbox" id="handsfree">
-        <span>Mani libere</span>
+        <span data-i18n="header.handsfree">Mani libere</span>
       </label>
       <label class="toggle" id="wake-toggle" hidden>
         <input type="checkbox" id="wake">
         <span>Solo se dico «Jarvis»</span>
       </label>
-      <button id="history-clear" class="icon-button" type="button" aria-label="Cancella la conversazione" title="Cancella la conversazione" disabled>
+      <button id="history-clear" class="icon-button" type="button" aria-label="Cancella la conversazione" title="Cancella la conversazione" data-i18n-attr="aria-label:header.clear title:header.clear" disabled>
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3h6l1 2h4v2H4V5h4l1-2Zm-3 6h12l-1 12H7L6 9Zm4 2v8h1.5v-8H10Zm2.5 0v8H14v-8h-1.5Z"/></svg>
       </button>
-      <button id="settings-open" class="icon-button" type="button" aria-label="Impostazioni">
+      <button id="settings-open" class="icon-button" type="button" aria-label="Impostazioni" data-i18n-attr="aria-label:header.settings">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19.4 13a7.6 7.6 0 0 0 0-2l2-1.6-2-3.4-2.4 1a7.4 7.4 0 0 0-1.7-1L15 3.5h-4l-.4 2.5a7.4 7.4 0 0 0-1.7 1l-2.4-1-2 3.4L4.6 11a7.6 7.6 0 0 0 0 2l-2 1.6 2 3.4 2.4-1a7.4 7.4 0 0 0 1.7 1l.4 2.5h4l.4-2.5a7.4 7.4 0 0 0 1.7-1l2.4 1 2-3.4ZM13 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7Z" transform="translate(-1 0)"/></svg>
       </button>
     </div>
   </header>
 
   <main class="stage">
-    <section class="presence" aria-label="Stato di Jarvis">
+    <section class="presence" aria-label="Stato di Jarvis" data-i18n-attr="aria-label:stage.presence">
       <canvas id="orb" aria-hidden="true"></canvas>
-      <p id="status" class="status" role="status" aria-live="polite">Connessione in corso…</p>
+      <p id="status" class="status" role="status" aria-live="polite" data-i18n="status.connecting">Connessione in corso…</p>
     </section>
 
-    <section class="conversation" aria-label="Conversazione">
+    <section class="conversation" aria-label="Conversazione" data-i18n-attr="aria-label:stage.conversation">
       <ol id="log" class="log"></ol>
-      <p id="empty" class="empty">Tieni premuto il microfono e parla, oppure scrivi qui sotto.</p>
+      <p id="empty" class="empty" data-i18n="stage.empty">Tieni premuto il microfono e parla, oppure scrivi qui sotto.</p>
     </section>
 
     <aside id="team" class="team" aria-labelledby="team-title">
       <header class="team-head">
-        <h2 id="team-title">Squadra</h2>
-        <button id="team-close" class="team-close" type="button" aria-label="Chiudi il pannello della squadra">
+        <h2 id="team-title" data-i18n="team.title">Squadra</h2>
+        <button id="team-close" class="team-close" type="button" aria-label="Chiudi il pannello della squadra" data-i18n-attr="aria-label:team.close">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.4 5 5 6.4 10.6 12 5 17.6 6.4 19l5.6-5.6 5.6 5.6 1.4-1.4-5.6-5.6L19 6.4 17.6 5 12 10.6Z"/></svg>
         </button>
       </header>
-      <p class="team-intro">I lavori che Jarvis ha affidato agli specialisti. Girano in parallelo mentre continuate a parlare.</p>
-      <button id="tasks-clear" class="team-clear" type="button" hidden>Togli i lavori finiti</button>
+      <p class="team-intro" data-i18n="team.intro">I lavori che Jarvis ha affidato agli specialisti. Girano in parallelo mentre continuate a parlare.</p>
+      <button id="tasks-clear" class="team-clear" type="button" hidden data-i18n="team.clear">Togli i lavori finiti</button>
       <ol id="tasks" class="tasks"></ol>
-      <p class="team-empty">Nessun lavoro per ora. Chiedi a Jarvis una ricerca o un testo lungo: lo affiderà a uno specialista.</p>
+      <p class="team-empty" data-i18n="team.empty">Nessun lavoro per ora. Chiedi a Jarvis una ricerca o un testo lungo: lo affiderà a uno specialista.</p>
     </aside>
   </main>
 
   <p id="team-announcer" class="visually-hidden" aria-live="polite"></p>
 
   <form id="composer" class="composer" autocomplete="off">
-    <label class="visually-hidden" for="input">Messaggio per Jarvis</label>
-    <input id="input" type="text" placeholder="Scrivi a Jarvis" disabled>
-    <button id="send" type="submit" class="send" disabled>Invia</button>
-    <button id="mic" type="button" class="mic" disabled aria-label="Tieni premuto per parlare">
+    <label class="visually-hidden" for="input" data-i18n="composer.label">Messaggio per Jarvis</label>
+    <input id="input" type="text" placeholder="Scrivi a Jarvis" data-i18n-attr="placeholder:composer.placeholder" disabled>
+    <button id="send" type="submit" class="send" disabled data-i18n="composer.send">Invia</button>
+    <button id="mic" type="button" class="mic" disabled aria-label="Tieni premuto per parlare" data-i18n-attr="aria-label:composer.mic">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3Zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-2.08A7 7 0 0 0 19 12h-2Z"/></svg>
     </button>
   </form>
@@ -84,8 +84,8 @@
       <p id="approval-task" class="approval-task" hidden></p>
       <p id="approval-text" class="approval-text"></p>
       <div class="approval-actions">
-        <button value="deny" class="secondary">Nega</button>
-        <button value="allow" class="primary">Consenti</button>
+        <button value="deny" class="secondary" data-i18n="approval.deny">Nega</button>
+        <button value="allow" class="primary" data-i18n="approval.allow">Consenti</button>
       </div>
     </form>
   </dialog>
@@ -95,17 +95,17 @@
       <h2 id="settings-title">Impostazioni</h2>
       <p id="settings-intro" class="settings-intro"></p>
       <div class="settings-layout">
-        <nav id="settings-tabs" class="settings-tabs" role="tablist" aria-label="Sezioni delle impostazioni" aria-orientation="vertical"></nav>
+        <nav id="settings-tabs" class="settings-tabs" role="tablist" aria-label="Sezioni delle impostazioni" data-i18n-attr="aria-label:settings.sections" aria-orientation="vertical"></nav>
         <div id="settings-body" class="settings-body" role="tabpanel"></div>
       </div>
       <p id="settings-status" class="settings-status" role="status"></p>
       <div class="settings-actions">
-        <button id="settings-later" type="button" class="secondary">Più tardi</button>
-        <button type="button" class="secondary" onclick="this.closest('dialog').close()">Chiudi</button>
+        <button id="settings-later" type="button" class="secondary" data-i18n="settings.later">Più tardi</button>
+        <button type="button" class="secondary" onclick="this.closest('dialog').close()" data-i18n="settings.close">Chiudi</button>
         <span class="spacer"></span>
-        <button id="settings-back" type="button" class="secondary">Indietro</button>
-        <button id="settings-next" type="button" class="primary">Avanti</button>
-        <button id="settings-save" type="submit" class="primary">Salva e riavvia</button>
+        <button id="settings-back" type="button" class="secondary" data-i18n="settings.back">Indietro</button>
+        <button id="settings-next" type="button" class="primary" data-i18n="settings.next">Avanti</button>
+        <button id="settings-save" type="submit" class="primary" data-i18n="settings.save">Salva e riavvia</button>
       </div>
     </form>
   </dialog>
