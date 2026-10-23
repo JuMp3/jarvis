@@ -18,6 +18,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
+import java.util.function.Function;
 import java.util.stream.Stream;
 
 import org.springframework.boot.context.properties.bind.Bindable;
@@ -38,6 +39,8 @@ import dev.jarvis.mail.MailServers;
 import dev.jarvis.routine.Routine;
 import dev.jarvis.routine.RoutineRepository;
 import dev.jarvis.routine.RoutineSchedule;
+import dev.jarvis.voice.AzureSpeech;
+import dev.jarvis.voice.TextToSpeech;
 import dev.jarvis.settings.SettingsCatalog.Definition;
 import dev.jarvis.settings.SettingsCatalog.Kind;
 
@@ -52,9 +55,15 @@ public class SettingsService {
     private static final boolean WINDOWS = System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("win");
     private static final HttpClient HTTP = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build();
 
-    /** @param value current value (text, or list of strings); null for secrets */
+    /**
+     * @param value    current value (text, or list of strings); null for secrets
+     * @param when     shown only while these hold, with the values the page has (SettingsCatalog.Condition)
+     * @param required while shown it needs a value
+     * @param choicesFrom only the choices chosen in this other setting are offered; may be null
+     */
     public record View(String name, String group, String label, String help, String kind, List<ChoiceView> choices,
-                       Object value, boolean set, String origin, String test) {
+                       Object value, boolean set, String origin, String test, List<SettingsCatalog.Condition> when,
+                       boolean required, String choicesFrom) {
     }
 
     /** @param description may be null */
@@ -118,7 +127,7 @@ public class SettingsService {
                 .toList();
         return new View(definition.name(), definition.group().in(language), definition.label().in(language),
                 definition.help().in(language), definition.kind().name().toLowerCase(Locale.ROOT), choices, value, set,
-                origin, definition.test());
+                origin, definition.test(), definition.when(), definition.required(), definition.choicesFrom());
     }
 
     /** Where the effective value comes from: the database, an environment variable or a configuration file. */
@@ -175,8 +184,45 @@ public class SettingsService {
                     .orElseThrow(() -> new IllegalArgumentException(UNKNOWN.in(language, name)));
             writes.add(() -> delete(definition.name()));
         }
+        requireShown(values, cleared, language);
         writes.forEach(Runnable::run); // only once everything is valid
         upsert(SETUP_COMPLETED, SettingsRows.TEXT, "true");
+    }
+
+    /** A provider chosen without its key (or region, or address) is refused, rather than found off later. */
+    private void requireShown(Map<String, Object> values, Collection<String> cleared, String language) {
+        Function<String, Object> value = name -> values.containsKey(name) ? values.get(name) : current(name);
+        for (Definition definition : SettingsCatalog.ALL) {
+            if (definition.required() && definition.shown(value) && !hasValue(definition, values, cleared)) {
+                throw new IllegalArgumentException(text("Manca «%s», che serve per quello che hai scelto.",
+                        "“%s” is missing: what you chose needs it.").in(language, definition.label().in(language)));
+            }
+            if (definition.choicesFrom() != null && value.apply(definition.name()) != null
+                    && value.apply(definition.choicesFrom()) instanceof Collection<?> offered
+                    && !offered.stream().map(String::valueOf).toList().contains(value.apply(definition.name()).toString())) {
+                throw new IllegalArgumentException(text("%s: scegli tra i fornitori abilitati.",
+                        "%s: choose among the enabled providers.").in(language, definition.label().in(language)));
+            }
+        }
+    }
+
+    private boolean hasValue(Definition definition, Map<String, Object> values, Collection<String> cleared) {
+        Object given = values.get(definition.name());
+        if (given != null && !given.toString().isBlank()) {
+            return true;
+        }
+        if (cleared.contains(definition.name()) || (definition.kind() != Kind.SECRET && values.containsKey(definition.name()))) {
+            return false; // removed, or emptied in the form
+        }
+        String saved = environment.getProperty(definition.property(), "");
+        return !saved.isBlank() && !SettingsCatalog.UNSET.equals(saved);
+    }
+
+    /** The value in use of a setting, by name: a list for multiple choices. */
+    private Object current(String name) {
+        return SettingsCatalog.find(name).map(definition -> definition.kind() == Kind.MULTI_CHOICE
+                ? Binder.get(environment).bind(definition.property(), Bindable.listOf(String.class)).orElse(List.of())
+                : (Object) environment.getProperty(definition.property())).orElse(null);
     }
 
     private Runnable write(Definition definition, Object raw, String language) {
@@ -309,9 +355,14 @@ public class SettingsService {
         return environment.getProperty(definition.property(), "");
     }
 
-    /** Checks a key without saving it; with an empty value it checks the one in use. */
-    public TestResult test(String name, String value) {
+    /**
+     * Checks a key without saving it; with an empty value it checks the one in use.
+     *
+     * @param form what the page has not saved yet (e.g. the Azure region, the IMAP address), by setting name
+     */
+    public TestResult test(String name, String value, Map<String, Object> form) {
         String language = language();
+        Function<String, String> field = property -> formOr(form, property);
         Definition definition = SettingsCatalog.find(name).filter(found -> found.test() != null)
                 .orElseThrow(() -> new IllegalArgumentException(text("Nessuna verifica per %s", "No check for %s")
                         .in(language, name)));
@@ -324,7 +375,7 @@ public class SettingsService {
                 case "anthropic" -> {
                     HttpRequest.Builder request = HttpRequest.newBuilder(URI.create("https://api.anthropic.com/v1/models"))
                             .header("x-api-key", secret).header("anthropic-version", "2023-06-01");
-                    String workspace = environment.getProperty("spring.ai.anthropic.custom-headers.anthropic-workspace-id", "");
+                    String workspace = field.apply("spring.ai.anthropic.custom-headers.anthropic-workspace-id");
                     if (!workspace.isBlank()) {
                         request.header("anthropic-workspace-id", workspace);
                     }
@@ -335,13 +386,22 @@ public class SettingsService {
                 case "groq" -> check(HttpRequest.newBuilder(URI.create("https://api.groq.com/openai/v1/models"))
                         .header("Authorization", "Bearer " + secret), "Groq", language);
                 case "imap" -> {
-                    String address = environment.getProperty("jarvis.mail.address", "");
+                    String address = field.apply("jarvis.mail.address");
                     MailClient mailbox = new MailClient(address, secret,
-                            MailServers.imap(address, environment.getProperty("jarvis.mail.imap-server")),
-                            MailServers.smtp(address, environment.getProperty("jarvis.mail.smtp-server")));
+                            MailServers.imap(address, field.apply("jarvis.mail.imap-server")),
+                            MailServers.smtp(address, field.apply("jarvis.mail.smtp-server")));
                     mailbox.check();
                     yield new TestResult(true, text("Accesso riuscito alla posta di %s (IMAP e SMTP).",
                             "Signed in to the mail of %s (IMAP and SMTP).").in(language, address));
+                }
+                case "azure" -> {
+                    String region = field.apply("jarvis.voice.azure.region");
+                    if (region.isBlank()) {
+                        yield new TestResult(false, text("Indica prima la regione di Azure.", "Enter the Azure region first.")
+                                .in(language));
+                    }
+                    yield check(HttpRequest.newBuilder(AzureSpeech.voicesUri(region)).header(AzureSpeech.KEY_HEADER, secret),
+                            "Azure", language);
                 }
                 case "github" -> check(HttpRequest.newBuilder(URI.create("https://api.github.com/user"))
                         .header("Authorization", "Bearer " + secret)
@@ -352,6 +412,33 @@ public class SettingsService {
             return new TestResult(false, text("Non riesco a contattare il servizio: %s", "I can't reach the service: %s")
                     .in(language, e.getMessage()));
         }
+    }
+
+    /** What the page has for a setting (named as its property) and has not saved yet, else the value in use. */
+    private String formOr(Map<String, Object> form, String property) {
+        Object typed = form == null ? null : form.get(property);
+        return typed != null && !typed.toString().isBlank() ? typed.toString().strip() : environment.getProperty(property, "");
+    }
+
+    /**
+     * A sample of a voice, to hear it before choosing: with the Azure key and region the page has, saved or not.
+     *
+     * @throws IllegalArgumentException with a message for the user (no key yet, not a voice)
+     */
+    public TextToSpeech.SpeechAudio preview(String name, String voice, Map<String, Object> form) {
+        String language = language();
+        SettingsCatalog.find(name).filter(definition -> "voice".equals(definition.test()) && definition.values().contains(voice))
+                .orElseThrow(() -> new IllegalArgumentException(text("Nessuna anteprima per %s", "No preview for %s")
+                        .in(language, voice)));
+        String key = formOr(form, "jarvis.voice.azure.key");
+        String region = formOr(form, "jarvis.voice.azure.region");
+        if (key.isBlank() || region.isBlank()) {
+            throw new IllegalArgumentException(text("Inserisci prima la chiave e la regione di Azure.",
+                    "Enter the Azure key and region first.").in(language));
+        }
+        String spoken = voice.startsWith("en") ? "en" : "it";
+        return new AzureSpeech(HTTP, region, key, voice, AzureSpeech.rate(formOr(form, "jarvis.voice.azure.rate"))).synthesize(text("Ciao, sono Jarvis. Potrei parlarti così.",
+                "Hello, I'm Jarvis. I could speak to you like this.").in(spoken));
     }
 
     private static TestResult check(HttpRequest.Builder request, String service, String language) throws Exception {

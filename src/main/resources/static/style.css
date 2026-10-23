@@ -1314,3 +1314,21 @@ select:disabled {
   justify-self: start;
   margin-top: 0.6rem;
 }
+
+/* ▶ on a voice tile: hear it before choosing */
+.setting-choice .preview {
+  margin-left: auto;
+  flex: none;
+  width: 2rem;
+  height: 2rem;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: transparent;
+  color: var(--lamp);
+  cursor: pointer;
+}
+
+.setting-choice .preview:hover,
+.setting-choice .preview:focus-visible {
+  border-color: var(--lamp);
+}

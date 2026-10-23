@@ -124,21 +124,33 @@ public record JarvisProperties(Providers providers, Agent agent, Voice voice, Ta
      *
      * @param openai   OpenAI audio API
      * @param groq     Groq, the same API: speech-to-text only (Whisper large)
+     * @param azure    Azure neural voices: text-to-speech only
      * @param local    engines run by Jarvis on this machine (whisper.cpp and Piper, see LocalVoice)
      */
-    public record Voice(Engine stt, Engine tts, AudioEndpoint openai, AudioEndpoint groq, Local local, String wakeWord) {
+    public record Voice(Engine stt, Engine tts, AudioEndpoint openai, AudioEndpoint groq, Azure azure, Local local,
+                        String wakeWord) {
 
         public enum Engine {
             /** OpenAI audio API, needs an API key with credit. */
             OPENAI,
             /** Groq, with the OpenAI audio API: speech-to-text only, needs a Groq API key. */
             GROQ,
+            /** Azure neural voices: text-to-speech only, needs the key and region of a Speech resource. */
+            AZURE,
             /** whisper.cpp and Piper on this machine. */
             LOCAL,
             /** Web Speech API in the browser: the server is not involved. */
             BROWSER,
             /** Disabled. */
             OFF
+        }
+
+        /**
+         * @param region e.g. italynorth, where the Speech resource is
+         * @param voices voice by language ("it", "en"), e.g. it-IT-DiegoNeural
+         * @param rate   pace in percent over the voice's own, e.g. "10"; blank: its own
+         */
+        public record Azure(String key, String region, Map<String, String> voices, String rate) {
         }
 
         /**

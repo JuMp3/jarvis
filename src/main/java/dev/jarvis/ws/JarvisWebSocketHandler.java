@@ -165,7 +165,8 @@ public class JarvisWebSocketHandler extends AbstractWebSocketHandler implements 
                 }
             }
             case "settings-test" -> workers.submit(() -> sessions.send(state.id(),
-                    Protocol.settingsTestResult(msg.name(), settings.test(msg.name(), msg.value()))));
+                    Protocol.settingsTestResult(msg.name(), settings.test(msg.name(), msg.value(), msg.values()))));
+            case "settings-preview" -> workers.submit(() -> preview(state, msg));
             case "account-login" -> workers.submit(() -> sessions.send(state.id(),
                     Protocol.accountResult(msg.server(), mcp.adminCall(msg.server(), "login"))));
             case "account-verify" -> workers.submit(() -> sessions.send(state.id(),
@@ -188,6 +189,21 @@ public class JarvisWebSocketHandler extends AbstractWebSocketHandler implements 
         }
         memory.clear(state.conversationId());
         tabs.forEach(tab -> sessions.send(tab.id(), Protocol.historyCleared()));
+    }
+
+    /** A sample of a voice, before it is chosen and saved. */
+    private void preview(SessionState state, Protocol.ClientMessage msg) {
+        try {
+            var audio = settings.preview(msg.name(), msg.value(), msg.values());
+            sessions.send(state.id(), Protocol.settingsPreview(msg.name(), msg.value(), audio.mimeType(),
+                    java.util.Base64.getEncoder().encodeToString(audio.data()), null));
+        } catch (IllegalArgumentException e) {
+            sessions.send(state.id(), Protocol.settingsPreview(msg.name(), msg.value(), null, null, e.getMessage()));
+        } catch (RuntimeException e) {
+            log.warn("Voice preview failed", e);
+            sessions.send(state.id(), Protocol.settingsPreview(msg.name(), msg.value(), null, null,
+                    ErrorMessages.forVoice(voice.language(), e)));
+        }
     }
 
     /** Saved settings take effect with a restart of the application; the pages reconnect by themselves. */

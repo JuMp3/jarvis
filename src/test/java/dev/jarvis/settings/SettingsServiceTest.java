@@ -112,6 +112,29 @@ class SettingsServiceTest extends BaseTest {
     }
 
     @Test
+    void theDefaultProviderIsOneOfTheEnabledOnes() {
+        assertThatThrownBy(() -> settings.save(Map.of("JARVIS_PROVIDERS", List.of("anthropic"),
+                "jarvis.providers.default-provider", "openai", "ANTHROPIC_API_KEY", "sk-ant-1"), List.of()))
+                .hasMessageContaining("abilitati");
+        settings.save(Map.of("JARVIS_PROVIDERS", List.of("anthropic"), "jarvis.providers.default-provider", "anthropic",
+                "ANTHROPIC_API_KEY", "sk-ant-1"), List.of());
+    }
+
+    @Test
+    void aChosenProviderNeedsItsKeyToBeSaved() {
+        assertThatThrownBy(() -> settings.save(Map.of("JARVIS_VOICE_TTS", "azure",
+                "jarvis.voice.azure.region", "westeurope"), List.of())).hasMessageContaining("Chiave API di Azure");
+        assertThatThrownBy(() -> settings.save(Map.of("JARVIS_VOICE_TTS", "azure", "jarvis.voice.azure.key", "k"),
+                List.of())).hasMessageContaining("Regione di Azure");
+
+        settings.save(Map.of("JARVIS_VOICE_TTS", "azure", "jarvis.voice.azure.key", "k",
+                "jarvis.voice.azure.region", "westeurope"), List.of());
+        assertThat(nextStart().getProperty("jarvis.voice.azure.key")).isEqualTo("k");
+        // Not chosen: no key needed
+        settings.save(Map.of("JARVIS_VOICE_TTS", "local"), List.of());
+    }
+
+    @Test
     void theOpenAiKeyFeedsBothChatAndVoice() {
         settings.save(Map.of("OPENAI_API_KEY", "sk-proj-1"), List.of());
         DatabaseSettingsSource next = nextStart();

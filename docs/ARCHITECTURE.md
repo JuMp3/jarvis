@@ -84,7 +84,7 @@ Voce (TTS):
 |---|---|---|
 | OpenAI `gpt-4o-mini-tts` | **già integrato** (voce `onyx`, `tts-instructions` per il tono) | Molto più naturale di Piper, costo basso; mai provato dal vivo |
 | ElevenLabs | client nuovo | La qualità migliore, buone voci italiane, il più caro |
-| Azure Neural (es. Isabella, Diego) | client nuovo | Ottimo italiano, economico |
+| Azure Neural (es. Isabella, Diego) | **fatto**: Impostazioni → Voce → «Azure», con chiave, regione e voce per lingua (`AzureSpeech`, REST con SSML, MP3 a 24 kHz) | Ottimo italiano; piano gratuito F0 di 500.000 caratteri al mese |
 | Kokoro locale | da integrare (non c'è in Piper) | Gratis, più naturale di Piper, circa 5 volte più lento su CPU |
 
 Prova dell'utente (22/10/2026), con la voce vera: Whisper `small` locale capisce molto meglio di `base`, ma impiega qualche secondo; "Browser" (Chrome/Edge) è molto veloce e capisce bene, però manda l'audio a Google o Microsoft e non funziona nell'app desktop. La scelta definitiva è rimandata.
@@ -110,6 +110,7 @@ Client → server
 | `settings-save` | `values`, `cleared` | Salva (i segreti vuoti restano come sono) e riavvia |
 | `settings-test` | `name`, `value?` | Verifica una chiave senza salvarla |
 | `settings-reveal` | `name` | Mostra in chiaro una chiave |
+| `settings-preview` | `name`, `value`, `values` | Una frase d'esempio con la voce `value` (le voci di Azure), con chiave e regione anche non salvate |
 | `account-login` · `account-verify` | `server` | Login dell'account di posta |
 
 Server → client
@@ -132,6 +133,7 @@ Server → client
 | `settings-error` | `message` |
 | `settings-test-result` | `name`, `ok`, `message` |
 | `settings-secret` | `name`, `value`: solo in risposta a `settings-reveal` |
+| `settings-preview` | `name`, `value`, `mime`, `data` (base64), oppure `message` se l'anteprima non è possibile |
 | `account-result` | `server`, `message` (login con codice, verifica) |
 | `done` | — |
 | `error` | `message` |
@@ -239,7 +241,8 @@ Jarvis va installato su un PC, dove un file `.env` non è una soluzione: le impo
 - **Tabella `setting`** (`name`, `kind` text · secret · list, `value`). Il nome è la chiave della configurazione (`jarvis.voice.stt`) oppure, per le prime voci, un nome storico (`ANTHROPIC_API_KEY`, `GITHUB_TOKEN`) che non si può cambiare perché fa parte della cifratura: `DatabaseSettingsSource` pubblica il valore anche sotto la proprietà del catalogo (`spring.ai.anthropic.api-key`, `jarvis.mcp.servers.github.token`; la chiave OpenAI anche per la voce).
 - **Segreti cifrati** con AES-256-GCM (`SecretBox`); il nome dell'impostazione è dato autenticato, quindi un valore copiato sotto un altro nome non si decifra. La chiave master non sta nel database: `~/.jarvis/master.key`, generata al primo avvio (o `JARVIS_MASTER_KEY`). Protegge un dump o un backup del DB, non da chi può accedere con l'utente del PC.
 - **Lingua** (`jarvis.language`, scheda Profilo, la prima domanda del wizard): italiano o inglese, una sola per interfaccia, voce e date. Finché l'utente non sceglie vale quella del sistema, se Jarvis la parla, altrimenti l'inglese (`SettingsCatalog.language`). Etichetta e scelte sono scritte in entrambe le lingue, così si trova prima che l'interfaccia sia tradotta.
-- **Interfaccia:** una scheda per funzione (Profilo, Modelli, Voce, Posta e calendario, GitHub, Cartelle, App: il campo `group` di `SettingsCatalog`, nell'ordine in cui compare); il wizard le percorre in ordine, le Impostazioni le lasciano scegliere, e i valori modificati restano passando da una scheda all'altra. Le scelte sono riquadri con nome e descrizione (`SettingsCatalog.Choice`); i campi IMAP compaiono solo con la casella `imap`.
+- **Campi che dipendono da una scelta** (`SettingsCatalog.Condition`): ogni voce può dire quando compare (`shownWhen`: la chiave di Azure solo se la voce è Azure, la voce di Azure della lingua scelta, i campi IMAP solo per la casella IMAP) e se, mentre compare, è obbligatoria (`mandatory`). La pagina mostra e nasconde i campi mentre si sceglie, con i valori anche delle altre schede; al salvataggio il server rifiuta un fornitore scelto senza la sua chiave ("Manca «Chiave di Azure»…"). Un campo nascosto tiene il suo valore. Tutte le chiavi stanno nella scheda **Chiavi API** (dopo Voce, quindi nel wizard dopo le scelte), ciascuna solo se un fornitore scelto la richiede: la chiave di OpenAI una volta sola, per i modelli, la trascrizione o la voce; con quella di Azure la sua regione, con quella di Claude il workspace; il token di GitHub, facoltativo, sempre. Il fornitore predefinito si sceglie solo tra quelli abilitati (`choicesFrom`). Le voci di Azure hanno un pulsante ▶ per ascoltarle prima di sceglierle (`settings-preview`). "Verifica" usa anche i valori non ancora salvati (la regione di Azure, l'indirizzo IMAP).
+- **Interfaccia:** una scheda per funzione (Profilo, Modelli, Voce, Chiavi API, Posta e calendario, Cartelle, App, Routine: il campo `group` di `SettingsCatalog`, nell'ordine in cui compare); il wizard le percorre in ordine, le Impostazioni le lasciano scegliere, e i valori modificati restano passando da una scheda all'altra. Le scelte sono riquadri con nome e descrizione (`SettingsCatalog.Choice`); i campi IMAP compaiono solo con la casella `imap`.
 - **Lettura all'avvio:** `SettingsEnvironmentPostProcessor` aggiunge `DatabaseSettingsSource` subito dopo le variabili d'ambiente: le impostazioni vincono su `application.yml` e `.env`, una variabile d'ambiente o un argomento da riga di comando vincono ancora. La sorgente si carica al primo uso con JDBC semplice (il DataSource non esiste ancora) e, se il database sta ancora partendo, riprova al massimo una volta al secondo; una tabella che non esiste ancora vale come "nessuna impostazione". Le liste salvate sostituiscono per intero quelle dello YAML.
 - **Applicazione:** dopo il salvataggio Jarvis si riavvia nello stesso processo (`JarvisApplication.restart`), le pagine si riconnettono da sole; i container di sviluppo restano accesi (`lifecycle-management: start-only`).
 - **Sicurezza:** tutto passa dal WebSocket, che accetta solo pagine della stessa origine. L'elenco delle impostazioni non contiene mai i segreti: la pagina sa solo se sono impostati e da dove (impostazioni, variabile d'ambiente, file). Il valore in chiaro arriva solo premendo l'occhio accanto al campo, una chiave alla volta (`settings-reveal`). "Verifica" prova la chiave contro il servizio senza salvarla.

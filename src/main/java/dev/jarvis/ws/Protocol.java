@@ -180,6 +180,14 @@ public final class Protocol {
         return new TranscriptIgnored("transcript-ignored", text);
     }
 
+    /** @param data base64 of the sample, or null with the message saying why there is none */
+    public record SettingsPreview(String type, String name, String value, String mime, String data, String message) {
+    }
+
+    public static SettingsPreview settingsPreview(String name, String value, String mime, String data, String message) {
+        return new SettingsPreview("settings-preview", name, value, mime, data, message);
+    }
+
     public static Transcript transcript(String text) {
         return new Transcript("transcript", text);
     }

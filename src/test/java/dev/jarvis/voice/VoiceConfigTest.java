@@ -22,7 +22,8 @@ class VoiceConfigTest {
         AudioEndpoint openai = new AudioEndpoint("https://api.openai.com/v1/", openAiKey, "stt", "tts", "onyx", "");
         AudioEndpoint groq = new AudioEndpoint("https://api.groq.com/openai/v1/", groqKey, "whisper-large-v3-turbo", null, null, null);
         Local local = new Local("missing-folder", "small", Map.of("it", "it_IT-paola-medium"), 1); // engines not installed: still configured
-        Voice voice = new Voice(stt, tts, openai, groq, local, "jarvis");
+        Voice voice = new Voice(stt, tts, openai, groq,
+                new Voice.Azure("azure-key", "westeurope", Map.of("it", "it-IT-DiegoNeural"), "10"), local, "jarvis");
         return new VoiceConfig().voiceServices(new JarvisProperties(null, null, voice, null, null, null, null, null, null, null, "it"));
     }
 
@@ -50,6 +51,12 @@ class VoiceConfigTest {
     void openAiNeedsAKey() {
         assertThat(services(Engine.OPENAI, Engine.OPENAI, " ").ttsMode()).isEqualTo(VoiceServices.OFF);
         assertThat(services(Engine.OPENAI, Engine.LOCAL, "sk-test").sttMode()).isEqualTo(VoiceServices.SERVER);
+    }
+
+    @Test
+    void azureSpeaksWithItsKeyRegionAndTheVoiceOfTheLanguage() {
+        assertThat(services(Engine.LOCAL, Engine.AZURE, "").ttsMode()).isEqualTo(VoiceServices.SERVER);
+        assertThat(services(Engine.AZURE, Engine.OFF, "").sttMode()).isEqualTo(VoiceServices.OFF);
     }
 
     @Test

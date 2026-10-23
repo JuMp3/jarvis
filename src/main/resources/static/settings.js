@@ -9,7 +9,6 @@ import { t, language, setLanguage } from './i18n.js';
 const MAIL = 'JARVIS_MAIL';
 const DAYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
 const LANGUAGE = 'jarvis.language';
-const IMAP_ONLY = new Set(['jarvis.mail.address', 'MAIL_PASSWORD', 'jarvis.mail.imap-server', 'jarvis.mail.smtp-server']);
 const MICROSOFT = new Set(['outlook', 'microsoft365']);
 
 function node(tag, className, text) {
@@ -65,9 +64,39 @@ export function createSettings({ send }) {
   /** What a field shows: the value edited in another tab, if any, else the one in use. */
   const shown = (setting) => (pending.has(setting.name) ? pending.get(setting.name) : setting.value);
 
+  /** A setting only shows while its conditions hold (SettingsCatalog.Condition): a key only for its provider. */
+  const valueOf = (name) => (pending.has(name) ? pending.get(name) : settings.find((s) => s.name === name)?.value);
+  const visible = (setting) => (setting.when ?? []).every((condition) => condition.settings.some((name) => {
+    const value = valueOf(name);
+    return Array.isArray(value) ? value.some((v) => condition.values.includes(v)) : value != null && condition.values.includes(String(value));
+  }));
+  let shownFields = []; // [wrapper, setting] of the open tab
+  let limitedChoices = []; // [inputs, setting] of choices offered only if chosen elsewhere (choicesFrom)
+
+  /** A list, also when a multiple choice comes as text ("anthropic,openai") from the configuration. */
+  const listOf = (value) => (Array.isArray(value) ? value : String(value ?? '').split(',').map((v) => v.trim()).filter(Boolean));
+
+  function applyVisibility() {
+    for (const [wrapper, setting] of shownFields) wrapper.hidden = !visible(setting);
+    for (const [inputs, setting] of limitedChoices) {
+      const offered = listOf(valueOf(setting.choicesFrom));
+      inputs.forEach((input) => { input.closest('.setting-choice').hidden = !offered.includes(input.value); });
+      // The chosen one is no longer offered: the first one that is takes its place
+      if (!offered.includes(inputs.find((input) => input.checked)?.value)) {
+        const first = inputs.find((input) => offered.includes(input.value));
+        if (first) {
+          first.checked = true;
+          pending.set(setting.name, first.value);
+        }
+      }
+    }
+  }
+
   function field(setting) {
     const wrapper = node('div', `setting kind-${setting.kind}`); // not setting-<kind>: .setting-choice is an option
     wrapper.dataset.name = setting.name;
+    wrapper.hidden = !visible(setting);
+    shownFields.push([wrapper, setting]);
     const id = `setting-${setting.name.replace(/[^a-zA-Z0-9]/g, '-')}`;
     const label = node('label', 'setting-label', setting.label);
     label.htmlFor = id;
@@ -111,7 +140,8 @@ export function createSettings({ send }) {
           verify.type = 'button';
           verify.addEventListener('click', () => {
             result.textContent = t('settings.verifying');
-            send({ type: 'settings-test', name: setting.name, value: input.value });
+            collect(); // the check may need what is not saved yet: the Azure region, the IMAP address
+            send({ type: 'settings-test', name: setting.name, value: input.value, values: Object.fromEntries(pending) });
           });
           row.append(verify);
         }
@@ -243,6 +273,9 @@ export function createSettings({ send }) {
         label.removeAttribute('for');
         const value = shown(setting);
         const current = Array.isArray(value) ? value : [value];
+        const preview = node('p', 'setting-result');
+        preview.setAttribute('aria-live', 'polite');
+        preview.dataset.preview = setting.name;
         // Each option is a tile: its name, and right below it what it means
         const inputs = setting.choices.map((choice) => {
           const option = node('label', 'setting-choice');
@@ -255,19 +288,21 @@ export function createSettings({ send }) {
           text.append(node('span', 'choice-label', choice.label));
           if (choice.description) text.append(node('span', 'choice-description', choice.description));
           option.append(input, text);
+          if (setting.test === 'voice') option.append(previewButton(setting, choice, preview));
           group.append(option);
           return input;
         });
         wrapper.append(help, group);
+        if (setting.test === 'voice') wrapper.append(preview);
         fields.set(setting.name, {
           read: () => (setting.kind === 'choice'
             ? inputs.find((i) => i.checked)?.value
             : inputs.filter((i) => i.checked).map((i) => i.value)),
         });
-        if (setting.name === MAIL) {
-          wrapper.append(accountControls(setting.value));
-          inputs.forEach((input) => input.addEventListener('change', () => showMailFields(input.value)));
-        }
+        if (setting.name === MAIL) wrapper.append(accountControls(setting.value));
+        if (setting.choicesFrom) limitedChoices.push([inputs, setting]);
+        // Choosing a provider shows the fields it needs (its key...), and hides the others
+        inputs.forEach((input) => input.addEventListener('change', () => { collect(); applyVisibility(); }));
         if (setting.name === LANGUAGE) {
           // The rest of the wizard, and the page, in the language just chosen; closing without saving goes back
           inputs.forEach((input) => input.addEventListener('change', () => {
@@ -289,11 +324,19 @@ export function createSettings({ send }) {
     return wrapper;
   }
 
-  /** The IMAP fields only matter for an IMAP mailbox. */
-  function showMailFields(provider) {
-    body.querySelectorAll('.setting').forEach((wrapper) => {
-      if (IMAP_ONLY.has(wrapper.dataset.name)) wrapper.hidden = provider !== 'imap';
+  /** ▶ on a voice: a sample, with the key and region typed so far, before choosing and saving. */
+  function previewButton(setting, choice, status) {
+    const button = node('button', 'preview', '▶');
+    button.type = 'button';
+    button.setAttribute('aria-label', t('settings.preview.play', { voice: choice.label }));
+    button.addEventListener('click', (event) => {
+      event.preventDefault(); // inside the tile's label: hearing a voice does not choose it
+      event.stopPropagation();
+      collect();
+      status.textContent = t('settings.preview.loading');
+      send({ type: 'settings-preview', name: setting.name, value: choice.value, values: Object.fromEntries(pending) });
     });
+    return button;
   }
 
   /** Sign-in of the Microsoft account: only once the provider is saved and Jarvis has restarted with it. */
@@ -328,11 +371,12 @@ export function createSettings({ send }) {
     body.replaceChildren();
     body.setAttribute('aria-labelledby', `settings-tab-${step}`);
     fields.clear();
+    shownFields = [];
+    limitedChoices = [];
     const section = node('section', 'settings-group');
     settings.filter((s) => s.group === groups[step]).forEach((s) => section.append(field(s)));
     body.append(section);
-    const mail = settings.find((s) => s.name === MAIL);
-    if (mail) showMailFields(shown(mail));
+    applyVisibility();
     body.scrollTop = 0;
 
     title.textContent = t(wizard ? 'settings.wizardTitle' : 'settings.title');
@@ -423,6 +467,12 @@ export function createSettings({ send }) {
         case 'settings-error':
           status.textContent = msg.message;
           return true;
+        case 'settings-preview': {
+          const target = body.querySelector(`[data-preview="${CSS.escape(msg.name)}"]`);
+          if (target) target.textContent = msg.data ? '' : msg.message;
+          if (msg.data) new Audio(`data:${msg.mime};base64,${msg.data}`).play();
+          return true;
+        }
         case 'settings-test-result': {
           const target = body.querySelector(`[data-test="${CSS.escape(msg.name)}"]`);
           if (target) target.textContent = (msg.ok ? '✓ ' : '✗ ') + msg.message;

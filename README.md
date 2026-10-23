@@ -22,7 +22,8 @@ Trascrizione e sintesi si scelgono in Impostazioni → Voce, indipendentemente:
 |---|---|---|
 | `local` (default) | Sul tuo PC: whisper.cpp (Whisper `small` o `base`) + Piper (voce Paola in italiano, Lessac in inglese), avviati da Jarvis | Gratis e privato, niente Docker. Binari e modelli: `desktop/prepare-voice.ps1`, poi `JARVIS_VOICE_HOME` (in `.env`) verso `desktop/src-tauri/resources/voice` |
 | `groq` (solo trascrizione) | Whisper large di Groq, nel cloud | Molto preciso e veloce, piano gratuito; serve la chiave di Groq (Impostazioni → Voce) |
-| `openai` | API audio OpenAI | Qualità migliore, serve la chiave OpenAI (Impostazioni → Modelli) con credito |
+| `azure` (solo voce) | Voci neurali di Microsoft (Diego, Giuseppe, Isabella…; Andrew, Ava… in inglese) | Molto naturali, piano gratuito di 500.000 caratteri al mese; servono chiave e regione di una risorsa Speech |
+| `openai` | API audio OpenAI | Qualità migliore, serve la chiave OpenAI con credito |
 | `browser` | Web Speech API | Gratis, ma il riconoscimento manda l'audio a Google/Microsoft, non funziona nell'app desktop e l'orb non segue la voce reale |
 | `off` | — | Solo testo |
 

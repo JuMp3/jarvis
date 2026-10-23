@@ -39,12 +39,17 @@ public class VoiceConfig {
             case GROQ -> client(voice, voice.groq(), properties.language(), "jarvis.voice.stt=groq", http)
                     .map(SpeechToText.class::cast);
             case LOCAL -> Optional.of(local.speechToText(http, settings(voice, voice.openai(), properties.language())));
+            case AZURE -> { // only its voices are wired here
+                log.warn("jarvis.voice.stt=azure is not supported: transcription disabled");
+                yield Optional.empty();
+            }
             case BROWSER, OFF -> Optional.empty();
         };
         Optional<TextToSpeech> tts = switch (voice.tts()) {
             case OPENAI -> client(voice, voice.openai(), properties.language(), "jarvis.voice.tts=openai", http)
                     .map(TextToSpeech.class::cast);
             case LOCAL -> Optional.of(local.textToSpeech());
+            case AZURE -> azure(voice.azure(), properties.language(), http).map(TextToSpeech.class::cast);
             case GROQ -> { // its voices do not speak Italian
                 log.warn("jarvis.voice.tts=groq is not supported: voice disabled in this direction");
                 yield Optional.empty();
@@ -71,6 +76,22 @@ public class VoiceConfig {
             return Optional.empty();
         }
         return Optional.of(new OpenAiAudioClient(http, URI.create(endpoint.baseUrl()), settings(voice, endpoint, language)));
+    }
+
+    /** Empty without key or region: the voice is off. */
+    private static Optional<AzureSpeech> azure(Voice.Azure azure, String language, HttpClient http) {
+        if (azure == null || azure.key() == null || azure.key().isBlank() || azure.region() == null
+                || azure.region().isBlank()) {
+            log.warn("jarvis.voice.tts=azure but its key or region is missing: voice disabled");
+            return Optional.empty();
+        }
+        String voice = azure.voices() == null ? null : azure.voices().get(language == null ? "it" : language);
+        try {
+            return Optional.of(new AzureSpeech(http, azure.region(), azure.key(), voice, AzureSpeech.rate(azure.rate())));
+        } catch (IllegalArgumentException e) {
+            log.warn("Azure voice disabled: {}", e.getMessage());
+            return Optional.empty();
+        }
     }
 
     /** For the local whisper.cpp server only the language and the prompt matter: it has one model loaded. */
