@@ -22,6 +22,8 @@ public class OpenAiAudioClient implements SpeechToText, TextToSpeech {
 
     private static final Duration TIMEOUT = Duration.ofSeconds(60);
     private static final int ERROR_BODY_LIMIT = 300;
+    /** Of the phrase so far, as the prompt of the next piece: Whisper keeps about 224 tokens of it. */
+    private static final int CONTEXT_CHARS = 400;
 
     private final HttpClient http;
     private final URI baseUri;
@@ -34,7 +36,7 @@ public class OpenAiAudioClient implements SpeechToText, TextToSpeech {
     }
 
     @Override
-    public String transcribe(byte[] audio, String mimeType) {
+    public String transcribe(byte[] audio, String mimeType, String context) {
         Multipart form = new Multipart()
                 .file("file", "speech" + extensionFor(mimeType), mimeType, audio)
                 .field("model", settings.sttModel())
@@ -42,9 +44,11 @@ public class OpenAiAudioClient implements SpeechToText, TextToSpeech {
         if (settings.language() != null && !settings.language().isBlank()) {
             form.field("language", settings.language());
         }
-        // A proper name is hard for small models ("Jarvis" heard as "darvi"): name it in the prompt
-        if (settings.sttPrompt() != null && !settings.sttPrompt().isBlank()) {
-            form.field("prompt", settings.sttPrompt());
+        // A proper name is hard for small models ("Jarvis" heard as "darvi"): name it in the prompt, then the end of
+        // what was said before (Whisper reads only the last part of a long prompt)
+        String prompt = prompt(settings.sttPrompt(), context);
+        if (!prompt.isBlank()) {
+            form.field("prompt", prompt);
         }
         HttpRequest request = baseRequest("audio/transcriptions")
                 .header("Content-Type", form.contentType())
@@ -52,6 +56,15 @@ public class OpenAiAudioClient implements SpeechToText, TextToSpeech {
                 .build();
         HttpResponse<byte[]> response = send(request);
         return new String(response.body(), StandardCharsets.UTF_8).trim();
+    }
+
+    static String prompt(String words, String context) {
+        String before = context == null ? "" : context.strip();
+        if (before.length() > CONTEXT_CHARS) {
+            before = before.substring(before.length() - CONTEXT_CHARS);
+            before = before.substring(Math.max(0, before.indexOf(' ') + 1)); // from a whole word
+        }
+        return ((words == null ? "" : words.strip()) + " " + before).strip();
     }
 
     @Override

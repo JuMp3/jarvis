@@ -15,6 +15,7 @@ import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.mock.env.MockEnvironment;
 
 import dev.jarvis.BaseTest;
+import dev.jarvis.routine.RoutineRepository;
 
 /** Settings saved on a real PostgreSQL, then read back as Spring properties like at the next start. */
 class SettingsServiceTest extends BaseTest {
@@ -36,7 +37,8 @@ class SettingsServiceTest extends BaseTest {
                 .withProperty("spring.datasource.username", POSTGRES.getUsername())
                 .withProperty("spring.datasource.password", POSTGRES.getPassword())
                 .withProperty("jarvis.settings.key-file", tmp.resolve("master.key").toString());
-        settings = new SettingsService(jdbc, environment);
+        jdbc.sql("DELETE FROM routine").update();
+        settings = new SettingsService(jdbc, environment, new RoutineRepository(jdbc));
     }
 
     /** What the next start sees. */
@@ -84,6 +86,29 @@ class SettingsServiceTest extends BaseTest {
 
         settings.save(Map.of(SettingsCatalog.APPS, List.of()), List.of());
         assertThat(nextStart().getProperty("jarvis.desktop.apps.outlook.command[0]")).isNull();
+    }
+
+    @Test
+    void routinesAreEditedInTheirTableAndKeepTheDayTheyLastRan() {
+        settings.save(Map.of(SettingsCatalog.ROUTINES, List.of(Map.of("name", "Briefing", "time", "23:59",
+                "days", List.of("mon", "fri"), "instructions", "Meteo e posta", "enabled", true))), List.of());
+        RoutineRepository routines = new RoutineRepository(jdbc);
+        String id = routines.all().getFirst().id();
+        routines.markRun(id, java.time.LocalDate.now());
+
+        settings.save(Map.of(SettingsCatalog.ROUTINES, List.of(Map.of("id", id, "name", "Briefing del mattino",
+                "time", "23:59", "days", List.of("mon"), "instructions", "Meteo", "enabled", false))), List.of());
+        var edited = routines.find(id).orElseThrow();
+        assertThat(edited.name()).isEqualTo("Briefing del mattino");
+        assertThat(edited.enabled()).isFalse();
+        assertThat(edited.lastRun()).as("already run today: not again").isEqualTo(java.time.LocalDate.now());
+        assertThat(settings.view("it").stream().filter(view -> view.name().equals(SettingsCatalog.ROUTINES))
+                .findFirst().orElseThrow().value()).asString().contains("Briefing del mattino", "23:59", "[mon]");
+
+        assertThatThrownBy(() -> settings.save(Map.of(SettingsCatalog.ROUTINES, List.of(Map.of("name", "Senza giorni",
+                "time", "08:00", "days", List.of(), "instructions", "x"))), List.of())).hasMessageContaining("giorno");
+        settings.save(Map.of(SettingsCatalog.ROUTINES, List.of()), List.of());
+        assertThat(routines.all()).isEmpty();
     }
 
     @Test

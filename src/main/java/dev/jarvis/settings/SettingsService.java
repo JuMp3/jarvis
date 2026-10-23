@@ -9,11 +9,15 @@ import java.net.http.HttpResponse;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.UUID;
 import java.util.stream.Stream;
 
 import org.springframework.boot.context.properties.bind.Bindable;
@@ -31,6 +35,9 @@ import dev.jarvis.config.JarvisProperties;
 import dev.jarvis.i18n.Text;
 import dev.jarvis.mail.MailClient;
 import dev.jarvis.mail.MailServers;
+import dev.jarvis.routine.Routine;
+import dev.jarvis.routine.RoutineRepository;
+import dev.jarvis.routine.RoutineSchedule;
 import dev.jarvis.settings.SettingsCatalog.Definition;
 import dev.jarvis.settings.SettingsCatalog.Kind;
 
@@ -61,10 +68,12 @@ public class SettingsService {
 
     private final JdbcClient jdbc;
     private final ConfigurableEnvironment environment;
+    private final RoutineRepository routines;
     private final SecretBox box;
 
-    public SettingsService(JdbcClient jdbc, ConfigurableEnvironment environment) {
+    public SettingsService(JdbcClient jdbc, ConfigurableEnvironment environment, RoutineRepository routines) {
         this.jdbc = jdbc;
+        this.routines = routines;
         this.environment = environment;
         this.box = new SecretBox(MasterKey.load(environment.getProperty(MasterKey.ENVIRONMENT_VARIABLE),
                 Path.of(environment.getProperty("jarvis.settings.key-file",
@@ -94,6 +103,7 @@ public class SettingsService {
                     .bind(definition.property(), Bindable.listOf(String.class)).orElse(List.of());
             case TEXT, CHOICE -> environment.getProperty(definition.property(),
                     definition.kind() == Kind.CHOICE ? definition.values().getFirst() : "");
+            case ROUTINES -> routines.all().stream().map(SettingsService::routineRow).toList();
             case APPS -> Binder.get(environment)
                     .bind(definition.property(), Bindable.mapOf(String.class, JarvisProperties.DesktopApp.class))
                     .map(SettingsRows::appRows).orElse(List.of());
@@ -199,6 +209,10 @@ public class SettingsService {
                 }
                 yield () -> upsert(definition.name(), SettingsRows.TEXT, String.join(",", chosen));
             }
+            case ROUTINES -> {
+                List<Routine> edited = routines(raw, label, language);
+                yield () -> routines.replaceAll(edited);
+            }
             case APPS -> {
                 String apps = SettingsRows.appsJson(raw);
                 yield apps.equals("[]") ? () -> delete(definition.name())
@@ -217,6 +231,57 @@ public class SettingsService {
                         : () -> upsert(definition.name(), SettingsRows.LIST, String.join("\n", folders));
             }
         };
+    }
+
+    /** A routine as the Settings section edits it: days as codes, time as HH:mm. */
+    private static Map<String, Object> routineRow(Routine routine) {
+        Map<String, Object> row = new LinkedHashMap<>();
+        row.put("id", routine.id());
+        row.put("name", routine.name());
+        row.put("time", routine.at().toString());
+        row.put("days", List.of(RoutineSchedule.format(routine.days()).split(",")));
+        row.put("instructions", routine.instructions());
+        row.put("enabled", routine.enabled());
+        return row;
+    }
+
+    /** The rows of the Settings section; empty ones are left out, edited ones keep the day they last ran. */
+    private List<Routine> routines(Object raw, String label, String language) {
+        List<Routine> edited = new ArrayList<>();
+        for (Object item : raw instanceof Collection<?> rows ? rows : List.of()) {
+            if (!(item instanceof Map<?, ?> row)) {
+                continue;
+            }
+            String name = String.valueOf(row.get("name") == null ? "" : row.get("name")).strip();
+            String instructions = String.valueOf(row.get("instructions") == null ? "" : row.get("instructions")).strip();
+            if (name.isEmpty() && instructions.isEmpty()) {
+                continue;
+            }
+            if (name.isEmpty() || instructions.isEmpty()) {
+                throw new IllegalArgumentException(text("%s: ogni routine ha un nome e delle istruzioni.",
+                        "%s: every routine needs a name and instructions.").in(language, label));
+            }
+            LocalTime at;
+            try {
+                at = RoutineSchedule.parseTime(String.valueOf(row.get("time")));
+            } catch (IllegalArgumentException e) {
+                throw new IllegalArgumentException(text("%s: «%s» ha un'ora non valida.", "%s: “%s” has an invalid time.")
+                        .in(language, label, name));
+            }
+            List<String> days = items(row.get("days"), true);
+            if (days.isEmpty()) {
+                throw new IllegalArgumentException(text("%s: scegli almeno un giorno per «%s».",
+                        "%s: choose at least one day for “%s”.").in(language, label, name));
+            }
+            String id = row.get("id") == null || row.get("id").toString().isBlank()
+                    ? UUID.randomUUID().toString() : row.get("id").toString();
+            Routine before = routines.find(id).orElse(null);
+            edited.add(new Routine(id, name, at, RoutineSchedule.parseDays(String.join(",", days)), instructions,
+                    !Boolean.FALSE.equals(row.get("enabled")),
+                    before != null && before.at().equals(at) ? before.lastRun()
+                            : RoutineSchedule.initialLastRun(at, LocalDateTime.now())));
+        }
+        return edited;
     }
 
     private void applyMail(String provider) {
@@ -267,6 +332,8 @@ public class SettingsService {
                 }
                 case "openai" -> check(HttpRequest.newBuilder(URI.create("https://api.openai.com/v1/models"))
                         .header("Authorization", "Bearer " + secret), "OpenAI", language);
+                case "groq" -> check(HttpRequest.newBuilder(URI.create("https://api.groq.com/openai/v1/models"))
+                        .header("Authorization", "Bearer " + secret), "Groq", language);
                 case "imap" -> {
                     String address = environment.getProperty("jarvis.mail.address", "");
                     MailClient mailbox = new MailClient(address, secret,

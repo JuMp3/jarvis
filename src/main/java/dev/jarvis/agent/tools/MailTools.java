@@ -13,7 +13,6 @@ import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.ai.tool.annotation.ToolParam;
 import org.springframework.stereotype.Component;
 
-import dev.jarvis.agent.AgentService;
 import dev.jarvis.agent.ApprovalService;
 import dev.jarvis.config.JarvisProperties;
 import dev.jarvis.i18n.Text;
@@ -122,8 +121,7 @@ public class MailTools {
         }
 
         private boolean approve(ToolContext toolContext, String description) {
-            return approvals.requestApproval((String) toolContext.getContext().get(AgentService.CONVERSATION_ID_KEY),
-                    (String) toolContext.getContext().get(AgentService.SESSION_ID_KEY), description);
+            return approvals.requestApproval(toolContext, description);
         }
     }
 

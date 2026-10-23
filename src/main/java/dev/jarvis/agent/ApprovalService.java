@@ -10,6 +10,9 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.function.Predicate;
+
+import org.springframework.ai.chat.model.ToolContext;
 
 /**
  * Human-in-the-loop gate for actions with side effects.
@@ -35,6 +38,27 @@ public class ApprovalService {
         this.channel = channel;
         this.turnTimeout = turnTimeout;
         this.taskTimeout = taskTimeout;
+    }
+
+    /**
+     * In a tool context, a {@code Predicate<String>} that asks instead of Jarvis' turn: the background task the tool
+     * runs in (a routine), whose request waits like any task's.
+     */
+    public static final String APPROVER_KEY = "jarvis.approver";
+
+    /**
+     * Asks for the action of a tool: through the task it runs in, if any, else for Jarvis' own turn.
+     *
+     * @return true only if the user explicitly approved
+     */
+    @SuppressWarnings("unchecked")
+    public boolean requestApproval(ToolContext toolContext, String description) {
+        Map<String, Object> context = toolContext == null ? Map.of() : toolContext.getContext();
+        if (context.get(APPROVER_KEY) instanceof Predicate<?> approver) {
+            return ((Predicate<String>) approver).test(description);
+        }
+        return requestApproval((String) context.get(AgentService.CONVERSATION_ID_KEY),
+                (String) context.get(AgentService.SESSION_ID_KEY), description);
     }
 
     /**

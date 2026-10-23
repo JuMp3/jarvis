@@ -1,0 +1,10 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "jarvis-page",
+  "description": "The page of Jarvis' own backend (bundled, or the development one) may show system notifications for the routines, and nothing else",
+  "windows": ["main"],
+  "remote": {
+    "urls": ["http://127.0.0.1:47321/*", "http://localhost:8080/*"]
+  },
+  "permissions": ["notification:default"]
+}

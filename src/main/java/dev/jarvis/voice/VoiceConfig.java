@@ -34,13 +34,21 @@ public class VoiceConfig {
             local = new LocalVoice(voice.local(), properties.language());
         }
         Optional<SpeechToText> stt = switch (voice.stt()) {
-            case OPENAI -> openAi(voice, properties.language(), "jarvis.voice.stt", http).map(SpeechToText.class::cast);
+            case OPENAI -> client(voice, voice.openai(), properties.language(), "jarvis.voice.stt=openai", http)
+                    .map(SpeechToText.class::cast);
+            case GROQ -> client(voice, voice.groq(), properties.language(), "jarvis.voice.stt=groq", http)
+                    .map(SpeechToText.class::cast);
             case LOCAL -> Optional.of(local.speechToText(http, settings(voice, voice.openai(), properties.language())));
             case BROWSER, OFF -> Optional.empty();
         };
         Optional<TextToSpeech> tts = switch (voice.tts()) {
-            case OPENAI -> openAi(voice, properties.language(), "jarvis.voice.tts", http).map(TextToSpeech.class::cast);
+            case OPENAI -> client(voice, voice.openai(), properties.language(), "jarvis.voice.tts=openai", http)
+                    .map(TextToSpeech.class::cast);
             case LOCAL -> Optional.of(local.textToSpeech());
+            case GROQ -> { // its voices do not speak Italian
+                log.warn("jarvis.voice.tts=groq is not supported: voice disabled in this direction");
+                yield Optional.empty();
+            }
             case BROWSER, OFF -> Optional.empty();
         };
         return new VoiceServices(stt, tts, mode(voice.stt(), stt), mode(voice.tts(), tts), properties.language(),
@@ -55,11 +63,11 @@ public class VoiceConfig {
         }
     }
 
-    /** Empty without a key: the voice is off in that direction. */
-    private static Optional<OpenAiAudioClient> openAi(Voice voice, String language, String property, HttpClient http) {
-        AudioEndpoint endpoint = voice.openai();
-        if (endpoint.apiKey() == null || endpoint.apiKey().isBlank()) {
-            log.warn("{}=openai but no OpenAI API key is configured: voice disabled in this direction", property);
+    /** A service with the OpenAI audio API (OpenAI, Groq). Empty without a key: the voice is off in that direction. */
+    private static Optional<OpenAiAudioClient> client(Voice voice, AudioEndpoint endpoint, String language,
+                                                      String chosen, HttpClient http) {
+        if (endpoint == null || endpoint.apiKey() == null || endpoint.apiKey().isBlank()) {
+            log.warn("{} but no API key for it is configured: voice disabled in this direction", chosen);
             return Optional.empty();
         }
         return Optional.of(new OpenAiAudioClient(http, URI.create(endpoint.baseUrl()), settings(voice, endpoint, language)));

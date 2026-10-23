@@ -43,6 +43,7 @@ fn main() {
         // First: a second start only brings the running Jarvis to the front
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| show(app)))
         .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, Some(vec![HIDDEN])))
+        .plugin(tauri_plugin_notification::init())
         .manage(Backend(Mutex::new(Started::default())))
         .setup(|app| {
             tray(app.handle())?;

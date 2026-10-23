@@ -91,11 +91,13 @@ public record JarvisProperties(Providers providers, Agent agent, Voice voice, Ta
      *                        permission rules (e.g. "Bash(git commit:*)"); git push is always denied
      * @param timeout         overrides jarvis.tasks.timeout for this specialist
      * @param command         claude-code only: executable to run, default "claude"
+     * @param routine         chat only: runs the routines, and nothing else (Jarvis does not delegate to it); may
+     *                        get the tool groups "mcp:*" and "write", every write behind the user's approval
      */
     public record Specialist(String type, String description, String provider, String model, String systemPrompt,
                              List<String> tools, Integer maxSearches, Integer maxTokens,
                              List<String> workspaces, Double maxBudgetUsd, List<String> allowedCommands,
-                             Duration timeout, String command) {
+                             Duration timeout, String command, Boolean routine) {
     }
 
     /**
@@ -121,13 +123,16 @@ public record JarvisProperties(Providers providers, Agent agent, Voice voice, Ta
      * Voice settings: which engine turns speech into text ({@code stt}) and text into speech ({@code tts}).
      *
      * @param openai   OpenAI audio API
+     * @param groq     Groq, the same API: speech-to-text only (Whisper large)
      * @param local    engines run by Jarvis on this machine (whisper.cpp and Piper, see LocalVoice)
      */
-    public record Voice(Engine stt, Engine tts, AudioEndpoint openai, Local local, String wakeWord) {
+    public record Voice(Engine stt, Engine tts, AudioEndpoint openai, AudioEndpoint groq, Local local, String wakeWord) {
 
         public enum Engine {
             /** OpenAI audio API, needs an API key with credit. */
             OPENAI,
+            /** Groq, with the OpenAI audio API: speech-to-text only, needs a Groq API key. */
+            GROQ,
             /** whisper.cpp and Piper on this machine. */
             LOCAL,
             /** Web Speech API in the browser: the server is not involved. */

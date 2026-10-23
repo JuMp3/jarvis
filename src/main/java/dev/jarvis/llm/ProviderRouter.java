@@ -77,8 +77,11 @@ public class ProviderRouter {
             return "";
         }
         StringBuilder catalog = new StringBuilder("\nSpecialisti disponibili per startTask:\n");
-        properties.agents().forEach((id, spec) ->
-                catalog.append("- ").append(id).append(": ").append(spec.description().strip()).append('\n'));
+        properties.agents().forEach((id, spec) -> {
+            if (!Boolean.TRUE.equals(spec.routine())) { // the routine runner is not Jarvis' to delegate to
+                catalog.append("- ").append(id).append(": ").append(spec.description().strip()).append('\n');
+            }
+        });
         return catalog.toString();
     }
 

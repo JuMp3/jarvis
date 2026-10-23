@@ -19,8 +19,11 @@ import dev.jarvis.i18n.Text;
  */
 public final class SettingsCatalog {
 
-    /** APPS: the programs Jarvis may start, saved as JSON (see SettingsRows.expandApps). */
-    public enum Kind { TEXT, SECRET, LIST, CHOICE, MULTI_CHOICE, APPS }
+    /**
+     * APPS: the programs Jarvis may start, saved as JSON (see SettingsRows.expandApps). ROUTINES: kept in their own
+     * table (RoutineRepository), not in the settings: Jarvis also creates them when asked.
+     */
+    public enum Kind { TEXT, SECRET, LIST, CHOICE, MULTI_CHOICE, APPS, ROUTINES }
 
     /**
      * @param group tab of the Settings section and step of the wizard, in order of first appearance
@@ -41,6 +44,7 @@ public final class SettingsCatalog {
     public static final String MAIL = "JARVIS_MAIL";
     public static final String APPS = "jarvis.desktop.apps";
     public static final String LANGUAGE = "jarvis.language";
+    public static final String ROUTINES = "jarvis.routines";
     /** A key not saved yet: lets Spring AI start; the Settings show it as not set. */
     public static final String UNSET = "not-configured";
     /** Languages of the interface and the voice, in the order shown. */
@@ -53,6 +57,7 @@ public final class SettingsCatalog {
     private static final Text GITHUB = text("GitHub", "GitHub");
     private static final Text FOLDERS = text("Cartelle", "Folders");
     private static final Text APP_LIST = text("App", "Apps");
+    private static final Text ROUTINE_LIST = text("Routine", "Routines");
 
     public static final List<Definition> ALL = List.of(
             // label in both languages: the user must find it even when the interface does not speak theirs
@@ -105,6 +110,11 @@ public final class SettingsCatalog {
                     List.of(choice("local", text("Sul tuo PC", "On your PC"),
                                     text("Whisper: gratis e privato, l'audio non esce dal computer.",
                                             "Whisper: free and private, the audio never leaves the computer.")),
+                            choice("groq", text("Groq", "Groq"),
+                                    text("Il Whisper più grande, nel cloud: molto preciso e veloce, l'audio va a Groq. "
+                                                    + "Serve la chiave di Groq (c'è un piano gratuito).",
+                                            "The largest Whisper, in the cloud: very accurate and fast, the audio goes "
+                                                    + "to Groq. Needs the Groq key (there is a free plan).")),
                             choice("openai", text("OpenAI", "OpenAI"),
                                     text("Più preciso, a pagamento: serve la chiave di OpenAI.",
                                             "More accurate, paid: needs the OpenAI key.")),
@@ -124,6 +134,11 @@ public final class SettingsCatalog {
                             choice("base", text("Più veloce", "Faster"),
                                     text("Whisper base: circa un secondo per frase, più errori.",
                                             "Whisper base: about one second per sentence, more mistakes."))), null),
+            new Definition("jarvis.voice.groq.api-key", "jarvis.voice.groq.api-key", VOICE,
+                    text("Chiave API di Groq", "Groq API key"),
+                    text("Da console.groq.com, sezione API Keys. Serve solo se la trascrizione è «Groq».",
+                            "From console.groq.com, API Keys section. Needed only when transcription is “Groq”."),
+                    Kind.SECRET, List.of(), "groq"),
             new Definition("JARVIS_VOICE_TTS", "jarvis.voice.tts", VOICE,
                     text("Chi dà la voce a Jarvis", "Who gives Jarvis a voice"),
                     text("Come Jarvis legge le risposte ad alta voce.", "How Jarvis reads answers aloud."), Kind.CHOICE,
@@ -184,7 +199,17 @@ public final class SettingsCatalog {
                                     + "all'app; argomenti separati da spazi. Link e cartelle si aprono anche senza elenco.",
                             "Always after you confirm. In the arguments {target} is the file or folder Jarvis passes to "
                                     + "the app; arguments separated by spaces. Links and folders open even without a list."),
-                    Kind.APPS, List.of(), null));
+                    Kind.APPS, List.of(), null),
+            new Definition(ROUTINES, ROUTINES, ROUTINE_LIST, text("Routine", "Routines"),
+                    text("Lavori che Jarvis fa da solo nei giorni e all'ora indicati, come un briefing del mattino: il "
+                                    + "risultato arriva nella conversazione, con una notifica. Si creano anche a voce («ogni "
+                                    + "mattina alle 8 fammi il briefing»). Le azioni che scrivono chiedono sempre la tua "
+                                    + "conferma, e la richiesta aspetta che tu apra Jarvis.",
+                            "Work Jarvis does by himself on the chosen days and time, such as a morning briefing: the "
+                                    + "result arrives in the conversation, with a notification. You can also create them "
+                                    + "by voice (“every morning at 8 give me the briefing”). Actions that write always ask "
+                                    + "you first, and the request waits until you open Jarvis."),
+                    Kind.ROUTINES, List.of(), null));
 
     /**
      * Values in use until the user saves a setting: the lowest property source (SettingsDefaultsSource), so that

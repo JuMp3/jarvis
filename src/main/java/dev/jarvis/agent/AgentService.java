@@ -18,6 +18,7 @@ import dev.jarvis.agent.tools.SystemTools;
 import dev.jarvis.llm.ProviderId;
 import dev.jarvis.llm.ProviderRouter;
 import dev.jarvis.mcp.McpTools;
+import dev.jarvis.routine.RoutineTools;
 import dev.jarvis.task.TaskTools;
 import reactor.core.publisher.Flux;
 
@@ -42,13 +43,13 @@ public class AgentService {
 
     public AgentService(ProviderRouter router, ChatMemory memory, SystemTools systemTools, NoteTools noteTools,
                         DesktopTools desktopTools, TaskTools taskTools, McpTools mcpTools, MailTools mailTools,
-                        MemoryTools memoryTools) {
+                        MemoryTools memoryTools, RoutineTools routineTools) {
         this.router = router;
         this.memory = memory;
         // Sending email is Jarvis', behind approval; reading it is the organizer's
         this.tools = mailTools.enabled()
-                ? new Object[] {systemTools, noteTools, desktopTools, taskTools, memoryTools, mailTools.sender()}
-                : new Object[] {systemTools, noteTools, desktopTools, taskTools, memoryTools};
+                ? new Object[] {systemTools, noteTools, desktopTools, taskTools, memoryTools, routineTools, mailTools.sender()}
+                : new Object[] {systemTools, noteTools, desktopTools, taskTools, memoryTools, routineTools};
         this.mcpWriteTools = mcpTools.writeTools();
     }
 

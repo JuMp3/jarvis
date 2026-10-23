@@ -4,7 +4,6 @@ import org.springframework.ai.chat.model.ToolContext;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.ai.tool.definition.ToolDefinition;
 
-import dev.jarvis.agent.AgentService;
 import dev.jarvis.agent.ApprovalService;
 
 /**
@@ -37,13 +36,10 @@ final class ApprovalToolCallback implements ToolCallback {
 
     @Override
     public String call(String toolInput, ToolContext toolContext) {
-        String sessionId = toolContext == null ? null : (String) toolContext.getContext().get(AgentService.SESSION_ID_KEY);
-        String conversationId = toolContext == null ? null
-                : (String) toolContext.getContext().get(AgentService.CONVERSATION_ID_KEY);
         String arguments = toolInput.length() <= ARGUMENTS_PREVIEW ? toolInput
                 : toolInput.substring(0, ARGUMENTS_PREVIEW) + "…";
         String description = serverLabel + ": " + getToolDefinition().name() + "\n\n" + arguments;
-        if (!approvals.requestApproval(conversationId, sessionId, description)) {
+        if (!approvals.requestApproval(toolContext, description)) {
             return "L'utente non ha approvato. Nessuna modifica fatta.";
         }
         return delegate.call(toolInput, toolContext);

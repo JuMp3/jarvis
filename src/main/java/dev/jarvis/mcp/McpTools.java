@@ -95,6 +95,11 @@ public class McpTools {
         return readTools.getOrDefault(server, List.of());
     }
 
+    /** The read tools of every server connected so far, for the routines. */
+    public List<ToolCallback> allReadTools() {
+        return readTools.values().stream().flatMap(List::stream).toList();
+    }
+
     /** Tools that change something, for Jarvis only, each behind an approval. */
     public List<ToolCallback> writeTools() {
         return writeTools;

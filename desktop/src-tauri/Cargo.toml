@@ -11,6 +11,8 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-single-instance = "2"
 tauri-plugin-autostart = "2"
+# System notifications for the routines, sent by the page (capabilities/page.json)
+tauri-plugin-notification = "2"
 getrandom = "0.3"
 dunce = "1"
 

@@ -184,6 +184,11 @@ public final class Protocol {
         return new Transcript("transcript", text);
     }
 
+    /** The phrase so far, while the user is still speaking; "transcript" follows with the whole of it. */
+    public static Transcript transcriptPartial(String text) {
+        return new Transcript("transcript-partial", text);
+    }
+
     public static Token token(String text) {
         return new Token("token", text);
     }

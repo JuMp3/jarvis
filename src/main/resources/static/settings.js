@@ -7,6 +7,7 @@
 import { t, language, setLanguage } from './i18n.js';
 
 const MAIL = 'JARVIS_MAIL';
+const DAYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
 const LANGUAGE = 'jarvis.language';
 const IMAP_ONLY = new Set(['jarvis.mail.address', 'MAIL_PASSWORD', 'jarvis.mail.imap-server', 'jarvis.mail.smtp-server']);
 const MICROSOFT = new Set(['outlook', 'microsoft365']);
@@ -175,6 +176,60 @@ export function createSettings({ send }) {
         fields.set(setting.name, {
           read: () => [...rows.children].map((row) => Object.fromEntries(
             [...row.querySelectorAll('input')].map((input) => [input.dataset.key, input.value.trim()]))),
+        });
+        break;
+      }
+      case 'routines': {
+        // One block per routine: name, time, days, instructions, on/off; an empty one is ignored when saving
+        label.removeAttribute('for');
+        const list = node('div', 'routines');
+        const addRoutine = (routine = { days: DAYS, enabled: true }) => {
+          const box = node('fieldset', 'routine');
+          box.dataset.id = routine.id ?? '';
+          const name = Object.assign(node('input'), { type: 'text', value: routine.name ?? '', placeholder: t('settings.routines.namePlaceholder') });
+          name.dataset.key = 'name';
+          name.setAttribute('aria-label', t('settings.routines.name'));
+          const time = Object.assign(node('input'), { type: 'time', value: routine.time ?? '08:00' });
+          time.dataset.key = 'time';
+          time.setAttribute('aria-label', t('settings.routines.time'));
+          const enabled = Object.assign(node('input'), { type: 'checkbox', checked: routine.enabled !== false });
+          enabled.dataset.key = 'enabled';
+          const on = node('label', 'routine-on');
+          on.append(enabled, node('span', null, t('settings.routines.enabled')));
+          const head = node('div', 'routine-head');
+          head.append(name, time, on);
+          const days = node('div', 'routine-days');
+          days.setAttribute('role', 'group');
+          days.setAttribute('aria-label', t('settings.routines.days'));
+          for (const day of DAYS) {
+            const option = node('label', 'routine-day');
+            const check = Object.assign(node('input'), { type: 'checkbox', value: day, checked: (routine.days ?? []).includes(day) });
+            option.append(check, node('span', null, t(`days.${day}`)));
+            days.append(option);
+          }
+          const instructions = Object.assign(node('textarea'), { rows: 3, value: routine.instructions ?? '', placeholder: t('settings.routines.instructionsPlaceholder') });
+          instructions.dataset.key = 'instructions';
+          instructions.setAttribute('aria-label', t('settings.routines.instructions'));
+          const remove = node('button', 'secondary small', t('settings.apps.remove'));
+          remove.type = 'button';
+          remove.addEventListener('click', () => box.remove());
+          box.append(head, days, instructions, remove);
+          list.append(box);
+        };
+        (shown(setting) ?? []).forEach(addRoutine);
+        const add = node('button', 'secondary small', t('settings.routines.add'));
+        add.type = 'button';
+        add.addEventListener('click', () => addRoutine());
+        wrapper.append(help, list, add);
+        fields.set(setting.name, {
+          read: () => [...list.children].map((box) => ({
+            id: box.dataset.id,
+            name: box.querySelector('[data-key="name"]').value.trim(),
+            time: box.querySelector('[data-key="time"]').value,
+            days: [...box.querySelectorAll('.routine-day input:checked')].map((input) => input.value),
+            instructions: box.querySelector('[data-key="instructions"]').value.trim(),
+            enabled: box.querySelector('[data-key="enabled"]').checked,
+          })),
         });
         break;
       }

@@ -19,6 +19,7 @@ import org.springframework.stereotype.Component;
 
 import dev.jarvis.agent.tools.DocumentTools;
 import dev.jarvis.agent.tools.MailTools;
+import dev.jarvis.agent.tools.NoteTools;
 import dev.jarvis.agent.tools.SystemTools;
 import dev.jarvis.config.JarvisProperties;
 import dev.jarvis.config.JarvisProperties.Specialist;
@@ -47,10 +48,12 @@ public class Specialists {
 
     private final Map<String, SpecialistRunner> runners;
     private final Map<String, Duration> timeouts;
+    /** The specialists that run the routines: Jarvis does not delegate to them. */
+    private final Set<String> routines = new java.util.HashSet<>();
 
     public Specialists(JarvisProperties properties, ProviderRouter router, SystemTools systemTools,
-                       DocumentTools documentTools, McpTools mcpTools, MailTools mailTools, Environment environment,
-                       JsonMapper json) {
+                       DocumentTools documentTools, McpTools mcpTools, MailTools mailTools, NoteTools noteTools,
+                       Environment environment, JsonMapper json) {
         Map<String, Specialist> specs = properties.agents() == null ? Map.of() : properties.agents();
         Map<String, SpecialistRunner> built = new LinkedHashMap<>();
         Map<String, Duration> limits = new LinkedHashMap<>();
@@ -62,8 +65,11 @@ public class Specialists {
             }
             built.put(id, "claude-code".equals(spec.type())
                     ? new ClaudeCodeSpecialist(id, spec, claudeCodeEnvironment(environment), json, properties.language())
-                    : new ChatSpecialist(id, spec, router, systemTools, documentTools, mcpTools, mailTools,
+                    : new ChatSpecialist(id, spec, router, systemTools, documentTools, mcpTools, mailTools, noteTools,
                             properties.language()));
+            if (Boolean.TRUE.equals(spec.routine())) {
+                routines.add(id);
+            }
             if (spec.timeout() != null) {
                 limits.put(id, spec.timeout());
             }
@@ -76,13 +82,24 @@ public class Specialists {
         return agent != null && runners.containsKey(agent);
     }
 
+    /** The specialists Jarvis may delegate to. */
     public Set<String> ids() {
-        return runners.keySet();
+        Set<String> ids = new java.util.LinkedHashSet<>(runners.keySet());
+        ids.removeAll(routines);
+        return ids;
     }
 
-    /** @throws IllegalArgumentException if the specialist does not exist or the workspace is not allowed */
-    void validate(String agent, String workspace) {
-        if (!exists(agent)) {
+    /** The specialist that runs the routines, if configured and on. */
+    public Optional<String> routineRunner() {
+        return routines.stream().filter(runners::containsKey).findFirst();
+    }
+
+    /**
+     * @param routine the task is a routine: only the routine specialist may run it, and only it
+     * @throws IllegalArgumentException if the specialist does not exist or the workspace is not allowed
+     */
+    void validate(String agent, String workspace, boolean routine) {
+        if (!exists(agent) || routines.contains(agent) != routine) {
             throw new IllegalArgumentException("Specialista sconosciuto: " + agent + ". Disponibili: " + ids());
         }
         runners.get(agent).validate(workspace);

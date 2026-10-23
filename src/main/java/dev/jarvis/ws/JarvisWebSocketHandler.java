@@ -134,6 +134,12 @@ public class JarvisWebSocketHandler extends AbstractWebSocketHandler implements 
             }
             case "set-provider" -> state.provider(router.resolve(msg.provider()));
             case "voice-mode" -> state.wakeWordRequired(Boolean.TRUE.equals(msg.wake()));
+            // A phrase sent in pieces (binary frames in between): the user may be interrupting Jarvis
+            case "speech-start" -> {
+                state.cancelCurrentTurn();
+                state.utterance(new Utterance(workers));
+            }
+            case "speech-end" -> endUtterance(state);
             case "cancel" -> {
                 state.cancelCurrentTurn();
                 sessions.send(state.id(), Protocol.state("idle"));
@@ -214,32 +220,73 @@ public class JarvisWebSocketHandler extends AbstractWebSocketHandler implements 
             return;
         }
         byte[] audio = toBytes(message.getPayload());
+        String mimeType = AudioFormats.detectMime(audio);
+        Utterance utterance = state.utterance();
+        if (utterance != null) {
+            // A piece of a phrase still being spoken: transcribed now, the phrase goes on at speech-end
+            long startedAt = System.nanoTime();
+            utterance.add(before -> {
+                String text = Utterance.join(before, stt.transcribe(audio, mimeType, before));
+                log.debug("Piece transcribed in {} ms", (System.nanoTime() - startedAt) / 1_000_000);
+                if (state.utterance() == utterance) {
+                    sessions.send(state.id(), Protocol.transcriptPartial(text));
+                }
+                return text;
+            });
+            return;
+        }
         workers.submit(() -> {
             state.cancelCurrentTurn();
             sessions.send(state.id(), Protocol.state("thinking"));
             try {
-                String text = stt.transcribe(audio, AudioFormats.detectMime(audio));
-                if (state.wakeWordRequired() && !text.isBlank()) {
-                    var request = WakeWord.strip(text, voice.wakeWord());
-                    if (request.isEmpty()) {
-                        sessions.send(state.id(), Protocol.transcriptIgnored(text));
-                        sessions.send(state.id(), Protocol.done());
-                        return;
-                    }
-                    text = request.get().isBlank() ? text : request.get(); // "Jarvis?" alone: let it answer
-                }
-                sessions.send(state.id(), Protocol.transcript(text));
-                if (text.isBlank()) {
-                    sessions.send(state.id(), Protocol.done());
-                    return;
-                }
-                turns.start(state, text, true);
+                heard(state, stt.transcribe(audio, mimeType));
             } catch (RuntimeException e) {
-                log.warn("Transcription failed for session {}", state.id(), e);
-                sessions.send(state.id(), Protocol.error(ErrorMessages.forVoice(voice.language(), e)));
-                sessions.send(state.id(), Protocol.done());
+                transcriptionFailed(state, e);
             }
         });
+    }
+
+    /** The phrase is over: what is left is the last piece, then the turn starts with the whole of it. */
+    private void endUtterance(SessionState state) {
+        Utterance utterance = state.utterance();
+        if (utterance == null) {
+            return;
+        }
+        state.utterance(null);
+        sessions.send(state.id(), Protocol.state("thinking"));
+        utterance.text().whenCompleteAsync((text, error) -> {
+            if (error != null) {
+                transcriptionFailed(state, error);
+            } else {
+                heard(state, text);
+            }
+        }, workers);
+    }
+
+    /** What the user said: to the model, unless hands-free requires the wake word and it is not there. */
+    private void heard(SessionState state, String transcript) {
+        String text = transcript;
+        if (state.wakeWordRequired() && !text.isBlank()) {
+            var request = WakeWord.strip(text, voice.wakeWord());
+            if (request.isEmpty()) {
+                sessions.send(state.id(), Protocol.transcriptIgnored(text));
+                sessions.send(state.id(), Protocol.done());
+                return;
+            }
+            text = request.get().isBlank() ? text : request.get(); // "Jarvis?" alone: let it answer
+        }
+        sessions.send(state.id(), Protocol.transcript(text));
+        if (text.isBlank()) {
+            sessions.send(state.id(), Protocol.done());
+            return;
+        }
+        turns.start(state, text, true);
+    }
+
+    private void transcriptionFailed(SessionState state, Throwable error) {
+        log.warn("Transcription failed for session {}", state.id(), error);
+        sessions.send(state.id(), Protocol.error(ErrorMessages.forVoice(voice.language(), error)));
+        sessions.send(state.id(), Protocol.done());
     }
 
     @Override

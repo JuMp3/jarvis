@@ -21,6 +21,7 @@ Trascrizione e sintesi si scelgono in Impostazioni → Voce, indipendentemente:
 | Valore | Motore | Note |
 |---|---|---|
 | `local` (default) | Sul tuo PC: whisper.cpp (Whisper `small` o `base`) + Piper (voce Paola in italiano, Lessac in inglese), avviati da Jarvis | Gratis e privato, niente Docker. Binari e modelli: `desktop/prepare-voice.ps1`, poi `JARVIS_VOICE_HOME` (in `.env`) verso `desktop/src-tauri/resources/voice` |
+| `groq` (solo trascrizione) | Whisper large di Groq, nel cloud | Molto preciso e veloce, piano gratuito; serve la chiave di Groq (Impostazioni → Voce) |
 | `openai` | API audio OpenAI | Qualità migliore, serve la chiave OpenAI (Impostazioni → Modelli) con credito |
 | `browser` | Web Speech API | Gratis, ma il riconoscimento manda l'audio a Google/Microsoft, non funziona nell'app desktop e l'orb non segue la voce reale |
 | `off` | — | Solo testo |
@@ -74,7 +75,7 @@ Su Linux servono anche le librerie di sviluppo di Tauri (Debian/Ubuntu: `libwebk
 
 - Italiano e inglese (Impostazioni → Profilo): interfaccia, voce, date e risposte nella lingua scelta.
 - Chat in streaming con più provider, selezionabili dall'interfaccia, con memoria condivisa salvata su PostgreSQL (sopravvive ai riavvii).
-- Push-to-talk: trascrizione, risposta e sintesi vocale frase per frase.
+- Push-to-talk: trascrizione mentre parli (a pezzi, alle pause), risposta e sintesi vocale frase per frase.
 - Mani libere: Jarvis capisce da solo quando inizi e finisci di parlare, e si interrompe se parli mentre risponde. Con "Solo se dico «Jarvis»" ascolta solo le frasi rivolte a lui. Con le casse funziona meglio a volume moderato; con le cuffie sempre.
 - Interruzione: premi il microfono mentre Jarvis parla e si ferma.
 - Ciclo agente con tool d'esempio; le azioni che modificano qualcosa chiedono la tua approvazione.
@@ -83,6 +84,7 @@ Su Linux servono anche le librerie di sviluppo di Tauri (Debian/Ubuntu: `libwebk
 - Documenti: uno specialista legge, cerca (anche per significato) e riassume i file (testo, PDF, Word) delle cartelle che indichi nelle Impostazioni.
 - GitHub e altri servizi via MCP: GitHub con il token nelle Impostazioni, gli altri in configurazione; la lettura la fanno gli specialisti, ogni azione (issue, PR, email) la fa Jarvis dopo la tua conferma.
 - Desktop: Jarvis apre link, cartelle e i programmi del catalogo, sempre dopo la tua conferma.
+- Routine: Jarvis fa da solo, nei giorni e all'ora che scegli, lavori come un briefing del mattino (meteo, posta, calendario); le crei a voce o nelle Impostazioni, il risultato arriva nella conversazione con una notifica, e ogni azione che scrive aspetta la tua conferma.
 - Squadra di agenti: Jarvis affida ricerche e testi lunghi a specialisti che lavorano in parallelo in background; li vedi orbitare intorno alla lampada e nel pannello Squadra, e Jarvis ti riferisce i risultati.
 - Memoria a lungo termine: Jarvis ritrova ciò che vi siete detti e i risultati della Squadra, anche delle conversazioni cancellate dallo schermo (cancellare nasconde, non elimina). Gli embedding si calcolano sul tuo PC.
 - Risposte scritte in Markdown, con schede (per esempio il meteo).

@@ -2,9 +2,12 @@ package dev.jarvis.task;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.function.Predicate;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import org.springframework.ai.anthropic.AnthropicChatOptions;
 import org.springframework.ai.anthropic.AnthropicWebSearchTool;
@@ -15,8 +18,10 @@ import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.prompt.ChatOptions;
 import org.springframework.ai.tool.ToolCallback;
 
+import dev.jarvis.agent.ApprovalService;
 import dev.jarvis.agent.tools.DocumentTools;
 import dev.jarvis.agent.tools.MailTools;
+import dev.jarvis.agent.tools.NoteTools;
 import dev.jarvis.agent.tools.SystemTools;
 import dev.jarvis.config.JarvisProperties.Specialist;
 import dev.jarvis.i18n.Text;
@@ -24,11 +29,17 @@ import dev.jarvis.llm.ProviderId;
 import dev.jarvis.llm.ProviderRouter;
 import dev.jarvis.mcp.McpTools;
 
-/** A specialist that is one model call with its own system prompt and read-only tools (researcher, writer). */
+/**
+ * A specialist that is one model call with its own system prompt and read-only tools (researcher, writer). The one
+ * that runs the routines (routine: true) may also get every MCP read tool and the write tools, each behind the
+ * user's approval, asked like any task's.
+ */
 final class ChatSpecialist implements SpecialistRunner {
 
     /** Tool groups a chat specialist may use. None of them writes, sends or deletes. */
     static final Set<String> TOOL_GROUPS = Set.of("time", "web-search", "documents", "mail");
+    /** Only for the routines: the read tools of every MCP server, and the tools that write (approval each time). */
+    static final Set<String> ROUTINE_GROUPS = Set.of("mcp:*", "write");
     private static final int DEFAULT_MAX_SEARCHES = 5;
     private static final String MCP = "mcp:";
 
@@ -37,19 +48,27 @@ final class ChatSpecialist implements SpecialistRunner {
     private final Object[] tools;
     private final List<String> mcpServers;
     private final McpTools mcpTools;
+    private final boolean allMcp;
+    private final boolean writes;
 
     ChatSpecialist(String id, Specialist spec, ProviderRouter router, SystemTools systemTools,
-                   DocumentTools documentTools, McpTools mcpTools, MailTools mailTools, String language) {
+                   DocumentTools documentTools, McpTools mcpTools, MailTools mailTools, NoteTools noteTools,
+                   String language) {
         String property = "jarvis.agents." + id;
         List<String> toolGroups = spec.tools() == null ? List.of() : spec.tools();
+        boolean routine = Boolean.TRUE.equals(spec.routine());
         List<String> unknown = toolGroups.stream()
-                .filter(tool -> !TOOL_GROUPS.contains(tool))
-                .filter(tool -> !(tool.startsWith(MCP) && mcpTools.configured(tool.substring(MCP.length()))))
+                .filter(tool -> !TOOL_GROUPS.contains(tool) && !(routine && ROUTINE_GROUPS.contains(tool)))
+                .filter(tool -> tool.equals("mcp:*")
+                        || !(tool.startsWith(MCP) && mcpTools.configured(tool.substring(MCP.length()))))
                 .toList();
         if (!unknown.isEmpty()) {
             throw new IllegalStateException(property + ".tools: unknown " + unknown + ", allowed " + TOOL_GROUPS
-                    + " and mcp:<server> for the servers in jarvis.mcp.servers");
+                    + " and mcp:<server> for the servers in jarvis.mcp.servers"
+                    + (routine ? ", plus " + ROUTINE_GROUPS : ""));
         }
+        this.allMcp = toolGroups.contains("mcp:*");
+        this.writes = toolGroups.contains("write");
         this.provider = ProviderId.parse(spec.provider())
                 .orElseThrow(() -> new IllegalStateException(property + ".provider: unknown " + spec.provider()));
         ChatModel model = router.chatModel(provider).orElseThrow(() -> new IllegalStateException(
@@ -83,11 +102,17 @@ final class ChatSpecialist implements SpecialistRunner {
         if (toolGroups.contains("documents")) {
             granted.add(documentTools);
         }
-        if (toolGroups.contains("mail")) {
+        if (toolGroups.contains("mail") && mailTools.enabled()) {
             granted.add(mailTools.reader()); // reading only: sending is Jarvis', after approval
         }
+        if (writes) {
+            granted.add(noteTools);
+            if (mailTools.enabled()) {
+                granted.add(mailTools.sender());
+            }
+        }
         this.tools = granted.toArray();
-        this.mcpServers = toolGroups.stream().filter(tool -> tool.startsWith(MCP))
+        this.mcpServers = toolGroups.stream().filter(tool -> tool.startsWith(MCP) && !tool.equals("mcp:*"))
                 .map(tool -> tool.substring(MCP.length())).toList();
         this.mcpTools = mcpTools;
     }
@@ -102,10 +127,18 @@ final class ChatSpecialist implements SpecialistRunner {
         if (tools.length > 0) {
             request.tools(tools);
         }
-        // Read-only tools of MCP servers, looked up now: a server that was slow at startup may be ready since
-        List<ToolCallback> mcpCallbacks = mcpServers.stream().flatMap(server -> mcpTools.readTools(server).stream()).toList();
+        // MCP tools looked up now: a server that was slow at startup may be ready since
+        List<ToolCallback> mcpCallbacks = Stream.concat(
+                allMcp ? mcpTools.allReadTools().stream()
+                        : mcpServers.stream().flatMap(server -> mcpTools.readTools(server).stream()),
+                writes ? mcpTools.writeTools().stream() : Stream.<ToolCallback>empty()).toList();
         if (!mcpCallbacks.isEmpty()) {
             request.toolCallbacks(mcpCallbacks);
+        }
+        if (writes) {
+            // Every write asks the user as this task does: the request waits for them, also across reconnections
+            Predicate<String> approver = context::requestApproval;
+            request.toolContext(Map.of(ApprovalService.APPROVER_KEY, approver));
         }
         ChatResponse response = request.call().chatResponse();
         if (response == null) {

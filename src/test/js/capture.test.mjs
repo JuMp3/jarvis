@@ -31,6 +31,21 @@ test('a new recording does not carry the previous one', () => {
   assert.equal(wav.getInt16(44, true), 0);
 });
 
+test('a cut sends what was said so far and the recording goes on from there', () => {
+  const capture = new SpeechCapture(48000, 0);
+  capture.start();
+  capture.push(chunk(0.5));
+  capture.push(chunk(0.5));
+  assert.equal(capture.pendingMs(), 200);
+  const first = new DataView(capture.cut());
+  assert.equal(first.getUint32(40, true) / 2, 3200, 'the first 200 ms');
+  assert.equal(capture.pendingMs(), 0);
+  capture.push(chunk(0.25));
+  const rest = new DataView(capture.stop());
+  assert.equal(rest.getUint32(40, true) / 2, 1600, 'only what came after the cut');
+  assert.equal(rest.getInt16(44, true), Math.trunc(0.25 * 0x7fff));
+});
+
 test('WAV header for 16 kHz mono 16-bit, also from 44.1 kHz', () => {
   const wav = new DataView(encodeWav([new Float32Array(44100).fill(-1)], 44100));
   const text = (at) => String.fromCharCode(...[0, 1, 2, 3].map((i) => wav.getUint8(at + i)));

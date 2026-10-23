@@ -198,6 +198,12 @@ select {
   border: 1px solid var(--line);
 }
 
+/* What the user is saying, transcribed while they still speak */
+.turn-user.partial {
+  opacity: 0.7;
+  border-style: dashed;
+}
+
 .turn-jarvis {
   font: 400 var(--step-1) / 1.6 var(--read);
   white-space: pre-wrap;
@@ -1256,5 +1262,55 @@ select:disabled {
 }
 
 .kind-apps > .small {
+  margin-top: 0.6rem;
+}
+
+/* Settings: routines --------------------------------------------------------------------- */
+
+.routine {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0.6rem 0 0;
+  padding: 0.7rem;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+.routine-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.routine input[type="text"],
+.routine input[type="time"],
+.routine textarea {
+  width: 100%;
+  min-width: 0;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--ink);
+  color: inherit;
+  font: inherit;
+}
+
+.routine-days {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem 0.8rem;
+}
+
+.routine-day,
+.routine-on {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.routine > .small,
+.kind-routines > .small {
+  justify-self: start;
   margin-top: 0.6rem;
 }

@@ -83,7 +83,23 @@ public class TaskService implements DisposableBean {
      */
     public AgentTask start(String conversationId, String agent, String title, String instructions,
                            String expectedOutput, String workspace) {
-        specialists.validate(agent, workspace);
+        return start(conversationId, agent, title, instructions, expectedOutput, workspace, false);
+    }
+
+    /**
+     * Runs a routine as a task of the routine specialist: in the Squadra panel like any task, its result reported by
+     * Jarvis, its approvals waiting for the user.
+     *
+     * @return empty if no routine specialist is configured
+     */
+    public Optional<AgentTask> startRoutine(String conversationId, String name, String instructions) {
+        return specialists.routineRunner()
+                .map(agent -> start(conversationId, agent, name, instructions, null, null, true));
+    }
+
+    private AgentTask start(String conversationId, String agent, String title, String instructions,
+                            String expectedOutput, String workspace, boolean routine) {
+        specialists.validate(agent, workspace, routine);
         AgentTask task = AgentTask.queued(UUID.randomUUID().toString(), conversationId, agent, title,
                 instructions, expectedOutput, workspace == null || workspace.isBlank() ? null : workspace.strip());
         active.put(task.id(), task);

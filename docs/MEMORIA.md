@@ -28,6 +28,18 @@ Da verificare con l'utente: mani libere con il microfono vero (taratura VAD), po
 - **Embedding della memoria:** `multilingual-e5-small` (ONNX) dentro il backend con ONNX Runtime (`OnnxEmbeddings`), niente OpenAI né Ollama. Scartato Spring AI Transformers: si portava dietro il motore PyTorch di DJL, che scarica circa 260 MB al primo uso.
 - Fatti tutti i passi: shell Tauri, Postgres, voce nativa, installer, memoria (documenti inclusi), Node portabile.
 
+## Decisioni della Fase 6 (routine, 23/10/2026)
+
+- Create a voce (Jarvis chiede conferma) e gestite nella scheda Routine delle Impostazioni.
+- Il risultato arriva nella conversazione (Jarvis lo riferisce come un task) e con una notifica di sistema.
+- Una routine saltata perché Jarvis era spento parte alla prima accensione dello stesso giorno, non dei giorni dopo.
+- Possono anche scrivere (email, eventi, note), sempre con l'approvazione, che aspetta finché l'utente apre Jarvis: è l'unica eccezione, voluta dall'utente, alla regola "chi legge contenuti non fidati non scrive".
+
+## Voce: preferenze dell'utente
+
+- Groq per la trascrizione gli piace molto ("comprende benissimo"); la trascrizione locale resta come scelta.
+- La voce (sintesi) va migliorata: Groq non ha voci italiane; proposte ElevenLabs o Azure.
+
 ## Il PC e la rete (cosa replicare sul PC nuovo)
 
 Sul vecchio PC (portatile aziendale, Windows 11):

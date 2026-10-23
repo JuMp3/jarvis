@@ -59,7 +59,12 @@ final class PiperTts implements TextToSpeech, AutoCloseable {
                 throw new IOException("Piper ended (see ~/.jarvis/logs/piper.log)");
             }
             byte[] audio = Files.readAllBytes(file);
-            Files.deleteIfExists(file);
+            try {
+                Files.deleteIfExists(file);
+            } catch (IOException stillOpen) {
+                // Windows: Piper or an antivirus may still hold it; the audio is read, the file goes when Jarvis exits
+                file.toFile().deleteOnExit();
+            }
             return new SpeechAudio(audio, "audio/wav");
         } catch (IOException e) {
             close();

@@ -64,7 +64,8 @@ final class LocalVoice implements AutoCloseable {
     /** Speech-to-text through the whisper.cpp server, started now in the background. */
     SpeechToText speechToText(HttpClient http, OpenAiAudioClient.Settings settings) {
         Thread.ofVirtual().name("whisper-start").start(() -> startWhisper(http, settings));
-        return (audio, mimeType) -> ready(whisper, text("La trascrizione", "Transcription")).transcribe(audio, mimeType);
+        return (audio, mimeType, context) -> ready(whisper, text("La trascrizione", "Transcription"))
+                .transcribe(audio, mimeType, context);
     }
 
     /** Text-to-speech with Piper, started now in the background. */

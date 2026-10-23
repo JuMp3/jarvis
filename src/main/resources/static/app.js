@@ -309,6 +309,7 @@ async function startRecording() {
     }
     audio.startedAt = performance.now();
     audio.capture.start();
+    startPieces();
     setState('listening');
   } catch (e) {
     ui.recording = false;
@@ -367,9 +368,50 @@ function stopRecording() {
     audio.recognition.stop(); // the final result arrives before onend
     return;
   }
-  if (audio.capture?.recording) {
-    sendAudio(audio.capture.stop());
+  if (audio.capture?.recording) finishPieces();
+}
+
+// ---- a phrase in pieces: at each short pause what was said so far goes to the server, which transcribes it while
+// the user goes on; at the end only the last piece is left (Utterance on the server)
+
+const PIECE_PAUSE_MS = 300;
+const MIN_PIECE_MS = 1500; // shorter pieces give Whisper too little to understand
+const pieces = { timer: null, detector: null, sent: 0, speech: false };
+
+function startPieces() {
+  pieces.sent = 0;
+  pieces.speech = false;
+  pieces.detector = new VoiceDetector({ startMs: 100, endMs: PIECE_PAUSE_MS });
+  pieces.timer = setInterval(() => {
+    const event = pieces.detector.update(levelOf(audio.micAnalyser), performance.now());
+    if (event === 'start') pieces.speech = true;
+    if (event === 'end' && audio.capture.pendingMs() >= MIN_PIECE_MS) {
+      sendPiece(audio.capture.cut());
+      pieces.speech = false;
+    }
+  }, 30);
+}
+
+function sendPiece(buffer) {
+  if (pieces.sent === 0) send({ type: 'speech-start' });
+  socket.send(buffer);
+  pieces.sent += 1;
+}
+
+/** The last piece and the end of the phrase; a phrase never cut goes as one recording, as before. */
+function finishPieces() {
+  clearInterval(pieces.timer);
+  pieces.timer = null;
+  const rest = audio.capture.stop();
+  if (pieces.sent === 0) {
+    sendAudio(rest);
+    return;
   }
+  // Cut at a pause, the rest may be silence only: Whisper would make up words from it
+  if (pieces.speech) socket.send(rest);
+  send({ type: 'speech-end' });
+  ui.spokenTurn = ui.tts !== 'off';
+  setState('thinking');
 }
 
 function sendAudio(buffer) {
@@ -388,6 +430,7 @@ function sendAudio(buffer) {
 
 let streamingItem = null;
 let streamingText = '';
+let partialItem = null; // the phrase being transcribed while the user speaks
 let renderPending = false;
 
 function addItem(className, text) {
@@ -729,6 +772,7 @@ function updateTask(task) {
   team.tasks.set(task.id, task);
   if (previous?.status !== task.status) {
     announce(task);
+    if (task.agent === 'routine') routineNotification(task);
     if (task.status === 'completed' || task.status === 'failed') {
       // The satellite flashes and fades out instead of vanishing
       team.landing.add(task.id);
@@ -736,6 +780,23 @@ function updateTask(task) {
     }
   }
   renderTeam();
+}
+
+/**
+ * A routine ran while Jarvis was not in front of the user (window in the tray, another tab): a system notification.
+ * The desktop app has its own (Tauri), the browser asks for permission the first time a routine starts.
+ */
+function routineNotification(task) {
+  if (task.status === 'queued' && 'Notification' in window && Notification.permission === 'default'
+    && !window.__TAURI__) {
+    Notification.requestPermission();
+  }
+  if (!['completed', 'failed'].includes(task.status) || (!document.hidden && document.hasFocus())) return;
+  const title = t('routine.notification', { title: task.title });
+  const body = (task.result ?? task.error ?? '').replace(/[#*_`>|]/g, '').replace(/\s+/g, ' ').trim().slice(0, 180);
+  const desktop = window.__TAURI__?.notification;
+  if (desktop) desktop.sendNotification({ title, body });
+  else if ('Notification' in window && Notification.permission === 'granted') new Notification(title, { body });
 }
 
 function setTeamOpen(open) {
@@ -883,10 +944,17 @@ function handle(msg) {
       if (msg.state === 'thinking') audio.turnDone = false;
       if (msg.state === 'thinking' || ui.state !== 'speaking') setState(msg.state);
       break;
+    case 'transcript-partial':
+      partialItem ??= addItem('turn-user partial', '');
+      partialItem.textContent = msg.text;
+      el.conversation.scrollTop = el.conversation.scrollHeight;
+      break;
     case 'transcript-ignored':
+      dropPartial();
       ignored(msg.text);
       break;
     case 'transcript':
+      dropPartial();
       if (msg.text) addItem('turn-user', msg.text);
       else note(t('voice.nothingHeard'));
       break;
@@ -911,11 +979,18 @@ function handle(msg) {
       break;
     case 'error':
       finishStreaming();
+      dropPartial();
       note(msg.message, true);
       break;
     default:
       console.warn('Unknown message', msg);
   }
+}
+
+/** The final transcript replaces the partial one (it may differ: the wake word is taken out). */
+function dropPartial() {
+  partialItem?.remove();
+  partialItem = null;
 }
 
 function fillProviders(providers, selected) {

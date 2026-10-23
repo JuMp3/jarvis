@@ -66,6 +66,15 @@ class OpenAiAudioClientTest {
     }
 
     @Test
+    void thePromptNamesTheWakeWordThenTheEndOfWhatWasSaid() {
+        assertEquals("Jarvis", OpenAiAudioClient.prompt("Jarvis", ""));
+        assertEquals("Jarvis che tempo fa", OpenAiAudioClient.prompt("Jarvis", " che tempo fa "));
+        String prompt = OpenAiAudioClient.prompt("Jarvis", "parola ".repeat(100) + "fine");
+        assertTrue(prompt.length() <= "Jarvis ".length() + 400, prompt);
+        assertTrue(prompt.startsWith("Jarvis parola") && prompt.endsWith("fine"), prompt);
+    }
+
+    @Test
     void synthesizeSendsJsonAndReturnsAudio() throws Exception {
         AtomicReference<Captured> captured = new AtomicReference<>();
         byte[] mp3 = {(byte) 0xFF, (byte) 0xFB, 0x10};

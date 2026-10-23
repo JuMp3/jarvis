@@ -61,7 +61,7 @@ class TaskServiceTest extends BaseTest {
     @BeforeEach
     void setUp() {
         doThrow(new IllegalArgumentException("Specialista sconosciuto: hacker"))
-                .when(specialists).validate(eq("hacker"), any());
+                .when(specialists).validate(eq("hacker"), any(), eq(false));
         doReturn(ProviderId.ANTHROPIC).when(specialists).provider(anyString());
         conversation = "conv-" + UUID.randomUUID();
     }

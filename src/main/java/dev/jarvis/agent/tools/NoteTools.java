@@ -10,7 +10,6 @@ import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.ai.tool.annotation.ToolParam;
 import org.springframework.stereotype.Component;
 
-import dev.jarvis.agent.AgentService;
 import dev.jarvis.agent.ApprovalService;
 import dev.jarvis.config.JarvisProperties;
 
@@ -38,13 +37,11 @@ public class NoteTools {
     public String saveNote(@ToolParam(description = "Titolo breve della nota") String title,
                            @ToolParam(description = "Contenuto della nota in markdown") String content,
                            ToolContext toolContext) {
-        String sessionId = (String) toolContext.getContext().get(AgentService.SESSION_ID_KEY);
-        String conversationId = (String) toolContext.getContext().get(AgentService.CONVERSATION_ID_KEY);
         Path target = store.pathFor(title);
         String description = text("Salvare la nota \"%s\":\n%s", "Save the note \"%s\":\n%s")
                 .in(language, target.getFileName(), preview(content));
 
-        if (!approvals.requestApproval(conversationId, sessionId, description)) {
+        if (!approvals.requestApproval(toolContext, description)) {
             return "L'utente non ha approvato. Nessuna nota salvata.";
         }
         store.save(title, content);

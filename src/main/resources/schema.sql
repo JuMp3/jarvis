@@ -94,3 +94,16 @@ CREATE TABLE IF NOT EXISTS setting (
     value      TEXT         NOT NULL,
     updated_at TIMESTAMPTZ  NOT NULL DEFAULT now()
 );
+
+-- Phase 6: routines, run by Jarvis by himself at their time (dev.jarvis.routine). Configuration, not history:
+-- removing one deletes it; what it did stays in agent_task and in the conversation
+CREATE TABLE IF NOT EXISTS routine (
+    id           VARCHAR(36)  PRIMARY KEY,
+    name         VARCHAR(200) NOT NULL,
+    at_time      TIME         NOT NULL,
+    days         VARCHAR(40)  NOT NULL,
+    instructions TEXT         NOT NULL,
+    enabled      BOOLEAN      NOT NULL DEFAULT true,
+    last_run     DATE,
+    created_at   TIMESTAMPTZ  NOT NULL DEFAULT now()
+);

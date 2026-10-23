@@ -41,8 +41,8 @@ Il frontend gestisce tutto ciò che è audio e grafica; il backend coordina tutt
 ## Flusso vocale
 
 1. L'utente tiene premuto il tasto microfono (o la barra spaziatrice): il browser registra i campioni del microfono (`capture.js`, con gli ultimi 600 ms prima dell'inizio) e l'orb va in `listening` seguendo il livello del microfono.
-2. Al rilascio, l'audio (WAV mono a 16 kHz, il formato di Whisper e l'unico che whisper.cpp legge senza ffmpeg) parte come frame **binario** sul WebSocket.
-3. Il backend lo trascrive (`SpeechToText`) e rimanda `transcript`.
+2. **A pezzi, mentre parli:** a ogni pausa breve (0,3 s, dopo almeno 1,5 s di audio) la pagina manda quello che hai detto fin lì come frame **binario** (WAV mono a 16 kHz, il formato di Whisper e l'unico che whisper.cpp legge senza ffmpeg), preceduto una volta da `speech-start`. Il backend trascrive ogni pezzo appena arriva, uno dopo l'altro e con il testo precedente come contesto (`Utterance`, `prompt` di Whisper), e rimanda il testo fin lì (`transcript-partial`), che la pagina mostra in un fumetto tratteggiato.
+3. Al rilascio (o alla fine della frase in mani libere) parte l'ultimo pezzo, se dopo l'ultimo taglio hai ancora parlato (altrimenti Whisper inventerebbe parole dal silenzio), poi `speech-end`: resta da trascrivere solo quello, e il backend rimanda `transcript` con la frase intera. Una frase senza pause utili parte intera come prima, senza `speech-start`.
 4. `AgentService` avvia lo streaming verso il provider selezionato; l'orb va in `thinking`.
 5. Ogni token va al client (`token`) e al `SentenceChunker`.
 6. Ogni frase completa va al TTS, su un esecutore a thread singolo, così l'ordine è garantito; l'audio torna come `audio` con un numero di sequenza.
@@ -60,7 +60,7 @@ Il frontend gestisce tutto ciò che è audio e grafica; il backend coordina tutt
 
 ### Valutazione: trascrizione in streaming e modelli speech-to-speech
 
-- **STT in streaming.** Oggi l'audio parte a frase finita. Trascrivere mentre parli sovrappone i circa 2 s di Whisper alla frase stessa: è il guadagno più grande disponibile senza cambiare modello. whisper.cpp ha un esempio di trascrizione in streaming; servirebbe inviare l'audio a pezzi durante la registrazione (PCM via WebSocket) invece di un file a fine frase. È il prossimo passo consigliato.
+- **STT mentre parli (fatto, a pezzi).** Una trascrizione davvero in streaming (ritrascrivere l'audio che cresce ogni secondo, come l'esempio `stream` di whisper.cpp) su questa CPU non sta al passo: `small` è già più lento del parlato. La frase si trascrive quindi a pezzi, tagliati alle pause brevi (sezione "Flusso vocale"): alla fine resta da trascrivere solo l'ultimo pezzo, e il guadagno cresce con la lunghezza della frase. Il rischio è un taglio a metà parola: la pausa minima e il contesto passato a Whisper lo riducono. Vale per tutti i motori sul server (locale, Groq, OpenAI). Misurato (23/10/2026) con una frase in due pezzi di circa 3 s ciascuno: con Groq ogni pezzo in circa 0,6 s e la frase pronta 0,3 s dopo la fine; con Whisper `small` locale, a PC carico (CPU al 70% per altri programmi), 17 s per pezzo invece dei soliti 5: la trascrizione locale dipende molto dal carico della macchina.
 - **Speech-to-speech realtime** (per esempio la Realtime API di OpenAI). Pro: latenza sotto il secondo, prosodia naturale, interruzioni gestite dal modello. Contro: un solo fornitore e un solo modello per tutto, cioè niente Claude come orchestratore, e la squadra, i tool e le approvazioni andrebbero riportati su un'altra API; l'audio va sempre in cloud; costo al minuto di audio più alto di STT + testo + TTS. Conclusione: la pipeline attuale resta la base; un modello realtime ha senso come "voce veloce" opzionale per le risposte brevi, che passa la mano a Jarvis quando servono strumenti o specialisti. Da rivalutare dopo lo streaming STT.
 
 Latenza percepita ≈ trascrizione + primo token + TTS della prima frase. Le leve principali sono un modello più veloce per la voce, frasi iniziali brevi e, più avanti, STT in streaming.
@@ -74,7 +74,7 @@ Trascrizione (STT):
 | Opzione | Integrazione | Note |
 |---|---|---|
 | OpenAI `gpt-4o-mini-transcribe` · `gpt-4o-transcribe` | **già integrato** (`jarvis.voice.openai.stt-model`) | Il salto più semplice da Whisper `base`; pochi centesimi per ora di parlato. Mai provato dal vivo (account senza credito): primo passo quando c'è credito |
-| Groq, `whisper-large-v3-turbo` | quasi nulla: API compatibile OpenAI, basta cambiare `jarvis.voice.openai.base-url` e modello (oggi non è nelle Impostazioni) | Il Whisper più grande, molto veloce ed economico |
+| Groq, `whisper-large-v3-turbo` | **fatto**: Impostazioni → Voce → «Groq», con la chiave di Groq (`jarvis.voice.groq.*`, stessa API di OpenAI) | Il Whisper più grande, molto veloce ed economico, con un piano gratuito; l'audio va nel cloud. Solo trascrizione: le voci di Groq non parlano italiano |
 | Deepgram, AssemblyAI, ElevenLabs Scribe, Azure Speech | client nuovo per ciascuno | Ottimo italiano e trascrizione in streaming: da valutare insieme allo STT in streaming |
 | Whisper `small` locale (whisper.cpp) | **fatto**, è il predefinito (Impostazioni → Voce → Trascrizione sul tuo PC) | Gratis e privato, molto meno errori di `base`, ma circa 5 s invece di 1 s per una frase di 3 s su questo portatile; con una GPU `large-v3-turbo` (binari CUDA di whisper.cpp) |
 
@@ -98,7 +98,9 @@ Client → server
 | Tipo | Campi | Note |
 |---|---|---|
 | `chat` | `text`, `provider?`, `speak` | Messaggio scritto |
-| *(binario)* | — | Audio registrato; risposta sempre parlata |
+| *(binario)* | — | Audio registrato: un pezzo della frase dopo `speech-start`, altrimenti la frase intera; risposta sempre parlata |
+| `speech-start` | — | Una frase arriva a pezzi (frame binari), trascritti mentre l'utente parla; interrompe il turno in corso |
+| `speech-end` | — | Fine della frase a pezzi: il turno parte con la frase intera |
 | `set-provider` | `provider` | Provider per i turni successivi |
 | `voice-mode` | `wake` | Mani libere con wake word: le frasi registrate non rivolte a Jarvis vengono scartate |
 | `cancel` | — | Interrompe il turno in corso |
@@ -118,6 +120,7 @@ Server → client
 | `history` | `messages` (`role`: `user` · `assistant`, `text`): ultimi scambi della conversazione, inviati dopo `hello`. Il client li mostra solo se il log è vuoto (pagina ricaricata) |
 | `history-cleared` | — | La conversazione è stata cancellata: il client svuota il log |
 | `state` | `state` (`idle` · `thinking` · `speaking`) |
+| `transcript-partial` | `text`: la frase fin qui, mentre l'utente parla; poi arriva `transcript` |
 | `transcript` | `text` |
 | `transcript-ignored` | `text`: frase in mani libere non rivolta a Jarvis, non inviata al modello |
 | `token` | `text` |
@@ -167,6 +170,7 @@ Specialisti configurati:
 |---|---|---|---|
 | `researcher` | Cerca sul web, confronta fonti, restituisce sintesi e link | `time`, `web-search` (ricerca lato Anthropic, `max-searches` come budget) | No |
 | `writer` | Scrive testi completi da istruzioni dettagliate | `time` | No |
+| `routine` | Esegue le routine pianificate (sezione "Routine"); Jarvis non gli delega nulla | `time`, `web-search`, `documents`, `mail`, `mcp:*` (lettura di tutti i server), `write` | Sì, ogni volta dopo l'approvazione |
 | `coder` | Lavora su un repository git locale con Claude Code | file, git locale, build e test consentiti | Solo dopo l'approvazione del piano, su un branch nuovo; il push lo fa Jarvis, se lo autorizzi |
 | `documents` | Legge, cerca (anche per significato, dalla memoria) e riassume documenti (testo, PDF, Word) nelle cartelle consentite | `time`, `documents` | No |
 | `github` | Legge repository, issue, PR, codice e commit tramite il server MCP di GitHub | `time`, `mcp:github` (tool di lettura) | No |
@@ -190,7 +194,7 @@ Isolamento: `--bare` salta hook e plugin dell'utente e si autentica **solo** con
 ### Sicurezza e controllo
 
 - **Permessi per specialista:** ognuno vede solo i propri tool, scelti da un insieme che oggi non contiene nulla che scrive, invia o cancella.
-- **Lettura separata dall'azione:** chi legge contenuti non fidati (il web) non ha tool di scrittura. Le azioni le decide l'orchestratore, sulla base del riassunto, e passano comunque dall'approvazione: un riassunto può ancora contenere istruzioni iniettate.
+- **Lettura separata dall'azione:** chi legge contenuti non fidati (il web) non ha tool di scrittura. Le azioni le decide l'orchestratore, sulla base del riassunto, e passano comunque dall'approvazione: un riassunto può ancora contenere istruzioni iniettate. **Unica eccezione, scelta dall'utente:** lo specialista `routine`, che legge e scrive perché la routine gira senza di lui; ogni scrittura chiede comunque l'approvazione dei parametri esatti, che aspetta finché l'utente apre Jarvis.
 - **Una sola profondità di delega:** gli specialisti non delegano a loro volta.
 - **Budget:** ricerche web per task (`max-searches`), token di uscita (`max-tokens`), durata (`jarvis.tasks.timeout`), parallelismo (`max-parallel`). Il modello può lanciare le ricerche da codice in un ciclo, e ogni query conta.
 - **Annullamento:** pulsante "Ferma" nel pannello Squadra, `cancel-task` dal client, oppure "Jarvis, ferma tutto" (`cancelTask("all")`).
@@ -292,6 +296,17 @@ Ogni funzione va pensata per Windows, macOS e Linux. Windows è provato per inte
 
 iOS (e Android) non possono eseguire il backend: sarebbero un'app client collegata a un Jarvis acceso altrove. Tauri 2 li supporta, ma è un progetto a parte.
 
+## Routine (Fase 6)
+
+Lavori che Jarvis fa da solo nei giorni e all'ora scelti, per esempio un briefing del mattino con meteo, posta e calendario.
+
+- **Creazione:** a voce o per iscritto ("ogni mattina alle 8 fammi il briefing"): Jarvis chiama `createRoutine` (nome, ora, giorni, istruzioni complete) e chiede conferma; `listRoutines` e `deleteRoutine` per le altre. Oppure dalla scheda Routine delle Impostazioni (`Kind.ROUTINES`), che le elenca per modificarle, sospenderle o toglierle. Le routine stanno in una tabella propria (`routine`), non tra le impostazioni: sono configurazione, quindi toglierne una la cancella; quello che hanno fatto resta nei task e nella conversazione.
+- **Esecuzione** (`RoutineService`): ogni 30 s (il primo controllo un minuto dopo l'avvio, quando i server MCP di posta e calendario sono collegati) le routine dovute partono come **task dello specialista `routine`** nella conversazione in corso: compaiono nel pannello Squadra, e alla fine Jarvis ne riferisce l'esito come per ogni task (a voce, se l'ultimo turno era parlato). `routine.last_run` segna il giorno, con un aggiornamento condizionato, così una routine non parte due volte.
+- **Recupero in giornata:** una routine dovuta oggi e non ancora eseguita parte appena Jarvis è acceso (il briefing delle 8 arriva alle 9 se accendi il PC alle 9); quelle dei giorni prima no. Una routine creata o spostata dopo la sua ora di oggi comincia dal giorno dopo (`RoutineSchedule`, logica pura con test).
+- **Strumenti e approvazioni:** lo specialista legge come gli altri (ora, ricerca web, documenti, posta IMAP, i tool di lettura di tutti i server MCP) e può anche scrivere (note, invio di email IMAP, i `write-tools` MCP), sempre con l'approvazione: gli strumenti chiedono attraverso il contesto (`ApprovalService.requestApproval(toolContext, …)`), che nelle routine porta l'approvatore del task (`APPROVER_KEY`). La richiesta quindi aspetta fino a `jarvis.tasks.approval-timeout` (30 minuti) e viene ripresentata quando l'utente apre Jarvis. Niente azioni sul desktop: nessuno le vedrebbe.
+- **Notifica:** quando una routine finisce e Jarvis non è in primo piano (finestra nella tray, altra scheda), la pagina mostra una notifica di sistema: nell'app desktop con il plugin delle notifiche di Tauri, concesso alla sola pagina del backend di Jarvis (`capabilities/page.json`, `withGlobalTauri`); nel browser con le notifiche web, il cui permesso è chiesto la prima volta che parte una routine.
+- **Limite:** senza nessuna pagina aperta (solo browser, scheda chiusa) il risultato resta nel pannello Squadra e in `listTasks`; Jarvis non lo riferisce da solo alla riapertura. Nell'app desktop la pagina resta collegata anche con la finestra nella tray.
+
 ## Lingue
 
 Italiano e inglese, scelti con `jarvis.language` (Impostazioni → Profilo, la prima domanda del wizard; finché l'utente non sceglie vale la lingua del sistema, se Jarvis la parla, altrimenti l'inglese). Una lingua sola guida interfaccia, voce e date.
@@ -333,4 +348,4 @@ Italiano e inglese, scelti con `jarvis.language` (Impostazioni → Profilo, la p
 - **Fase 3b — installazione e impostazioni (fatta).** Wizard del primo avvio e sezione Impostazioni; valori su DB, segreti cifrati con AES-256-GCM e chiave master fuori dal DB; riavvio interno per applicarli; Organizer collegato a Outlook.com/Hotmail.
 - **Fase 4 — voce naturale (fatta).** Mani libere con rilevamento della voce nel browser, interruzione automatica, wake word "Jarvis" sulla trascrizione (suggerita anche a Whisper), valutazione di STT in streaming e modelli speech-to-speech. Prossimo passo vocale: trascrizione in streaming durante la frase.
 - **Fase 5 — app desktop (quasi fatta).** Shell Tauri con backend, Java ridotto, PostgreSQL + pgvector, voce locale e Node inclusi, tray, avvio automatico, installer NSIS; memoria a lungo termine su conversazioni, task e documenti (pgvector, embedding locali); script per Linux e macOS. Restano la prova dell'installer, la firma del codice e le prove su macOS.
-- **Fase 6 — autonomia controllata.** Routine pianificate (briefing del mattino), agenti esterni via A2A, specialista valutatore che verifica i risultati, eventuale delega su più livelli.
+- **Fase 6 — autonomia controllata (in corso).** Routine pianificate (fatte: sezione "Routine"); poi agenti esterni via A2A, specialista valutatore che verifica i risultati, eventuale delega su più livelli.

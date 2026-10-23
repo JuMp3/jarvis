@@ -24,6 +24,8 @@ Jarvis orchestra una squadra di specialisti in background (sezione "Orchestrazio
 
 ## Prossima sessione (aggiornato il 23/10/2026)
 
+**Fatto oggi, da provare con l'utente:** trascrizione a pezzi mentre parli (`ws/Utterance`, `speech-start` / `speech-end`, `transcript-partial`); Groq come scelta di trascrizione (l'utente l'ha provato: ottimo); Fase 6, routine (sezione "Routine" di `docs/ARCHITECTURE.md`). Prossimo passo proposto: una voce migliore per l'italiano (ElevenLabs o Azure; Groq ha solo voci inglesi e arabe), poi il resto della Fase 6.
+
 **Multilingua italiano e inglese fatto** (sezione "Lingue" di `docs/ARCHITECTURE.md`): impostazione `jarvis.language` nel Profilo (prima domanda del wizard, default dalla lingua del sistema), interfaccia con `static/i18n.js`, testi del server con `i18n/Text`, prompt in italiano con la lingua dell'utente indicata, voce Piper per lingua, date nella lingua scelta. Da fare con l'utente: **prova di qualità in inglese** (wizard in inglese, una conversazione scritta e una a voce, un task della Squadra, un'approvazione) e decidere se i prompt vanno tradotti; poi rigenerare l'app desktop (anche `prepare-voice`, per la voce inglese). Altre lingue: con una terza, i testi del server passano a file di risorse.
 
 Altro rimasto aperto:
@@ -82,6 +84,8 @@ src/main/java/dev/jarvis/
                 DatabaseSettingsSource + SettingsEnvironmentPostProcessor (impostazioni su DB all'avvio),
                 SettingsDefaultsSource (default del catalogo), SettingsRows (app del desktop)
   mail/         MailClient (IMAP/SMTP, Jakarta Mail), MailServers (server dal dominio dell'indirizzo)
+  routine/      Routine, RoutineSchedule (logica pura: quando, ora e giorni), RoutineRepository, RoutineService
+                (le avvia come task dello specialista routine), RoutineTools (createRoutine, listRoutines, deleteRoutine)
   memory/       LongTermMemory (embedding e5 locali, pgvector), MemoryIndexer (archivio e task in background),
                 E5Embeddings (prefissi query/passage), OnnxEmbeddings (ONNX Runtime); il tool è agent/tools/MemoryTools
   voice/        SpeechToText, TextToSpeech, OpenAiAudioClient (solo JDK HTTP, OpenAI o whisper.cpp), LocalVoice e

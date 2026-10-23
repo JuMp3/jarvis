@@ -20,6 +20,8 @@ final class SessionState {
     private volatile boolean lastTurnSpoken;
     /** Hands-free with wake word: recorded phrases not addressed to Jarvis are dropped. */
     private volatile boolean wakeWordRequired;
+    /** The phrase being transcribed in pieces, between speech-start and speech-end; null otherwise. */
+    private volatile Utterance utterance;
     /** Automatic messages for Jarvis (task results) waiting for the session to be idle. */
     private final Queue<String> pendingNotices = new ConcurrentLinkedQueue<>();
 
@@ -55,6 +57,14 @@ final class SessionState {
 
     void wakeWordRequired(boolean required) {
         this.wakeWordRequired = required;
+    }
+
+    Utterance utterance() {
+        return utterance;
+    }
+
+    void utterance(Utterance utterance) {
+        this.utterance = utterance;
     }
 
     boolean lastTurnSpoken() {

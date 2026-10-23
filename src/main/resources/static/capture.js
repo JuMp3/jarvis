@@ -28,7 +28,19 @@ export class SpeechCapture {
     this.preroll = [];
   }
 
-  /** @returns {ArrayBuffer} the recording as a 16 kHz mono WAV */
+  /** @returns {ArrayBuffer} what was recorded since the start or the last cut, as a WAV; the recording goes on */
+  cut() {
+    const chunks = this.recording ?? [];
+    if (this.recording) this.recording = [];
+    return encodeWav(chunks, this.sampleRate);
+  }
+
+  /** Milliseconds recorded since the start or the last cut. */
+  pendingMs() {
+    return (this.recording ?? []).reduce((sum, chunk) => sum + chunk.length, 0) * 1000 / this.sampleRate;
+  }
+
+  /** @returns {ArrayBuffer} the recording (since the last cut, if any) as a 16 kHz mono WAV */
   stop() {
     const chunks = this.recording ?? [];
     this.recording = null;

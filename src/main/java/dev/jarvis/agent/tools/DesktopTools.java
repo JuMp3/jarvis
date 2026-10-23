@@ -17,7 +17,6 @@ import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.ai.tool.annotation.ToolParam;
 import org.springframework.stereotype.Component;
 
-import dev.jarvis.agent.AgentService;
 import dev.jarvis.agent.ApprovalService;
 import dev.jarvis.config.JarvisProperties;
 import dev.jarvis.config.JarvisProperties.DesktopApp;
@@ -113,9 +112,7 @@ public class DesktopTools {
     }
 
     private String run(ToolContext toolContext, String description, List<String> command) {
-        String sessionId = (String) toolContext.getContext().get(AgentService.SESSION_ID_KEY);
-        String conversationId = (String) toolContext.getContext().get(AgentService.CONVERSATION_ID_KEY);
-        if (!approvals.requestApproval(conversationId, sessionId, description)) {
+        if (!approvals.requestApproval(toolContext, description)) {
             return "L'utente non ha confermato. Non ho aperto nulla.";
         }
         try {
